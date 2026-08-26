@@ -34,6 +34,9 @@ import { OVERTIME_ATTRIBUTION, overtimePay } from './overtime';
 import { AGE_RULES, ageStatus, parseDate } from './age';
 import { ELIGIBILITY_ATTRIBUTION, eligibilityFor } from './eligibility';
 import {
+  HEALTH_ANNUAL_CAP, PENSION_PER_PAYMENT_CAP,
+} from './bonus-insurance';
+import {
   ANNUAL_LEAVE_ATTRIBUTION, ATTENDANCE_THRESHOLD, FULL_GRANT, PROPORTIONAL_TABLE,
   judgeAnnualLeave,
 } from './annual-leave';
@@ -342,6 +345,7 @@ app.get('/', (c) => {
       'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': 'Same tax by the statutory formula method (電算機計算の特例)',
       'POST /v1/payroll/batch': `Up to ${MAX_BATCH} payslips in one call, with run totals (free tier: ${FREE_TIER.batch_rows} per batch)`,
       'GET /v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-03-28': 'Which months of social insurance a maternity or childcare leave exempts',
+      'GET /v1/annual-cost?prefecture=Tokyo&monthly_salary=400000&age=40&bonuses=800000,800000': '年間の労務コスト — 健保の賞与上限は年度累計573万、厚年は1回150万なので、月次×12では出ない',
       'GET /v1/annual-leave?hired_on=2020-04-01&attendance_rate=0.9': '年次有給休暇の付与日数と年5日の時季指定義務 — 勤続で10→20日、週30時間未満は比例付与 (労基法39条)',
       'GET /v1/worker-type?weekly_hours=25&monthly_wage=100000&workplace_insured_count=51&employment_months=12': '被保険者区分の判定 — 四分の三基準と20時間/88,000円/学生/51人。誤ると定時決定の支払基礎日数が17日と11日で入れ替わる',
       'GET /v1/eligibility?month=2026-03&left_on=2026-03-30': 'Whether social insurance is due in a joining or leaving month',
@@ -1785,6 +1789,202 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
  * 労務の相談でいちばん多い問いだが、条文に数字が書いてあるので判定できる。
  * 20日という上限は条文には無く、10労働日 + 六年以上の加算十労働日 の結果である。
  */
+/**
+ * 年間の労務コスト。
+ *
+ * 採用の可否を決めるときに見る数字がこれで、月次×12 + 賞与では出ない。
+ * 健康保険法第45条は標準賞与額の**年度の累計額**を573万円で切り、年度を4月1日から
+ * 翌年3月31日とする。厚生年金保険法第24条の4は**1回あたり**150万円で切り、年度累計の
+ * 定めを置かない。だから同じ賞与でも、健保は年度の何番目かで結果が変わり、厚年は
+ * 変わらない。この非対称を自分で足し合わせるのは、間違えやすいわりに得るものが無い。
+ *
+ * 賞与は渡された順に年度内で処理する。健保の枠は先に来た賞与から埋まる。
+ */
+app.get('/v1/annual-cost', (c) => {
+  const unknownQ = rejectUnknownQuery(c, [
+    'prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',
+    'business_type', 'column', 'dependants', 'income_tax', 'resident_tax',
+    'employment_type', 'workers_comp_type', 'bonuses', 'fiscal_year', 'as_of', 'include',
+  ] as const);
+  if (unknownQ) return unknownQ;
+
+  const r = needPref(c); if ('err' in r) return r.err;
+
+  const salaryRaw = c.req.query('monthly_salary');
+  const salary = salaryRaw === undefined ? NaN : Number(salaryRaw);
+  if (salaryRaw === undefined || !Number.isFinite(salary) || salary < 0)
+    return bad(c, '"monthly_salary" is required and must be a non-negative number.');
+
+  const ageRaw = c.req.query('age');
+  const age = ageRaw === undefined ? null : Number(ageRaw);
+  if (ageRaw !== undefined && (!Number.isFinite(age!) || age! < 0 || age! > 120))
+    return bad(c, '"age" must be a number between 0 and 120.');
+  const birthRaw = c.req.query('birth_date');
+  const birth = birthRaw === undefined ? null : parseDate(birthRaw);
+  if (birthRaw !== undefined && !birth)
+    return bad(c, '"birth_date" must be a valid ISO date (YYYY-MM-DD).');
+  if (ageRaw === undefined && birthRaw === undefined)
+    return bad(c, 'Either "age" or "birth_date" is required.',
+      '介護保険法第9条 makes age the test for whether long-term care is charged at all, so an annual figure without it would be understated for anyone between 40 and 64.',
+      'missing_parameter');
+
+  const asOfRaw = c.req.query('as_of');
+  const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
+  if (asOfRaw !== undefined && !asOf)
+    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+  const outside = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
+  if (outside) return outside;
+
+  const btKey = String(c.req.query('business_type') ?? 'general').toLowerCase();
+  if (!(empins.business_types as any)[btKey])
+    return bad(c, `Unknown business_type: "${btKey}"`);
+
+  const colRaw = String(c.req.query('column') ?? 'kou').toLowerCase();
+  if (colRaw !== 'kou' && colRaw !== 'otsu')
+    return bad(c, `Unknown column: "${colRaw}". Use "kou" or "otsu".`);
+
+  const depRaw = c.req.query('dependants');
+  const dependants = depRaw === undefined ? 0 : Number(depRaw);
+  if (depRaw !== undefined && (!Number.isInteger(dependants) || dependants < 0))
+    return bad(c, '"dependants" must be a whole number of 0 or more.');
+
+  const residentRaw = c.req.query('resident_tax');
+  const residentTax = residentRaw === undefined ? 0 : Number(residentRaw);
+  if (residentRaw !== undefined && (!Number.isFinite(residentTax) || residentTax < 0))
+    return bad(c, '"resident_tax" must be a non-negative number.');
+
+  const smrRaw = c.req.query('standard_remuneration');
+  const smr = smrRaw === undefined ? null : Number(smrRaw);
+  if (smrRaw !== undefined && (!Number.isFinite(smr!) || smr! < 0))
+    return bad(c, '"standard_remuneration" must be a non-negative number.');
+
+  const empRaw = String(c.req.query('employment_type') ?? 'employee');
+  if (empRaw !== 'employee' && empRaw !== 'director' && empRaw !== 'director_employee')
+    return bad(c, `Unknown employment_type: "${empRaw}".`);
+
+  const wcRaw = c.req.query('workers_comp_type');
+  if (wcRaw !== undefined && !workersCompType(wcRaw))
+    return bad(c, `Unknown workers_comp_type: "${wcRaw}"`);
+
+  const bonusRaw = c.req.query('bonuses');
+  const bonuses: number[] = [];
+  if (bonusRaw !== undefined && bonusRaw !== '') {
+    for (const part of bonusRaw.split(',')) {
+      const v = Number(part.trim());
+      if (!Number.isFinite(v) || v < 0)
+        return bad(c, `"bonuses" must be a comma-separated list of non-negative numbers; got "${part.trim()}".`,
+          'They are applied in the order given, because the health cap is cumulative over the year.');
+      bonuses.push(v);
+    }
+  }
+
+  const fyRaw = c.req.query('fiscal_year');
+  const fiscalYear = fyRaw === undefined
+    ? (asOf!.getUTCMonth() >= 3 ? asOf!.getUTCFullYear() : asOf!.getUTCFullYear() - 1)
+    : Number(fyRaw);
+  if (fyRaw !== undefined && (!Number.isInteger(fiscalYear) || fiscalYear < 2000 || fiscalYear > 2100))
+    return bad(c, '"fiscal_year" must be a four-digit year. The year runs 1 April to 31 March.');
+
+  const slip = computePayslip({
+    prefecture: r.pref, monthly_salary: salary, age, birth_date: birth, as_of: asOf!,
+    business_type: btKey, employment_type: empRaw as any, standard_remuneration: smr,
+    allowances: [], workers_comp_type: wcRaw ?? null,
+    column: colRaw as Column, dependants, income_tax: true, resident_tax: residentTax,
+  });
+
+  // 健保の枠は年度を通して積み上がる。渡された順に埋める。
+  let ytd = 0;
+  const wc = wcRaw ? workersCompType(wcRaw) : null;
+  const rows = bonuses.map((amount) => {
+    const b = bonusInsurance({
+      prefecture: r.pref, bonus: amount, fiscal_year_to_date: ytd,
+      age, birth_date: birth, as_of: asOf!,
+    });
+    ytd += b.bases.health;
+    const wcEmployer = wc ? Math.round(amount * wc.rate * 100) / 100 : 0;
+    return {
+      gross: amount,
+      health: {
+        standard_bonus: b.bases.health,
+        capped: b.bases.health_capped,
+        annual_used_before: b.caps.health_annual_used_before,
+        annual_remaining_after: b.caps.health_annual_remaining_after,
+      },
+      pension: {
+        standard_bonus: b.bases.pension,
+        capped: b.bases.pension_capped,
+      },
+      employee: b.totals.employee,
+      employer: b.totals.employer,
+      workers_compensation_employer: wcEmployer,
+      deductions: b.deductions,
+    };
+  });
+
+  const sum = (f: (x: typeof rows[number]) => number) =>
+    Math.round(rows.reduce((a, x) => a + f(x), 0) * 100) / 100;
+
+  const bonusGross = sum((x) => x.gross);
+  const bonusEmployee = sum((x) => x.employee);
+  const bonusEmployer = sum((x) => x.employer) + sum((x) => x.workers_compensation_employer);
+
+  const monthly = slip.totals;
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+
+  return c.json({
+    input: {
+      prefecture: r.pref, monthly_salary: salary,
+      ...(smr !== null ? { standard_remuneration: smr } : {}),
+      ...(age !== null ? { age } : {}),
+      ...(birthRaw ? { birth_date: birthRaw } : {}),
+      business_type: btKey, employment_type: empRaw,
+      ...(wcRaw ? { workers_comp_type: wcRaw } : {}),
+      bonuses,
+    },
+    fiscal_year: {
+      year: fiscalYear,
+      from: `${fiscalYear}-04-01`,
+      to: `${fiscalYear + 1}-03-31`,
+      basis: '健康保険法第45条(毎年四月一日から翌年三月三十一日までの累計額)',
+    },
+    monthly,
+    bonuses: rows,
+    annual: {
+      gross: round2(monthly.gross * 12 + bonusGross),
+      social_insurance_employee: round2(monthly.social_insurance_employee * 12 + bonusEmployee),
+      social_insurance_employer: round2(monthly.social_insurance_employer * 12 + sum((x) => x.employer)),
+      workers_compensation_employer:
+        round2(monthly.workers_compensation_employer * 12 + sum((x) => x.workers_compensation_employer)),
+      income_tax: round2(monthly.income_tax * 12),
+      resident_tax: round2(monthly.resident_tax * 12),
+      employer_cost: round2(monthly.employer_cost * 12 + bonusGross + bonusEmployer),
+    },
+    caps: {
+      health_annual: HEALTH_ANNUAL_CAP,
+      health_annual_used: ytd,
+      health_annual_remaining: Math.max(0, HEALTH_ANNUAL_CAP - ytd),
+      health_basis: '健康保険法第45条(標準賞与額の年度の累計額。千円未満切捨て)',
+      pension_per_payment: PENSION_PER_PAYMENT_CAP,
+      pension_basis: '厚生年金保険法第24条の4(一回あたり。千円未満切捨て。年度累計の定めは無い)',
+    },
+    notes: {
+      why_not_multiplication:
+        '年額は月次×12 + 賞与では出ません。健康保険の標準賞与額は年度の累計で573万円に達した' +
+        '時点で以後の賞与に保険料がかからなくなり、厚生年金は1回150万円で切れます。' +
+        '同じ賞与でも年度の何番目かで健保の結果が変わり、厚年は変わりません。',
+      order: '賞与は渡された順に処理します。健康保険の枠は先に来た賞与から埋まります。',
+      income_tax:
+        '所得税は月次分を12倍しているだけで、賞与の源泉税と年末調整は含みません。' +
+        '賞与の源泉税は GET /v1/bonus-tax、年末調整はこのAPIでは扱いません。',
+      resident_tax: '住民税は渡された額をそのまま12倍します。前年の所得に対して市区町村が課すもので、ここでは算出しません。',
+      workers_compensation:
+        '労災保険は賃金総額にかかるので賞与にもかかります(徴収法第2条第2項)。' +
+        'workers_comp_type を渡さなければ計上しません。',
+    },
+    attribution: { ...ATTRIBUTION, bonus: BONUS_INSURANCE_ATTRIBUTION },
+  });
+});
+
 app.get('/v1/annual-leave', (c) => {
   const unknownQ = rejectUnknownQuery(c, [
     'hired_on', 'as_of', 'attendance_rate', 'weekly_days', 'weekly_hours',

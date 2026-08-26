@@ -902,6 +902,49 @@ RECIPE = {
             ],
         },
         {
+            "path": "/v1/annual-cost",
+            "summary": "What a hire costs over a year, bonuses included",
+            "description": (
+                "Twelve months of premiums plus the bonuses, which is not the same as "
+                "multiplying. 健康保険法第45条 caps the standard bonus on a cumulative basis "
+                "across the year — 5,730,000 from 1 April to 31 March — so the same bonus "
+                "costs differently depending on where it falls in the year, and once the "
+                "total is reached later bonuses carry no health premium at all. "
+                "厚生年金保険法第24条の4 caps at 1,500,000 per payment and says nothing about a "
+                "yearly total, so pension keeps charging where health has stopped. "
+                "That asymmetry is the whole reason this endpoint exists: working it out by "
+                "hand is easy to get wrong and gains nothing. Bonuses are applied in the "
+                "order given, and each row reports what was counted, what was cut, and how "
+                "much of the year is left. "
+                "Income tax here is the monthly figure times twelve; bonus withholding and "
+                "the year-end adjustment are not included."
+            ),
+            "tags": ["Payroll"],
+            "params": [
+                {"name": "prefecture", "required": True, "example": "Tokyo",
+                 "description": "Rates differ by prefecture."},
+                {"name": "monthly_salary", "required": True, "type": "integer", "example": 400000,
+                 "description": "Gross monthly pay."},
+                {"name": "age", "required": True, "type": "integer", "example": 40,
+                 "description": "Either this or birth_date. Long-term care runs 40 to 64."},
+                {"name": "birth_date", "example": "1986-04-01",
+                 "description": "Preferred over age; applies the milestones to the day."},
+                {"name": "bonuses", "example": "800000,800000",
+                 "description": "Comma-separated, in the order paid. The health cap fills from the first."},
+                {"name": "fiscal_year", "type": "integer", "example": 2026,
+                 "description": "Year the 1 April to 31 March window starts. Defaults from as_of."},
+                {"name": "standard_remuneration", "type": "integer", "example": 410000,
+                 "description": "The grade fixed by 算定基礎届, if known."},
+                {"name": "workers_comp_type", "example": "98",
+                 "description": "事業の種類の番号. Charged on bonuses too, being on total wages."},
+                {"name": "business_type", "example": "general",
+                 "description": "Employment insurance rate band."},
+                {"name": "dependants", "type": "integer", "example": 0},
+                {"name": "resident_tax", "type": "integer", "example": 0,
+                 "description": "Multiplied by twelve as given; never derived."},
+            ],
+        },
+        {
             "path": "/v1/annual-leave",
             "summary": "Paid leave: days granted, and the five that must be directed",
             "description": (

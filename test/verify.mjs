@@ -3025,6 +3025,105 @@ for (const [p, want, label] of [
      'an as_of before hiring is refused');
   ok((await al('hired_on=2020-04-01&bogus=1')).status === 400, 'an unknown parameter is refused');
 }
+// ---- 54. 年間の労務コスト (F-20) ----
+// バー: 健康保険法第45条 — 標準賞与額は千円未満切捨て、**年度の累計額**が573万円で
+// 頭打ち、年度は4月1日から翌年3月31日。厚生年金保険法第24条の4 — 千円未満切捨て、
+// **1回あたり**150万円。年度累計の定めは無い。
+// (e-Gov 211AC0000000070 / 329AC0000000115 から円トークンを抽出して確認。
+//  健保: [1000, 5730000, 5730000] / 厚年: [1000, 1500000, 1500000])
+//
+// この非対称のせいで、年間の事業主負担は「月次×12 + 賞与ごとの計算」では出ない。
+// 健保は年度を通した累計で切れ、厚年は支給ごとに切れる。外資が採用の可否を決める
+// ときに見る数字がこれで、いまは自分で足し合わせるしかなかった。
+{
+  const ac = (q) => get(`/v1/annual-cost?${q}`);
+  const BASE_Q = 'prefecture=Tokyo&monthly_salary=400000&age=40&workers_comp_type=98';
+
+  // 賞与が無ければ月次の12倍に一致すること。ここがずれたら他は読めない。
+  const bare = (await ac(BASE_Q)).body;
+  const one = (await get(`/v1/payroll?${BASE_Q}`)).body;
+  ok(bare.monthly?.employer_cost === one.totals.employer_cost,
+     'the monthly figure matches the single payslip exactly',
+     `${bare.monthly?.employer_cost} vs ${one.totals.employer_cost}`);
+  ok(bare.annual?.employer_cost === one.totals.employer_cost * 12,
+     'and with no bonus the year is twelve of them',
+     `${bare.annual?.employer_cost} vs ${one.totals.employer_cost * 12}`);
+
+  // 賞与を足すと年額が増える。単純加算ではないので、内訳が出ること。
+  const withBonus = (await ac(`${BASE_Q}&bonuses=800000,800000`)).body;
+  ok(withBonus.bonuses?.length === 2, 'each bonus is reported separately',
+     `${withBonus.bonuses?.length}`);
+  ok(withBonus.annual?.employer_cost > bare.annual?.employer_cost,
+     'and the year costs more than the same salary without them');
+
+  // 健保は年度累計573万で切れる。300万を2回なら2回目の途中で頭打ちになる。
+  const capped = (await ac(`${BASE_Q}&bonuses=3000000,3000000`)).body;
+  const hb = capped.bonuses ?? [];
+  ok(hb[0]?.health?.standard_bonus === 3000000,
+     'the first three-million bonus is counted in full for health',
+     `${hb[0]?.health?.standard_bonus}`);
+  ok(hb[1]?.health?.standard_bonus === 5730000 - 3000000,
+     'the second is cut to what remains of the 5,730,000 year',
+     `${hb[1]?.health?.standard_bonus}`);
+  ok(hb[1]?.health?.capped === true, 'and the row says it was capped',
+     JSON.stringify(hb[1]?.health));
+
+  // 3回目は健保の枠が尽きているのでゼロ。厚年は支給ごとなので払い続ける。
+  const third = (await ac(`${BASE_Q}&bonuses=3000000,3000000,1000000`)).body;
+  const t3 = third.bonuses?.[2];
+  ok(t3?.health?.standard_bonus === 0,
+     'once the year is used up a further bonus adds no health premium',
+     `${t3?.health?.standard_bonus}`);
+  ok(t3?.pension?.standard_bonus === 1000000,
+     'while pension still charges it, because its cap is per payment',
+     `${t3?.pension?.standard_bonus}`);
+
+  // 厚年は1回150万で切れる。年度累計ではない。
+  const bigOne = (await ac(`${BASE_Q}&bonuses=2000000`)).body;
+  ok(bigOne.bonuses?.[0]?.pension?.standard_bonus === 1500000,
+     'a two-million bonus is capped at 1,500,000 for pension',
+     `${bigOne.bonuses?.[0]?.pension?.standard_bonus}`);
+  ok(bigOne.bonuses?.[0]?.health?.standard_bonus === 2000000,
+     'but health takes the whole two million, being under the yearly total',
+     `${bigOne.bonuses?.[0]?.health?.standard_bonus}`);
+
+  // 千円未満は切り捨てる (健保法45条、厚年法24条の4)。
+  const odd = (await ac(`${BASE_Q}&bonuses=800999`)).body;
+  ok(odd.bonuses?.[0]?.health?.standard_bonus === 800000,
+     'the standard bonus drops anything under a thousand yen',
+     `${odd.bonuses?.[0]?.health?.standard_bonus}`);
+
+  // 年間の総額は、月次12回と賞与の合計と一致すること。
+  // 賞与にかかる事業主負担には社会保険分と労災分の両方が入る。労災は賃金総額に
+  // かかる (徴収法第2条第2項) ので賞与も対象で、ここを落とすと突合が合わない。
+  const rows = withBonus.bonuses ?? [];
+  const bonusGross = rows.reduce((a, b) => a + b.gross, 0);
+  const bonusEmployer = rows.reduce((a, b) => a + b.employer + b.workers_compensation_employer, 0);
+  const expected = Math.round((withBonus.monthly.employer_cost * 12 + bonusGross + bonusEmployer) * 100) / 100;
+  ok(withBonus.annual?.employer_cost === expected,
+     'the annual total reconciles with its own parts, workers compensation included',
+     `${withBonus.annual?.employer_cost} vs ${expected}`);
+
+  // 労災は賃金総額にかかるので、賞与にもかかる。
+  ok((withBonus.bonuses ?? []).every((b) => b.workers_compensation_employer > 0),
+     'workers compensation is charged on bonuses too, being on total wages',
+     JSON.stringify((withBonus.bonuses ?? []).map((b) => b.workers_compensation_employer)));
+
+  // 年度の範囲が条文どおり示されること。
+  ok(withBonus.fiscal_year?.from?.endsWith('-04-01') && withBonus.fiscal_year?.to?.endsWith('-03-31'),
+     'the year runs April to March, as the article fixes it',
+     JSON.stringify(withBonus.fiscal_year));
+  ok(/健康保険法第45条/.test(JSON.stringify(withBonus.caps ?? {})),
+     'and the caps cite their provisions', JSON.stringify(withBonus.caps));
+
+  // 入力の検査。
+  ok((await ac('prefecture=Tokyo&monthly_salary=400000')).status === 400,
+     'age is required here too');
+  ok((await ac(`${BASE_Q}&bonuses=abc`)).status === 400, 'a non-numeric bonus is refused');
+  ok((await ac(`${BASE_Q}&bonuses=-1`)).status === 400, 'a negative bonus is refused');
+  ok((await ac(`${BASE_Q}&bogus=1`)).status === 400, 'an unknown parameter is refused');
+}
+
 
 
 

@@ -566,6 +566,56 @@ server.registerTool('lookup_standard_remuneration', {
 // Eligibility, leave and age
 // ---------------------------------------------------------------------------
 
+server.registerTool('calculate_annual_cost', {
+  title: '年間の労務コスト — 賞与の上限を年度で通した額',
+  description:
+    'What one employee costs an employer over a year, bonuses included.\n\n' +
+    'Reach for this rather than multiplying a payslip by twelve, because the two do not ' +
+    'agree once a bonus is paid. 健康保険法第45条 caps the standard bonus cumulatively across ' +
+    'the year — 5,730,000 from 1 April to 31 March — so the same bonus costs a different ' +
+    'amount depending on where it falls, and once the year is used up later bonuses carry no ' +
+    'health premium. 厚生年金保険法第24条の4 caps at 1,500,000 per payment with no yearly ' +
+    'total, so pension keeps charging where health has stopped.\n\n' +
+    'Pass bonuses in the order they are paid: the health allowance fills from the first one. ' +
+    'Each row comes back with what was counted, whether it was cut, and how much of the year ' +
+    'remains, so the answer can be explained rather than just quoted.\n\n' +
+    'Income tax here is the monthly figure times twelve. Bonus withholding is a separate ' +
+    'calculation (calculate_bonus with include_tax) and the year-end adjustment is not ' +
+    'covered at all — say so rather than presenting this as take-home pay for the year.',
+  inputSchema: {
+    prefecture,
+    monthly_salary: z.number().describe('Gross monthly pay in yen.'),
+    age: z.number().optional().describe('Either this or birth_date is required.'),
+    birth_date: birthDate,
+    bonuses: z.array(z.number()).optional().describe(
+      'Each bonus in yen, in the order paid. The health cap fills from the first.'),
+    fiscal_year: z.number().optional().describe(
+      'Year the 1 April to 31 March window starts. Defaults from the current date.'),
+    standard_remuneration: z.number().optional().describe(
+      'The 標準報酬月額 fixed by 算定基礎届, if known. Without it the grade is derived from the pay given.'),
+    workers_comp_type: z.string().optional().describe(
+      '事業の種類の番号. Charged on bonuses as well, being levied on total wages.'),
+    business_type: z.enum(['general', 'agriculture_forestry_fishery_sake', 'construction']).optional(),
+    dependants: z.number().optional(),
+    resident_tax: z.number().optional().describe(
+      'Monthly resident tax, multiplied by twelve as given. It is never derived here.'),
+  },
+}, async (a) => {
+  if (a.age === undefined && a.birth_date === undefined)
+    return fail('This needs the age of the employee. Long-term care insurance is charged only ' +
+                'from 40 to 64 (介護保険法第9条), so an annual figure without it would be ' +
+                'understated for anyone in that band. Ask for the date of birth and pass ' +
+                'birth_date.', 'missing_parameter');
+  return call('/v1/annual-cost' + qs({
+    prefecture: a.prefecture, monthly_salary: a.monthly_salary,
+    age: a.age, birth_date: a.birth_date,
+    bonuses: a.bonuses === undefined ? undefined : a.bonuses.join(','),
+    fiscal_year: a.fiscal_year, standard_remuneration: a.standard_remuneration,
+    workers_comp_type: a.workers_comp_type, business_type: a.business_type,
+    dependants: a.dependants, resident_tax: a.resident_tax,
+  }));
+});
+
 server.registerTool('judge_annual_leave', {
   title: '年次有給休暇 — 付与日数と年5日の時季指定義務',
   description:
