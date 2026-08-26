@@ -4,6 +4,7 @@ import {
   insurance, minwage, empins,
   resolvePrefecture, roundEmployeeShare, findGrade,
   pensionStandardRemuneration, isLtcInsured, minimumWageAt,
+  latestMinimumWageEffectiveFrom,
   ATTRIBUTION, type PrefKey,
 } from './lib';
 import ctax from './data/consumption-tax.json';
@@ -15,7 +16,7 @@ import {
   STATUTE_ATTRIBUTION, STATUTE_INDEX, STATUTE_LAWS,
   attachStatuteText, statuteDetail,
 } from './statutes';
-import { freshnessOf, freshnessReport } from './freshness';
+import { DATASETS, freshnessOf, freshnessReport } from './freshness';
 import {
   MAX_DEPENDANTS_IN_TABLE, TABLE_MAX, TABLE_MIN, WITHHOLDING_ATTRIBUTION,
   withholdingTax, type Column,
@@ -493,11 +494,53 @@ app.get('/v1/employment-insurance', (c) => {
   });
 });
 
+/**
+ * 地域別最低賃金が、いつまで「その額」なのか。
+ *
+ * 最低賃金法第4条は、最低賃金額に達しない賃金を定める労働契約を**無効とし**、その
+ * 部分は最低賃金と同様の定をしたものと**みなす**。額を間違えることの帰結が契約の
+ * 無効である以上、古い額を最新として返すのは重い。第14条は効力の発生を「公示の日から
+ * 起算して三十日を経過した日」とし、別に定めることも認めるので、発効日は都道府県ごとに
+ * 動く。実際には毎年10月に一斉に切り替わる。
+ *
+ * データが改定に追いついていないとき、直前の年度額を返すのが最も危険な振る舞いになる。
+ * 勤怠SaaSが10月に「適法」と表示し、その賃金は無効になっている、という形で外れる。
+ * 答えられないと言うほうがはるかに軽い。
+ */
+function minimumWageBeyondData(c: any, iso: string): any | null {
+  const d = DATASETS.minimum_wage;
+  const due = d.next_revision_expected;
+  if (!due || iso < due) return null;
+
+  // データ側が改定に追いついていれば、この防壁は自動的に効かなくなる。
+  const newest = latestMinimumWageEffectiveFrom();
+  if (newest && newest >= due) return null;
+
+  return c.json({
+    error: `The minimum wage in force on ${iso} is not established in this dataset.`,
+    code: 'out_of_coverage',
+    coverage: { through: newest, covers: d.covers, next_revision_expected: due },
+    hint:
+      '地域別最低賃金は毎年10月に改定されます。この日付以降の額はまだ収録されておらず、' +
+      '直前の年度額を返せば、実際には下回っている賃金を「適法」と表示させることになります。' +
+      '最低賃金法第4条は最低賃金額に達しない賃金を定める労働契約を無効とし、その部分を' +
+      '最低賃金と同様の定をしたものとみなすので、古い額を返す誤りは契約の効力に及びます。' +
+      `収録済みの最新は ${newest} 発効分です。改定額が収録され次第、この日付も答えられるようになります。`,
+    source_url: d.source_url,
+  }, 422);
+}
+
 app.get('/v1/minimum-wage', (c) => {
   const r = needPref(c); if ('err' in r) return r.err;
   const date = c.req.query('date') ?? null;
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
     return bad(c, 'Query parameter "date" must be ISO format YYYY-MM-DD.');
+
+  // 日付を渡さない既定は「今日」。今日が改定日を越えていれば同じ扱いにする。
+  const asked = date ?? new Date().toISOString().slice(0, 10);
+  const beyond = minimumWageBeyondData(c, asked);
+  if (beyond) return beyond;
+
   const row = minimumWageAt(r.pref, date);
   if (!row)
     return c.json({

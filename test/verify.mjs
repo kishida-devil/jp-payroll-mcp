@@ -2559,6 +2559,67 @@ for (const [p, want, label] of [
   ok((await post({ employees: {} })).status === 400, 'a non-array is refused');
   ok((await post({})).status === 400, 'a missing employees key is refused');
 }
+// ---- 49. 改定日を過ぎた最低賃金を「最新」と言わないこと (F-09) ----
+// バー: 最低賃金法第4条 — 最低賃金額に達しない賃金を定める労働契約は「無効とする」、
+// 無効となった部分は最低賃金と同様の定をしたものと「みなす」。第14条 — 効力は
+// 「公示」の日から起算して「三十日」を経過した日に生じ、「別に定める」こともできる。
+//
+// 誤答の帰結が契約の無効である以上、古い額を最新として返すのは重い。地域別最低賃金は
+// 毎年10月に改定され、このデータが更新されないまま10月1日を過ぎると、勤怠SaaSは
+// 違法な賃金を「適法」と表示する。データが無いときに黙って前年の額を返すのではなく、
+// 答えられないと言う必要がある。
+{
+  const mw = (q) => get(`/v1/minimum-wage?${q}`);
+
+  // 改定日より前は従来どおり答える。
+  const before = await mw('prefecture=Tokyo&date=2026-09-30');
+  ok(before.status === 200, 'a date before the revision is answered', `${before.status}`);
+  ok(before.body.fiscal_year === 2025, 'with the FY2025 figure', `${before.body.fiscal_year}`);
+
+  // 改定予定日以降は、データが追いついていない限り拒否する。
+  const fresh = (await get('/v1/data-freshness')).body;
+  const mwSet = (fresh.datasets ?? []).find((d) => d.key === 'minimum_wage');
+  const nextRevision = mwSet?.next_revision_expected;
+  ok(typeof nextRevision === 'string', 'the dataset states when it is next due', `${nextRevision}`);
+
+  const after = await mw(`prefecture=Tokyo&date=${nextRevision}`);
+  const covered = before.body.fiscal_year >= Number(String(nextRevision).slice(0, 4));
+  if (!covered) {
+    ok(after.status === 422,
+       'a date on or after the revision is refused while the data still stops short',
+       `${after.status}`);
+    ok(after.body.code === 'out_of_coverage', 'with a code a client can branch on', after.body.code);
+    ok(/最低賃金法/.test(after.body.hint ?? '') || /最低賃金法/.test(after.body.error ?? ''),
+       'and says why a stale figure is not a safe answer',
+       `${after.body.hint ?? after.body.error}`);
+    ok(after.body.coverage?.through !== undefined,
+       'the response names how far the data actually reaches',
+       JSON.stringify(after.body.coverage));
+
+    // 全都道府県で同じであること。1県だけ通ると気づけない。
+    for (const p of ['Osaka', 'Okinawa', 'Akita']) {
+      const r = await mw(`prefecture=${p}&date=${nextRevision}`);
+      ok(r.status === 422, `${p} refuses the same date`, `${r.status}`);
+    }
+  } else {
+    ok(after.status === 200,
+       'once the data covers the revision the same date answers again', `${after.status}`);
+  }
+
+  // 履歴は過去の話なので、前縁の欠落とは無関係に引ける。
+  const hist = await get('/v1/minimum-wage/history?prefecture=Tokyo');
+  ok(hist.status === 200, 'the history is unaffected by the forward edge', `${hist.status}`);
+  ok(hist.body.history?.length >= 24, 'and still carries every year on record',
+     `${hist.body.history?.length}`);
+
+  // 日付を渡さない既定は「今日」。今日が改定日を越えたら同じ扱いになる。
+  const today = new Date().toISOString().slice(0, 10);
+  const bare = await mw('prefecture=Tokyo');
+  ok(today < String(nextRevision) ? bare.status === 200 : bare.status === 422,
+     'the default date follows the same rule as an explicit one',
+     `today=${today} next=${nextRevision} status=${bare.status}`);
+}
+
 
 
 

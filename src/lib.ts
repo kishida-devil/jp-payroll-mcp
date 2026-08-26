@@ -73,6 +73,20 @@ export function isLtcInsured(age: number | null): boolean {
 }
 
 /** Minimum wage in effect for a prefecture on a given ISO date (defaults to latest). */
+/**
+ * 収録済みで最も新しい発効日。改定に追いついているかの判定に使う。
+ * 都道府県ごとに発効日が違う(最低賃金法第14条)ので、全県のうち最も新しいものを返す。
+ */
+export function latestMinimumWageEffectiveFrom(): string | null {
+  let newest: string | null = null;
+  for (const p of Object.values(minwage.prefectures as any)) {
+    const hist = (p as any).history as { effective_from: string | null }[];
+    for (const h of hist)
+      if (h.effective_from && (newest === null || h.effective_from > newest)) newest = h.effective_from;
+  }
+  return newest;
+}
+
 export function minimumWageAt(pref: PrefKey, isoDate?: string | null) {
   const hist = (minwage.prefectures as any)[pref].history as {
     fiscal_year: number; era_year: string; hourly_wage: number; effective_from: string | null;
