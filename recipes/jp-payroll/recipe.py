@@ -172,7 +172,7 @@ RECIPE = {
                  "description": "English name, Japanese, or JIS code 1-47."},
                 {"name": "monthly_salary", "required": True, "type": "integer", "example": 350000,
                  "description": "Actual monthly salary in yen."},
-                {"name": "age", "type": "integer", "example": 40,
+                {"name": "age", "required": True, "type": "integer", "example": 40,
                  "description": "Age. Either this or birth_date is required: long-term care "
                                 "is charged only from 40 to 64 (介護保険法第9条), so without it "
                                 "the premium cannot be settled. Prefer birth_date."},

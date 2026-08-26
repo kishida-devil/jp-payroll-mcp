@@ -306,8 +306,10 @@ const needPref = (c: any) => {
   return { pref };
 };
 
-app.get('/', (c) =>
-  c.json({
+app.get('/', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  return c.json({
     name: 'Japan Payroll and Labor Constants API',
     description:
       'Japanese statutory reference data in one API — social and employment insurance rates for all 47 prefectures, the 50-grade standard remuneration table, 24 years of minimum wage history, public holidays with business-day arithmetic, consumption tax since 1989, and corporate/invoice number validation. Extracted programmatically from government open data and verified against the published figures.',
@@ -363,13 +365,17 @@ app.get('/', (c) =>
       note: UPGRADE.what,
     },
     attribution: ATTRIBUTION,
-  }));
+  });
+});
 
 /**
  * 引用した条文の本文。判定エンドポイントは根拠を示すが本文は返さないので、
  * 条文番号を受け取った利用者が e-Gov を開き直す手間がここで消える。
  */
 app.get('/v1/statute', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include', 'ref'] as const);
+  if (unknownQ) return unknownQ;
+
   const ref = c.req.query('ref');
   if (!ref)
     return bad(c, '"ref" is required.',
@@ -386,7 +392,10 @@ app.get('/v1/statute', (c) => {
   return c.json({ ...detail, attribution: STATUTE_ATTRIBUTION });
 });
 
-app.get('/v1/statute/index', (c) =>
+app.get('/v1/statute/index', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  return (
   c.json({
     count: STATUTE_INDEX.length,
     laws: STATUTE_LAWS,
@@ -396,20 +405,23 @@ app.get('/v1/statute/index', (c) =>
       'endpoint to have the text of whatever it cited attached to the answer.',
     attribution: STATUTE_ATTRIBUTION,
   }));
-
+});
 app.get('/openapi.json', (c) => {
   c.header('Content-Type', 'application/json; charset=utf-8');
   return c.body(JSON.stringify(openapiSpec));
 });
 
-app.get('/v1/prefectures', (c) =>
+app.get('/v1/prefectures', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  return (
   c.json({
     count: 47,
     prefectures: Object.entries(insurance.prefectures).map(([en, v]) => ({
       name: en, name_ja: v.prefecture_ja, code: v.code,
     })),
   }));
-
+});
 app.get('/v1/insurance-rates', (c) => {
   const unknownQ = rejectUnknownQuery(c, ['prefecture', 'pref', 'as_of'] as const);
   if (unknownQ) return unknownQ;
@@ -447,15 +459,21 @@ app.get('/v1/insurance-rates', (c) => {
   });
 });
 
-app.get('/v1/standard-remuneration/table', (c) =>
+app.get('/v1/standard-remuneration/table', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  return (
   c.json({
     fiscal_year: insurance.meta.fiscal_year,
     health_grades: 50, pension_grades: 32,
     grades: insurance.grades,
     attribution: ATTRIBUTION.social_insurance,
   }));
-
+});
 app.get('/v1/standard-remuneration', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include', 'monthly_salary', 'pref', 'prefecture', 'remuneration'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('remuneration') ?? c.req.query('monthly_salary');
   const rem = Number(raw);
   if (!raw || !Number.isFinite(rem) || rem < 0)
@@ -536,6 +554,9 @@ function minimumWageBeyondData(c: any, iso: string): any | null {
 }
 
 app.get('/v1/minimum-wage', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['date', 'include', 'pref', 'prefecture'] as const);
+  if (unknownQ) return unknownQ;
+
   const r = needPref(c); if ('err' in r) return r.err;
   const date = c.req.query('date') ?? null;
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
@@ -565,6 +586,9 @@ app.get('/v1/minimum-wage', (c) => {
 });
 
 app.get('/v1/minimum-wage/history', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include', 'pref', 'prefecture'] as const);
+  if (unknownQ) return unknownQ;
+
   const r = needPref(c); if ('err' in r) return r.err;
   const p = (minwage.prefectures as any)[r.pref];
   return c.json({
@@ -815,6 +839,9 @@ const outOfCoverage = (c: any, iso: string) =>
   }, 422);
 
 app.get('/v1/holidays', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['from', 'include', 'to', 'year'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('year');
   const from = c.req.query('from');
   const to = c.req.query('to');
@@ -839,6 +866,9 @@ app.get('/v1/holidays', (c) => {
 });
 
 app.get('/v1/holidays/check', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['calendar', 'date', 'include'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('date');
   const d = parseISO(raw);
   if (!d) return bad(c, 'Query parameter "date" is required and must be a valid ISO date (YYYY-MM-DD).');
@@ -865,6 +895,9 @@ app.get('/v1/holidays/check', (c) => {
 });
 
 app.get('/v1/business-days', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['calendar', 'end', 'from', 'include', 'start', 'to'] as const);
+  if (unknownQ) return unknownQ;
+
   const from = c.req.query('from') ?? c.req.query('start');
   const to = c.req.query('to') ?? c.req.query('end');
   const a = parseISO(from);
@@ -886,6 +919,9 @@ app.get('/v1/business-days', (c) => {
 });
 
 app.get('/v1/business-days/shift', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['calendar', 'date', 'days', 'include'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('date');
   const d = parseISO(raw);
   if (!d) return bad(c, 'Query parameter "date" is required and must be a valid ISO date (YYYY-MM-DD).');
@@ -911,6 +947,9 @@ app.get('/v1/business-days/shift', (c) => {
 // ---- Consumption tax --------------------------------------------------------
 
 app.get('/v1/consumption-tax', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['amount', 'date', 'include', 'reduced'] as const);
+  if (unknownQ) return unknownQ;
+
   const dateRaw = c.req.query('date');
   if (dateRaw && !parseISO(dateRaw))
     return bad(c, '"date" must be a valid ISO date (YYYY-MM-DD).');
@@ -969,17 +1008,22 @@ app.get('/v1/consumption-tax', (c) => {
   return c.json(body);
 });
 
-app.get('/v1/consumption-tax/history', (c) =>
+app.get('/v1/consumption-tax/history', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  return (
   c.json({
     count: ctax.history.length,
     history: ctax.history,
     reduced_rate_scope: ctax.reduced_rate_scope,
     attribution: { source: ctax.meta.source, source_url: ctax.meta.source_url },
   }));
-
-// ---- Corporate number (法人番号) structural validation ----------------------
+});// ---- Corporate number (法人番号) structural validation ----------------------
 
 app.get('/v1/corporate-number/validate', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include', 'number'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('number');
   if (!raw) return bad(c, 'Query parameter "number" is required.', 'A 13-digit 法人番号, e.g. 8700110005901.');
   const r = validateCorporateNumber(raw);
@@ -987,6 +1031,9 @@ app.get('/v1/corporate-number/validate', (c) => {
 });
 
 app.get('/v1/corporate-number/check-digit', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['base', 'include'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('base');
   if (!raw) return bad(c, 'Query parameter "base" is required.', 'A 12-digit 会社法人等番号, e.g. 700110005901.');
   const r = fromBaseNumber(raw);
@@ -1001,6 +1048,9 @@ app.get('/v1/corporate-number/check-digit', (c) => {
 });
 
 app.get('/v1/invoice-number/validate', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include', 'number'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('number');
   if (!raw)
     return bad(c, 'Query parameter "number" is required.',
@@ -1009,6 +1059,9 @@ app.get('/v1/invoice-number/validate', (c) => {
 });
 
 app.get('/v1/withholding-tax', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['amount', 'column', 'dependants', 'include', 'taxable_amount'] as const);
+  if (unknownQ) return unknownQ;
+
   const amountRaw = c.req.query('taxable_amount') ?? c.req.query('amount');
   const amount = Number(amountRaw);
   if (!amountRaw || !Number.isFinite(amount) || amount < 0)
@@ -1041,6 +1094,9 @@ app.get('/v1/withholding-tax', (c) => {
 });
 
 app.get('/v1/withholding-tax/daily', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['amount', 'column', 'dependants', 'include', 'taxable_amount'] as const);
+  if (unknownQ) return unknownQ;
+
   const raw = c.req.query('taxable_amount') ?? c.req.query('amount');
   const amount = Number(raw);
   if (!raw || !Number.isFinite(amount) || amount < 0)
@@ -1069,6 +1125,9 @@ app.get('/v1/withholding-tax/daily', (c) => {
 });
 
 app.get('/v1/withholding-tax/computer', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['amount', 'dependants', 'include', 'spouse', 'taxable_amount'] as const);
+  if (unknownQ) return unknownQ;
+
   const amountRaw = c.req.query('taxable_amount') ?? c.req.query('amount');
   const amount = Number(amountRaw);
   if (!amountRaw || !Number.isFinite(amount) || amount < 0)
@@ -1226,6 +1285,9 @@ app.get('/v1/workers-compensation', (c) => {
 });
 
 app.get('/v1/leave-exemption', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['end', 'include', 'kind', 'start', 'worked_days'] as const);
+  if (unknownQ) return unknownQ;
+
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
     return bad(c, `Unknown kind: "${kindRaw}"`,
@@ -1296,6 +1358,9 @@ const badWorkerType = (c: any, raw: unknown) =>
     '短時間労働者 at a 特定適用事業所, where it is 11.');
 
 app.get('/v1/standard-remuneration/revision', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['current_remuneration', 'fixed_pay_change', 'include', 'months', 'revision_month', 'worker_type', 'year'] as const);
+  if (unknownQ) return unknownQ;
+
   const current = Number(c.req.query('current_remuneration'));
   if (!Number.isFinite(current) || current < 0)
     return bad(c, '"current_remuneration" is required and must be a non-negative number.',
@@ -1587,6 +1652,9 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
 });
 
 app.get('/v1/standard-remuneration/leave-end', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['acquired_month', 'current_remuneration', 'include', 'kind', 'months', 'next_leave_starts_immediately', 'worker_type'] as const);
+  if (unknownQ) return unknownQ;
+
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
     return bad(c, `Unknown kind: "${kindRaw}"`,
@@ -1789,6 +1857,9 @@ app.get('/v1/worker-type', (c) => {
 });
 
 app.get('/v1/eligibility', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include', 'joined_on', 'left_on', 'month'] as const);
+  if (unknownQ) return unknownQ;
+
   const monthRaw = c.req.query('month');
   const month = monthRaw
     ? parseDate(/^\d{4}-\d{2}$/.test(monthRaw) ? `${monthRaw}-01` : monthRaw)
@@ -2067,6 +2138,9 @@ app.get('/v1/bonus-insurance', (c) => {
 });
 
 app.get('/v1/age-milestones', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['as_of', 'birth_date', 'include'] as const);
+  if (unknownQ) return unknownQ;
+
   const birth = parseDate(c.req.query('birth_date'));
   if (!birth)
     return bad(c, 'Query parameter "birth_date" is required and must be an ISO date (YYYY-MM-DD).');
@@ -2168,7 +2242,10 @@ app.get('/v1/bonus-tax', (c) => {
   });
 });
 
-app.get('/v1/enums', (c) =>
+app.get('/v1/enums', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  return (
   c.json({
     note: 'Every closed set of values this API accepts, so they can be read at build time rather than discovered from a 400.',
     business_type: Object.entries(empins.business_types).map(([k, v]: [string, any]) => ({
@@ -2236,10 +2313,13 @@ app.get('/v1/enums', (c) =>
     ],
     prefectures: 'See GET /v1/prefectures for all 47.',
   }));
-
-app.get('/v1/data-freshness', (c) =>
+});
+app.get('/v1/data-freshness', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  return (
   c.json(freshnessReport(new Date())));
-
+});
 app.notFound((c) => c.json({ error: 'Not found', code: 'not_found', hint: 'See GET / for the endpoint list.' }, 404));
 app.onError((e, c) => c.json({ error: 'Internal error', code: 'internal_error', detail: String(e?.message ?? e) }, 500));
 

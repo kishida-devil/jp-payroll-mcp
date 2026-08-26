@@ -2830,6 +2830,102 @@ for (const [p, want, label] of [
   ok((await reg('year=2026&revision_month=13')).status === 400,
      'but a month number outside 1-12 is refused');
 }
+// ---- 52. どのエンドポイントも未知のクエリパラメータを黙って捨てないこと (F-34) ----
+// 前の周回で「渡したのに無視された」を根本原因として直したはずが、そのとき触った
+// 9本にしか入っていなかった。第7反復で acquire_on という綴り間違いが 200 で通り、
+// 「除外事由なし = 提出対象」と読める答えが返ることが分かった。
+//
+// 個別に足すと次に追加したものがまた漏れるので、仕様書に載っている全 GET を
+// 走査して確かめる。ここが緑である限り、新しいエンドポイントも漏れない。
+{
+  const spec = await (await fetch(`${BASE}/openapi.json`)).json();
+  const paths = Object.entries(spec.paths ?? {});
+
+  // GET だけを対象にする。POST の本文は別の検査経路。
+  const gets = paths.filter(([, ops]) => ops.get).map(([p, ops]) => [p, ops.get]);
+  ok(gets.length >= 25, 'the spec carries the GET endpoints to sweep', `${gets.length}`);
+
+  const sample = (param) => {
+    const ex = param.example ?? param.schema?.example;
+    if (ex !== undefined && ex !== null) return String(ex);
+    const t = param.schema?.type;
+    if (t === 'integer' || t === 'number') return '1';
+    if (t === 'boolean') return 'false';
+    return 'x';
+  };
+
+  const skipped = [];
+  const leaked = [];
+
+  for (const [path, op] of gets) {
+    if (path.includes('{')) { skipped.push(`${path} (templated)`); continue; }
+
+    // 必須パラメータを埋めて 400 の理由を「未知パラメータ」に絞り込む。
+    const required = (op.parameters ?? []).filter((p) => p.required);
+    const qs = new URLSearchParams();
+    for (const p of required) qs.set(p.name, sample(p));
+
+    // まず素の呼び出しが通ることを確かめる。通らないなら、この掃引では判定できない。
+    const baseline = await fetch(`${BASE}${path}?${qs}`);
+    if (baseline.status >= 400) { skipped.push(`${path} (baseline ${baseline.status})`); continue; }
+
+    qs.set('zzz_definitely_not_a_parameter', '1');
+    const r = await fetch(`${BASE}${path}?${qs}`);
+    const body = await r.json().catch(() => ({}));
+    if (r.status !== 400 || body.code !== 'unknown_parameter')
+      leaked.push(`${path} -> ${r.status} ${body.code ?? ''}`);
+  }
+
+  ok(leaked.length === 0,
+     'every documented GET refuses a parameter it does not know',
+     leaked.join(' | ') || 'none');
+
+  // 掃引から外れたものは、外れた理由ごと見えるようにしておく。黙って減ると気づけない。
+  ok(skipped.length <= 6,
+     'and few enough endpoints fall outside the sweep to keep it meaningful',
+     skipped.join(' | ') || 'none');
+
+  // 掃引で埋められない必須パラメータを持つものは、いちばん使われる経路でもある。
+  // 自動で漏れる位置にこそ明示的な検査を置く。
+  for (const [label, q] of [
+    ['/v1/payroll', 'prefecture=Tokyo&monthly_salary=300000&age=40'],
+    ['/v1/holidays', 'year=2026'],
+    ['/v1/bonus-insurance', 'prefecture=Tokyo&bonus=500000&age=40'],
+    ['/', ''],
+  ]) {
+    const r = await get(`${label}?${q}${q ? '&' : ''}zzz_definitely_not_a_parameter=1`);
+    ok(r.status === 400 && r.body.code === 'unknown_parameter',
+       `${label} refuses an unknown parameter too`, `${r.status} ${r.body.code}`);
+  }
+
+  // 逆方向。拒否を入れるとき、ヘルパー経由で読んでいるパラメータを許可リストから
+  // 落としやすい。calendar がまさにそれで、3本で documented なのに弾かれていた。
+  // 「知らないものを拒む」と「知っているものを通す」は別々に守る必要がある。
+  const wronglyRejected = [];
+  for (const [path, op] of gets) {
+    if (path.includes('{')) continue;
+    const required = (op.parameters ?? []).filter((p) => p.required);
+    for (const p of op.parameters ?? []) {
+      const qs = new URLSearchParams();
+      for (const rq of required) qs.set(rq.name, sample(rq));
+      qs.set(p.name, sample(p));
+      const r = await fetch(`${BASE}${path}?${qs}`);
+      if (r.status !== 400) continue;
+      const body = await r.json().catch(() => ({}));
+      if (body.code === 'unknown_parameter') wronglyRejected.push(`${path} ?${p.name}`);
+    }
+  }
+  ok(wronglyRejected.length === 0,
+     'and never refuses a parameter its own spec documents',
+     wronglyRejected.join(' | ') || 'none');
+
+  // 近い綴りには候補を出す。拒否だけでは直せない。
+  const typo = await (await fetch(
+    `${BASE}/v1/minimum-wage?prefecture=Tokyo&dat=2026-01-01`)).json();
+  ok(/Did you mean/.test(typo.hint ?? ''),
+     'a near miss suggests the parameter that was meant', typo.hint);
+}
+
 
 
 

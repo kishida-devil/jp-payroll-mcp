@@ -335,7 +335,7 @@
      {
       "name": "age",
       "in": "query",
-      "required": false,
+      "required": true,
       "description": "Age. Either this or birth_date is required: long-term care is charged only from 40 to 64 (介護保険法第9条), so without it the premium cannot be settled. Prefer birth_date.",
       "schema": {
        "type": "integer",

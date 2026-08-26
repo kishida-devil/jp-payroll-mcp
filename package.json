@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/verify.mjs",
+    "test": "node test/verify.mjs && node mcp/test/smoke.mjs && node mcp/test/failure.mjs",
+    "test:api": "node test/verify.mjs",
     "rapidapi:login": "python pipeline/rapidapi/login.py",
     "rapidapi:prepare": "python pipeline/rapidapi/prepare.py --all",
     "watch": "python pipeline/watch_sources.py",

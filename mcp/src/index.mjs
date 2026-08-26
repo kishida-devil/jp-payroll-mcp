@@ -487,9 +487,7 @@ server.registerTool('decide_regular_remuneration_batch', {
     'Pass acquired_on, left_on or revision_month and each row also says whether that employee is ' +
     'filed at all. 健康保険法第41条 leaves out anyone insured between 1 June and 1 July, anyone gone ' +
     'before the 1 July reference date, and anyone revised from July to September. The run totals ' +
-    'to_file and not_required, which is the number of forms rather than the number of employees.
-
-' +
+    'to_file and not_required, which is the number of forms rather than the number of employees. ' +
     'A row that cannot be decided is returned in errors with its index and id, and the rest of ' +
     'the run still completes — do not discard a whole run over one bad row.',
   inputSchema: {
