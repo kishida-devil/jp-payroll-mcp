@@ -115,7 +115,10 @@ const listen = (handler) => new Promise((resolve) => {
   });
   await withServer({ JP_PAYROLL_API_URL: `http://127.0.0.1:${port}` }, async (c) => {
     const r = await c.callTool({
-      name: 'calculate_payslip', arguments: { prefecture: 'Kyouto', monthly_salary: 350000 },
+      // age を渡すのは、このテストが見たいのが「APIのエラーが素通しされること」で
+      // あって、年齢の欠落ではないため。渡さないとローカルのガードが先に返す。
+      name: 'calculate_payslip',
+      arguments: { prefecture: 'Kyouto', monthly_salary: 350000, age: 40 },
     });
     const text = r.content?.[0]?.text ?? '';
     ok(r.isError === true, 'a 400 is an error');
@@ -134,7 +137,7 @@ const listen = (handler) => new Promise((resolve) => {
   await withServer({ JP_PAYROLL_API_URL: 'http://127.0.0.1:1' }, async (c) => {
     for (const [name, args, label] of [
       ['calculate_payslip', { prefecture: 'Tokyo' }, 'a missing required argument'],
-      ['calculate_payslip', { prefecture: 'Tokyo', monthly_salary: 'lots' }, 'a wrong type'],
+      ['calculate_payslip', { prefecture: 'Tokyo', monthly_salary: 'lots', age: 40 }, 'a wrong type'],
       ['judge_monthly_revision',
        { current_remuneration: 1, months: 'x', fixed_pay_change: 'sideways' },
        'a value outside an enum'],

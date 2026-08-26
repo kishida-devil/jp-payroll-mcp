@@ -902,6 +902,44 @@ RECIPE = {
             ],
         },
         {
+            "path": "/v1/annual-leave",
+            "summary": "Paid leave: days granted, and the five that must be directed",
+            "description": (
+                "労働基準法第39条 grants ten working days after six months of service with "
+                "attendance of eighty per cent of all working days, then adds one, two, four, "
+                "six, eight and ten days over the following years. The familiar ceiling of "
+                "twenty is not a figure the article states — it is the ten plus the ten added "
+                "from the sixth year on. "
+                "Anyone working under thirty hours a week on four days or fewer takes a "
+                "smaller table set by 施行規則第24条の3 instead. Thirty hours is the hinge: at "
+                "or above it the ordinary grant applies however few days are worked, which is "
+                "a common way to under-grant. "
+                "Where ten or more days are granted, 第39条第7項 obliges the employer to fix "
+                "the timing of five of them within the year, and days the employee took on "
+                "their own count against it. A grant lapses two years on under 第115条. "
+                "What counts toward the attendance figure is a question about the workplace — "
+                "leave for a work injury, maternity, childcare and paid leave already taken "
+                "are all treated as attendance — so pass a rate you have already worked out."
+            ),
+            "tags": ["Payroll"],
+            "params": [
+                {"name": "hired_on", "required": True, "example": "2020-04-01",
+                 "description": "Date of hire. Grants fall six months later, then annually."},
+                {"name": "as_of", "example": "2026-10-01",
+                 "description": "Date to judge against. Defaults to today."},
+                {"name": "attendance_rate", "type": "number", "example": 0.9,
+                 "description": "Attendance as a fraction of all working days. 0.8 or more grants."},
+                {"name": "weekly_days", "type": "number", "example": 3,
+                 "description": "週所定労働日数. Four or fewer may take the smaller table."},
+                {"name": "weekly_hours", "type": "number", "example": 20,
+                 "description": "週所定労働時間. Thirty or more means the ordinary grant."},
+                {"name": "annual_days", "type": "integer", "example": 150,
+                 "description": "一年間の所定労働日数, as an alternative to weekly_days."},
+                {"name": "days_taken", "type": "number", "example": 2,
+                 "description": "Days already taken this year, counted against the five."},
+            ],
+        },
+        {
             "path": "/v1/worker-type",
             "summary": "Is this person insured, and on which day-count?",
             "description": (

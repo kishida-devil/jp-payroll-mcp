@@ -2294,6 +2294,103 @@
     ]
    }
   },
+  "/v1/annual-leave": {
+   "get": {
+    "summary": "Paid leave: days granted, and the five that must be directed",
+    "description": "労働基準法第39条 grants ten working days after six months of service with attendance of eighty per cent of all working days, then adds one, two, four, six, eight and ten days over the following years. The familiar ceiling of twenty is not a figure the article states — it is the ten plus the ten added from the sixth year on. Anyone working under thirty hours a week on four days or fewer takes a smaller table set by 施行規則第24条の3 instead. Thirty hours is the hinge: at or above it the ordinary grant applies however few days are worked, which is a common way to under-grant. Where ten or more days are granted, 第39条第7項 obliges the employer to fix the timing of five of them within the year, and days the employee took on their own count against it. A grant lapses two years on under 第115条. What counts toward the attendance figure is a question about the workplace — leave for a work injury, maternity, childcare and paid leave already taken are all treated as attendance — so pass a rate you have already worked out.",
+    "operationId": "getV1AnnualLeave",
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid or missing query parameter"
+     }
+    },
+    "parameters": [
+     {
+      "name": "hired_on",
+      "in": "query",
+      "required": true,
+      "description": "Date of hire. Grants fall six months later, then annually.",
+      "schema": {
+       "type": "string",
+       "example": "2020-04-01"
+      }
+     },
+     {
+      "name": "as_of",
+      "in": "query",
+      "required": false,
+      "description": "Date to judge against. Defaults to today.",
+      "schema": {
+       "type": "string",
+       "example": "2026-10-01"
+      }
+     },
+     {
+      "name": "attendance_rate",
+      "in": "query",
+      "required": false,
+      "description": "Attendance as a fraction of all working days. 0.8 or more grants.",
+      "schema": {
+       "type": "number",
+       "example": 0.9
+      }
+     },
+     {
+      "name": "weekly_days",
+      "in": "query",
+      "required": false,
+      "description": "週所定労働日数. Four or fewer may take the smaller table.",
+      "schema": {
+       "type": "number",
+       "example": 3
+      }
+     },
+     {
+      "name": "weekly_hours",
+      "in": "query",
+      "required": false,
+      "description": "週所定労働時間. Thirty or more means the ordinary grant.",
+      "schema": {
+       "type": "number",
+       "example": 20
+      }
+     },
+     {
+      "name": "annual_days",
+      "in": "query",
+      "required": false,
+      "description": "一年間の所定労働日数, as an alternative to weekly_days.",
+      "schema": {
+       "type": "integer",
+       "example": 150
+      }
+     },
+     {
+      "name": "days_taken",
+      "in": "query",
+      "required": false,
+      "description": "Days already taken this year, counted against the five.",
+      "schema": {
+       "type": "number",
+       "example": 2
+      }
+     }
+    ],
+    "tags": [
+     "Payroll"
+    ]
+   }
+  },
   "/v1/worker-type": {
    "get": {
     "summary": "Is this person insured, and on which day-count?",

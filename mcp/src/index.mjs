@@ -83,7 +83,10 @@ async function call(path, { method = 'GET', body } = {}) {
 }
 
 const ok = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data, null, 1) }] });
-const fail = (message) => ({ isError: true, content: [{ type: 'text', text: message }] });
+// ローカルで止めたエラーにも、APIが返すのと同じ形で code を載せる。止まった場所に
+// よってエラーの形が変わると、呼ぶ側が両方を扱わなければならなくなる。
+const fail = (message, code = 'invalid_request') =>
+  ({ isError: true, content: [{ type: 'text', text: `${message} [${code}]` }] });
 
 /** Drops undefined so optional arguments do not become the string "undefined". */
 const qs = (params) => {
@@ -267,7 +270,7 @@ server.registerTool('calculate_payslip', {
                 'about 2,430 yen a month on a 300,000 yen salary in Tokyo. Ask for the date of ' +
                 'birth and pass birth_date — 年齢計算ニ関スル法律 puts the attainment of an age on ' +
                 'the day before the birthday, so a 1st-of-the-month birth changes the premium a ' +
-                'month earlier than age alone would suggest.');
+                'month earlier than age alone would suggest.', 'missing_parameter');
   return call('/v1/payroll' + qs(a));
 });
 
@@ -328,7 +331,7 @@ server.registerTool('calculate_bonus', {
                 'about 2,430 yen a month on a 300,000 yen salary in Tokyo. Ask for the date of ' +
                 'birth and pass birth_date — 年齢計算ニ関スル法律 puts the attainment of an age on ' +
                 'the day before the birthday, so a 1st-of-the-month birth changes the premium a ' +
-                'month earlier than age alone would suggest.');
+                'month earlier than age alone would suggest.', 'missing_parameter');
   const insurance = await call('/v1/bonus-insurance' + qs({
     prefecture: a.prefecture, bonus: a.bonus, fiscal_year_to_date: a.fiscal_year_to_date,
     age: a.age, birth_date: a.birth_date,
@@ -562,6 +565,45 @@ server.registerTool('lookup_standard_remuneration', {
 // ---------------------------------------------------------------------------
 // Eligibility, leave and age
 // ---------------------------------------------------------------------------
+
+server.registerTool('judge_annual_leave', {
+  title: '年次有給休暇 — 付与日数と年5日の時季指定義務',
+  description:
+    'Works out how many days of paid leave someone has been granted, and whether the employer ' +
+    'still owes the five days it must direct.\n\n' +
+    '労働基準法第39条 grants ten working days once six months of service are complete and ' +
+    'attendance reaches eighty per cent of all working days, then adds one, two, four, six, ' +
+    'eight and ten days in the years that follow. The ceiling everyone quotes as twenty is not ' +
+    'in the article: it is the ten of the first grant plus the ten added from the sixth year.\n\n' +
+    'Someone under thirty hours a week working four days or fewer takes a smaller table from ' +
+    '施行規則第24条の3. Thirty hours is where it turns — at or above it the ordinary grant ' +
+    'applies no matter how few days are worked, and treating such a person as part-time ' +
+    'under-grants them. Ask for both the weekly days and the weekly hours; one without the ' +
+    'other cannot settle it.\n\n' +
+    'Where ten or more days are granted, 第39条第7項 requires the employer to fix the timing of ' +
+    'five of them within the year, and days the employee took of their own accord count toward ' +
+    'it. A grant lapses two years after it is made (第115条), so one year carries over.\n\n' +
+    'The attendance figure is a question about the workplace: leave for a work injury, ' +
+    'maternity, childcare and paid leave already taken all count as attendance. Ask for a rate ' +
+    'that has been worked out rather than dividing days present by days in the year. Without ' +
+    'one the tool reports the eighty per cent test as not judged rather than assuming it passed.',
+  inputSchema: {
+    hired_on: z.string().describe('Date of hire, YYYY-MM-DD. Grants fall six months later, then annually.'),
+    as_of: z.string().optional().describe('Date to judge against, YYYY-MM-DD. Defaults to today.'),
+    attendance_rate: z.number().optional().describe(
+      'Attendance as a fraction of all working days, 0 to 1. Eighty per cent or more grants.'),
+    weekly_days: z.number().optional().describe('週所定労働日数.'),
+    weekly_hours: z.number().optional().describe(
+      '週所定労働時間. Thirty or more takes the ordinary grant whatever the day count.'),
+    annual_days: z.number().optional().describe('一年間の所定労働日数, in place of weekly_days.'),
+    days_taken: z.number().optional().describe(
+      'Days already taken in the current year, counted against the five the employer must direct.'),
+  },
+}, async (a) => call('/v1/annual-leave' + qs({
+  hired_on: a.hired_on, as_of: a.as_of, attendance_rate: a.attendance_rate,
+  weekly_days: a.weekly_days, weekly_hours: a.weekly_hours,
+  annual_days: a.annual_days, days_taken: a.days_taken,
+})));
 
 server.registerTool('judge_worker_type', {
   title: '被保険者区分の判定 — 四分の三基準と20時間・88,000円・学生・51人',

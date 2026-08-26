@@ -34,6 +34,10 @@ import { OVERTIME_ATTRIBUTION, overtimePay } from './overtime';
 import { AGE_RULES, ageStatus, parseDate } from './age';
 import { ELIGIBILITY_ATTRIBUTION, eligibilityFor } from './eligibility';
 import {
+  ANNUAL_LEAVE_ATTRIBUTION, ATTENDANCE_THRESHOLD, FULL_GRANT, PROPORTIONAL_TABLE,
+  judgeAnnualLeave,
+} from './annual-leave';
+import {
   EXCLUDED_FROM_WAGE_TEST, HEADCOUNT_SCHEDULE, WORKER_TYPE_ATTRIBUTION, judgeWorkerType,
 } from './worker-type';
 import { LEAVE_ATTRIBUTION, leaveExemption, type LeaveKind } from './leave-exemption';
@@ -338,6 +342,7 @@ app.get('/', (c) => {
       'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': 'Same tax by the statutory formula method (電算機計算の特例)',
       'POST /v1/payroll/batch': `Up to ${MAX_BATCH} payslips in one call, with run totals (free tier: ${FREE_TIER.batch_rows} per batch)`,
       'GET /v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-03-28': 'Which months of social insurance a maternity or childcare leave exempts',
+      'GET /v1/annual-leave?hired_on=2020-04-01&attendance_rate=0.9': '年次有給休暇の付与日数と年5日の時季指定義務 — 勤続で10→20日、週30時間未満は比例付与 (労基法39条)',
       'GET /v1/worker-type?weekly_hours=25&monthly_wage=100000&workplace_insured_count=51&employment_months=12': '被保険者区分の判定 — 四分の三基準と20時間/88,000円/学生/51人。誤ると定時決定の支払基礎日数が17日と11日で入れ替わる',
       'GET /v1/eligibility?month=2026-03&left_on=2026-03-30': 'Whether social insurance is due in a joining or leaving month',
       'GET /v1/age-milestones?birth_date=1986-04-01': 'When 40, 65, 70 and 75 are reached and what each changes',
@@ -1774,6 +1779,99 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
  * いちばん間違えやすい分類でありながら、このAPIは利用者に決めさせていた。誤れば
  * 定時決定が無警告で誤答になる。材料は揃っているのに判定を渡していなかった。
  */
+/**
+ * 年次有給休暇の付与日数と、年5日の時季指定義務。
+ *
+ * 労務の相談でいちばん多い問いだが、条文に数字が書いてあるので判定できる。
+ * 20日という上限は条文には無く、10労働日 + 六年以上の加算十労働日 の結果である。
+ */
+app.get('/v1/annual-leave', (c) => {
+  const unknownQ = rejectUnknownQuery(c, [
+    'hired_on', 'as_of', 'attendance_rate', 'weekly_days', 'weekly_hours',
+    'annual_days', 'days_taken', 'include',
+  ] as const);
+  if (unknownQ) return unknownQ;
+
+  const hiredRaw = c.req.query('hired_on');
+  const hired = hiredRaw === undefined ? null : parseDate(hiredRaw);
+  if (hiredRaw === undefined)
+    return bad(c, '"hired_on" is required.',
+      '雇入れの日。付与日は雇入れから6か月後で、以降1年ごとです (労働基準法第39条第1項)。',
+      'missing_parameter');
+  if (!hired) return bad(c, '"hired_on" must be a valid ISO date (YYYY-MM-DD).');
+
+  const asOfRaw = c.req.query('as_of');
+  const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
+  if (asOfRaw !== undefined && !asOf)
+    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+  if (asOf! < hired)
+    return bad(c, '"as_of" is before "hired_on".',
+      '判定日が雇入れの日より前です。');
+
+  const num = (key: string, max?: number) => {
+    const raw = c.req.query(key);
+    if (raw === undefined) return { value: null as number | null, bad: false };
+    const v = Number(raw);
+    return { value: v, bad: !Number.isFinite(v) || v < 0 || (max !== undefined && v > max) };
+  };
+  const rate = num('attendance_rate', 1);
+  const weeklyDays = num('weekly_days', 7);
+  const weeklyHours = num('weekly_hours', 168);
+  const annualDays = num('annual_days', 366);
+  const taken = num('days_taken', 366);
+  for (const [key, f] of [
+    ['attendance_rate', rate], ['weekly_days', weeklyDays], ['weekly_hours', weeklyHours],
+    ['annual_days', annualDays], ['days_taken', taken],
+  ] as const)
+    if (f.bad)
+      return bad(c, `"${key}" is out of range.`,
+        key === 'attendance_rate'
+          ? '出勤率は0から1で渡してください。八割以上で付与が生じます (労働基準法第39条第1項)。'
+          : undefined);
+
+  const decision = judgeAnnualLeave({
+    hired_on: hired, as_of: asOf!,
+    attendance_rate: rate.value, weekly_days: weeklyDays.value,
+    weekly_hours: weeklyHours.value, annual_days: annualDays.value,
+    days_taken: taken.value,
+  });
+
+  return c.json({
+    input: {
+      hired_on: hiredRaw,
+      as_of: (asOf ?? new Date()).toISOString().slice(0, 10),
+      ...(rate.value !== null ? { attendance_rate: rate.value } : {}),
+      ...(weeklyDays.value !== null ? { weekly_days: weeklyDays.value } : {}),
+      ...(weeklyHours.value !== null ? { weekly_hours: weeklyHours.value } : {}),
+      ...(annualDays.value !== null ? { annual_days: annualDays.value } : {}),
+      ...(taken.value !== null ? { days_taken: taken.value } : {}),
+    },
+    ...decision,
+    reference: {
+      full_grant: FULL_GRANT,
+      full_grant_service: ['6か月', '1年6か月', '2年6か月', '3年6か月', '4年6か月', '5年6か月', '6年6か月以上'],
+      proportional_table: PROPORTIONAL_TABLE,
+      attendance_threshold: ATTENDANCE_THRESHOLD,
+    },
+    notes: {
+      twenty:
+        '20日という上限は条文に書かれていません。第39条第1項の十労働日に、第2項の表が定める' +
+        '六年以上の加算十労働日を足した結果です。',
+      attendance:
+        '出勤率の算定では、業務上の負傷による休業、産前産後休業、育児介護休業、および年次有給休暇を' +
+        '取得した日は出勤したものとみなします。この判断は事業所ごとの事実によるため、' +
+        'attendance_rate として算定済みの率を渡してください。',
+      proportional:
+        '比例付与は週の所定労働時間が30時間未満であることが前提です。30時間以上なら、' +
+        '週の所定日数が少なくても通常付与になります。',
+      five_day_duty:
+        '年5日の時季指定義務は10労働日以上付与された労働者に生じ、付与日から1年以内が期限です。' +
+        '労働者の請求や計画的付与で取得した日数は差し引きます。',
+    },
+    attribution: ANNUAL_LEAVE_ATTRIBUTION,
+  });
+});
+
 app.get('/v1/worker-type', (c) => {
   const unknownQ = rejectUnknownQuery(c, [
     'weekly_hours', 'normal_weekly_hours', 'monthly_days', 'normal_monthly_days',

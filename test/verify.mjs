@@ -2925,6 +2925,107 @@ for (const [p, want, label] of [
   ok(/Did you mean/.test(typo.hint ?? ''),
      'a near miss suggests the parameter that was meant', typo.hint);
 }
+// ---- 53. 年次有給休暇 (F-07) ----
+// バー: 労働基準法第39条、同法施行規則第24条の3、同法第115条。e-Gov から取得して
+// 確認した文言と数値 —
+//   39条1項: 「六箇月」「全労働日」「八割」「十労働日」
+//   39条2項の表: 加算日数 一/二/四/六/八/十 労働日 (継続勤務 1〜6年以上)
+//   39条3項: 「厚生労働省令で定める日数」
+//   39条7項: 「五日」
+//   施行規則24条の3: 「三十時間」「四日」「二百十六日」、別表
+//   115条: 「二年」
+// 20日という上限は条文に無い。10労働日 + 六年以上の加算十労働日 の結果である。
+{
+  const al = (q) => get(`/v1/annual-leave?${q}`);
+  const H = 'hired_on=2020-04-01&attendance_rate=0.9';
+
+  // 六箇月に達するまでは付与が無い。
+  const before = (await al(`${H}&as_of=2020-09-30`)).body;
+  ok(before.grants.length === 0 && before.current === null,
+     'nothing is granted before six months of service', `${before.grants.length}`);
+
+  // 条文の階段。10 → 11 → 12 → 14 → 16 → 18 → 20 で頭打ち。
+  const want = [
+    ['2020-10-01', 10, '6か月'], ['2021-10-01', 11, '1年6か月'], ['2022-10-01', 12, '2年6か月'],
+    ['2023-10-01', 14, '3年6か月'], ['2024-10-01', 16, '4年6か月'], ['2025-10-01', 18, '5年6か月'],
+    ['2026-10-01', 20, '6年6か月'], ['2027-10-01', 20, '7年6か月'],
+  ];
+  for (const [asOf, days, service] of want) {
+    const r = (await al(`${H}&as_of=${asOf}`)).body;
+    ok(r.current?.days === days && r.current?.service === service,
+       `${service} grants ${days} working days`, `${r.current?.days} / ${r.current?.service}`);
+  }
+
+  // 20は条文に書かれた数字ではない。10 + 六年以上の加算10。
+  const top = (await al(`${H}&as_of=2026-10-01`)).body;
+  ok(top.reference.full_grant.join(',') === '10,11,12,14,16,18,20',
+     'the whole ladder comes out of the article table', top.reference.full_grant.join(','));
+  ok(/20日という上限は条文に書かれていません/.test(JSON.stringify(top.notes)),
+     'and the response says 20 is a sum, not a figure the article states');
+
+  // 比例付与。週3日は 5,6,6,8,9,10,11。
+  const P = `${H}&weekly_days=3&weekly_hours=20`;
+  for (const [asOf, days] of [['2020-10-01', 5], ['2023-10-01', 8], ['2026-10-01', 11]]) {
+    const r = (await al(`${P}&as_of=${asOf}`)).body;
+    ok(r.proportional?.applies === true && r.current?.days === days,
+       `a three-day week gets ${days} days at that point`,
+       `${r.proportional?.applies} / ${r.current?.days}`);
+  }
+
+  // 週30時間以上なら、日数が少なくても通常付与になる。ここを取り違えると過少になる。
+  const thirty = (await al(`${H}&as_of=2020-10-01&weekly_days=3&weekly_hours=30`)).body;
+  ok(thirty.proportional?.applies === false && thirty.current?.days === 10,
+     'thirty hours a week takes the ordinary grant even on three days',
+     `${thirty.proportional?.applies} / ${thirty.current?.days}`);
+
+  // 出勤率が八割に満たない年は付与が生じない。
+  const low = (await al('hired_on=2020-04-01&as_of=2021-10-01&attendance_rate=0.79')).body;
+  ok(low.attendance?.met === false && low.current?.days === 0,
+     'under eighty per cent attendance nothing is granted',
+     `${low.attendance?.met} / ${low.current?.days}`);
+  const exact = (await al('hired_on=2020-04-01&as_of=2021-10-01&attendance_rate=0.8')).body;
+  ok(exact.attendance?.met === true && exact.current?.days === 11,
+     'exactly eighty per cent clears it — the article says 八割以上',
+     `${exact.attendance?.met} / ${exact.current?.days}`);
+
+  // 出勤率を渡さなければ判定しない。満たさない年があれば結論は変わる。
+  const noRate = (await al('hired_on=2020-04-01&as_of=2021-10-01')).body;
+  ok(noRate.attendance?.met === null && /八割要件は判定していません/.test(noRate.attendance?.note ?? ''),
+     'without an attendance rate the eighty per cent test is reported as not judged',
+     JSON.stringify(noRate.attendance));
+
+  // 年5日の時季指定義務は10労働日以上付与された人に生じる。
+  const duty = (await al(`${H}&as_of=2026-10-01&days_taken=2`)).body;
+  ok(duty.five_day_duty?.applies === true && duty.five_day_duty?.remaining === 3,
+     'twenty days granted with two taken leaves three to be directed',
+     JSON.stringify(duty.five_day_duty));
+  ok(duty.five_day_duty?.by === '2027-10-01',
+     'and the deadline is one year from the grant', duty.five_day_duty?.by);
+
+  const noDuty = (await al(`${H}&as_of=2020-10-01&weekly_days=4&weekly_hours=20&days_taken=0`)).body;
+  ok(noDuty.current?.days === 7 && noDuty.five_day_duty?.applies === false,
+     'seven days granted is under the ten-day trigger, so no duty arises',
+     `${noDuty.current?.days} / ${noDuty.five_day_duty?.applies}`);
+
+  // 時効は2年。繰越しは1年分まで。
+  ok(top.current?.expires_on === '2028-10-01',
+     'the grant lapses two years on, per 労基法115条', top.current?.expires_on);
+
+  // 根拠が条文で示されること。
+  ok(/労働基準法第39条第1項/.test(top.attendance?.basis ?? ''), 'the attendance test cites its provision');
+  ok(/施行規則第24条の3/.test(JSON.stringify((await al(`${P}&as_of=2020-10-01`)).body.proportional)),
+     'and the proportional table cites the regulation');
+
+  // 入力の検査。
+  ok((await al('')).status === 400, 'hired_on is required');
+  ok((await al('hired_on=nonsense')).status === 400, 'a malformed date is refused');
+  ok((await al('hired_on=2020-04-01&attendance_rate=1.5')).status === 400,
+     'an attendance rate above 1 is refused');
+  ok((await al('hired_on=2020-04-01&as_of=2019-01-01')).status === 400,
+     'an as_of before hiring is refused');
+  ok((await al('hired_on=2020-04-01&bogus=1')).status === 400, 'an unknown parameter is refused');
+}
+
 
 
 
