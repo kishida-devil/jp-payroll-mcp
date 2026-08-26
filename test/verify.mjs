@@ -2712,6 +2712,125 @@ for (const [p, want, label] of [
      'a normal_weekly_hours of zero is refused — it would divide by nothing');
   ok((await wt('weekly_hours=25&bogus=1')).status === 400, 'an unknown parameter is refused');
 }
+// ---- 51. 算定基礎届の提出対象かどうかを判定すること (F-17) ----
+// バー: 健康保険法第41条。条文に次の文言がある(e-Gov 211AC0000000070 より確認)。
+//   「六月一日から七月一日までの間に被保険者の資格を取得した者」
+//   「七月から九月までのいずれかの月から標準報酬月額を改定され」
+//   「改定されるべき被保険者」
+// さらに本文は「毎年七月一日現に使用される事業所において」と基準日を置く。
+// つまり4つの対象外は条文から導ける。文章で列挙するだけでは、200人分を選り分ける
+// 6月の作業は終わらない。
+{
+  const reg = (q) => get(`/v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30&${q}`);
+
+  // 条文は「決定する」を原則とし除外を例外に置くので、除外に当たらなければ提出対象。
+  // 何を確かめた上での結論かは checked に出す。随時改定が無い人には revision_month に
+  // 入れる値がそもそも無いので、渡っていないことを理由に判定不能にはしない。
+  const plain = (await reg('year=2026')).body;
+  ok(plain.submission?.required === true,
+     'with no exclusion supplied the employee is filed, as the article makes filing the rule',
+     JSON.stringify(plain.submission));
+  ok(Array.isArray(plain.submission?.checked) && plain.submission.checked.length === 3,
+     'and the response says which three exclusions it evaluated',
+     JSON.stringify(plain.submission?.checked));
+  ok(plain.submission.checked.every((t) => typeof t === 'string' && t.length > 0),
+     'each one stated rather than left implicit');
+
+  // 6月1日から7月1日までに資格取得した人は対象外。
+  const midJune = (await reg('year=2026&acquired_on=2026-06-15')).body;
+  ok(midJune.submission?.required === false,
+     'someone who became insured on 15 June is not filed',
+     JSON.stringify(midJune.submission));
+  ok(/六月一日から七月一日までの間に被保険者の資格を取得した者/.test(midJune.submission?.basis ?? ''),
+     'and the article wording is quoted', midJune.submission?.basis);
+
+  // 5月31日取得は対象。境界を1日ずらすと結論が変わる。
+  const may31 = (await reg('year=2026&acquired_on=2026-05-31')).body;
+  ok(may31.submission?.required === true,
+     'acquiring on 31 May is inside the ordinary determination',
+     JSON.stringify(may31.submission));
+  // 7月1日ちょうどは条文の「まで」に含まれる。
+  const jul1 = (await reg('year=2026&acquired_on=2026-07-01')).body;
+  ok(jul1.submission?.required === false,
+     '1 July itself falls inside the excluded window the article names',
+     JSON.stringify(jul1.submission));
+
+  // 6月30日以前に退職した人は7月1日に在籍しないので対象外。
+  const leftJune = (await reg('year=2026&left_on=2026-06-30')).body;
+  ok(leftJune.submission?.required === false,
+     'someone who left on 30 June is not employed on the 1 July reference date',
+     JSON.stringify(leftJune.submission));
+  // 6月30日退職は喪失日が7月1日。7月1日「現に使用される」には当たらない。
+  const leftJul1 = (await reg('year=2026&left_on=2026-07-01')).body;
+  ok(leftJul1.submission?.required === true,
+     'leaving on 1 July means still employed that day, so the filing stands',
+     JSON.stringify(leftJul1.submission));
+
+  // 7月・8月・9月に随時改定がある人は対象外。
+  for (const m of [7, 8, 9]) {
+    const r = (await reg(`year=2026&revision_month=${m}`)).body;
+    ok(r.submission?.required === false,
+       `a 随時改定 from month ${m} removes the filing`, JSON.stringify(r.submission));
+    ok(/七月から九月までのいずれかの月から標準報酬月額を改定され/.test(r.submission?.basis ?? ''),
+       'quoting the article rather than paraphrasing it', r.submission?.basis);
+  }
+  const june = (await reg('year=2026&revision_month=6')).body;
+  ok(june.submission?.required === true,
+     'a revision in June is outside the excluded months', JSON.stringify(june.submission));
+
+  // 判定そのものは従来どおり返る。対象外でも等級は出す — 出さないと確認できない。
+  ok(midJune.schemes?.health?.grade === plain.schemes?.health?.grade,
+     'an excluded employee is still graded, so the exclusion can be checked',
+     `${midJune.schemes?.health?.grade} vs ${plain.schemes?.health?.grade}`);
+
+  // バッチでも同じ。6月の作業は誰を出すかを選り分けること。
+  const post = async (body) => {
+    const r = await fetch(`${BASE}/v1/standard-remuneration/regular/batch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+  const m = (v, d = 30) => ({ remuneration: v, payment_basis_days: d });
+  const run = await post({
+    defaults: { year: 2026 },
+    employees: [
+      { id: 'file', months: [m(300000), m(300000), m(300000)] },
+      { id: 'newjoiner', months: [m(300000), m(300000), m(300000)], acquired_on: '2026-06-15' },
+      { id: 'leaver', months: [m(300000), m(300000), m(300000)], left_on: '2026-06-30' },
+      { id: 'revised', months: [m(300000), m(300000), m(300000)], revision_month: 8 },
+    ],
+  });
+  const by = Object.fromEntries((run.body.results ?? []).map((r) => [r.id, r]));
+  ok(by.file?.submission?.required === true, 'the ordinary employee is filed');
+  ok(by.newjoiner?.submission?.required === false
+       && by.leaver?.submission?.required === false
+       && by.revised?.submission?.required === false,
+     'and all three excluded cases are marked not to file',
+     JSON.stringify([by.newjoiner?.submission?.required, by.leaver?.submission?.required,
+                     by.revised?.submission?.required]));
+  ok(run.body.summary?.filing_undetermined === 0,
+     'no row is left undetermined once filing is the default',
+     JSON.stringify(run.body.summary));
+  ok(run.body.summary?.to_file === 1 && run.body.summary?.not_required === 3,
+     'the run counts how many forms actually have to be filed',
+     JSON.stringify(run.body.summary));
+
+  // 未知パラメータを黙って捨てないこと。acquired_on を足す以上、綴り間違いは致命的。
+  ok((await reg('year=2026&acquire_on=2026-06-15')).status === 400,
+     'a misspelt acquired_on is refused rather than ignored');
+  ok((await reg('year=2026&joined_on=2026-06-15')).status === 400,
+     'and so is a plausible-sounding name this endpoint does not take');
+  // 7〜9以外の月も受け取る。拒否すると「6月に改定があったが、まだ出すのか」に
+  // 答えられなくなり、判定が null に落ちてしまう。
+  const oct = (await reg('year=2026&revision_month=10')).body;
+  ok(oct.submission?.required === true,
+     'a revision in October does not displace the determination, and says so',
+     JSON.stringify(oct.submission));
+  ok((await reg('year=2026&revision_month=13')).status === 400,
+     'but a month number outside 1-12 is refused');
+}
+
 
 
 

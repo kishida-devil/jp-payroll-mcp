@@ -301,6 +301,84 @@ export function judgeRegularDecision(args: {
   };
 }
 
+/**
+ * 算定基礎届を出すべき人かどうか。
+ *
+ * 健康保険法第41条は「毎年七月一日現に使用される事業所において」を基準日に置き、
+ * 「六月一日から七月一日までの間に被保険者の資格を取得した者」と「七月から九月までの
+ * いずれかの月から標準報酬月額を改定され、又は改定されるべき被保険者」を除いている。
+ * 4つの対象外はいずれも条文から導けるもので、文章で列挙するだけでは6月の作業
+ * ——200人を選り分けて必要な分だけ出す——は終わらない。
+ *
+ * 対象外でも等級は返す。出さないと、対象外という判定そのものを確かめられなくなる。
+ */
+export type SubmissionInput = {
+  year: number;
+  acquired_on?: string | null;
+  left_on?: string | null;
+  revision_month?: number | null;
+};
+
+export function judgeSubmission(input: SubmissionInput) {
+  const y = input.year;
+
+  // 七月から九月までのいずれかの月から改定される人は、定時決定の対象から外れる。
+  if (input.revision_month != null) {
+    if (input.revision_month >= 7 && input.revision_month <= 9)
+      return {
+        required: false,
+        reason: `${input.revision_month}月から随時改定により標準報酬月額が改定されるため、定時決定の対象外です。`,
+        basis: '健康保険法第41条「七月から九月までのいずれかの月から標準報酬月額を改定され、又は改定されるべき被保険者」',
+      };
+  }
+
+  // 六月一日から七月一日までの間に資格を取得した者。資格取得時決定が翌年8月まで有効。
+  if (input.acquired_on) {
+    const from = `${y}-06-01`;
+    const to = `${y}-07-01`;
+    if (input.acquired_on >= from && input.acquired_on <= to)
+      return {
+        required: false,
+        reason: `${input.acquired_on} に資格を取得しているため、資格取得時決定が翌年8月まで有効で、定時決定の対象外です。`,
+        basis: '健康保険法第41条「六月一日から七月一日までの間に被保険者の資格を取得した者」',
+      };
+  }
+
+  // 基準日は七月一日。その日に使用されていない者は対象にならない。
+  // 退職日の翌日が資格喪失日なので、6月30日退職は7月1日に在籍しない。
+  if (input.left_on) {
+    if (input.left_on < `${y}-07-01`)
+      return {
+        required: false,
+        reason: `${input.left_on} に退職しており、基準日である${y}年7月1日に使用されていないため対象外です。`,
+        basis: '健康保険法第41条「毎年七月一日現に使用される事業所において」',
+      };
+  }
+
+  // 除外に当たらなければ提出対象。条文は「決定する」を原則とし、除外を例外として
+  // 置いている。渡されなかった事実を「除外なし」と扱うのはそのためで、そもそも
+  // 随時改定が無い人には revision_month に入れる値が存在しない。何を確かめた上での
+  // 結論かは checked に出す。
+  const checked = [
+    input.acquired_on
+      ? `資格取得日 ${input.acquired_on} は6月1日〜7月1日の範囲外`
+      : '資格取得日は渡されていないため、6月1日〜7月1日の取得ではないものとして扱った',
+    input.left_on
+      ? `退職日 ${input.left_on} は基準日以降`
+      : '退職日は渡されていないため、基準日に在籍しているものとして扱った',
+    input.revision_month
+      ? `随時改定は${input.revision_month}月で、7〜9月ではない`
+      : '7〜9月からの随時改定は予定されていないものとして扱った',
+  ];
+
+  return {
+    required: true,
+    reason: `${y}年7月1日に使用されており、除外事由に当たらないため提出対象です。`,
+    basis: '健康保険法第41条',
+    checked,
+  };
+}
+
 /** 定時決定の提出対象外 (日本年金機構「定時決定(算定基礎届)」). */
 export const REGULAR_DECISION_EXCLUSIONS = [
   '6月1日以降に資格取得した方 (資格取得時決定が翌年8月まで有効なため)',

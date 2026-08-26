@@ -432,6 +432,14 @@ server.registerTool('decide_regular_remuneration', {
     months: monthsArg.describe(
       'April, May and June as "remuneration:payment_basis_days" — e.g. "350000:30,352000:31,349000:30".'),
     worker_type: workerType,
+    year: z.number().optional().describe(
+      'The determination year; its 1 July is the reference date. Defaults to the current year.'),
+    acquired_on: z.string().optional().describe(
+      'Date cover began, YYYY-MM-DD. Someone insured between 1 June and 1 July is outside the annual determination (健康保険法第41条).'),
+    left_on: z.string().optional().describe(
+      'Last day worked, YYYY-MM-DD. Gone before 1 July means not employed on the reference date.'),
+    revision_month: z.number().optional().describe(
+      'Month a 随時改定 takes effect. July, August or September displaces the annual determination; any other month does not.'),
     previous_remuneration: z.number().optional().describe(
       'The prior 報酬月額, so the response can name the grade that carries over if no month qualifies.'),
     acquired_month: z.number().optional().describe(
@@ -476,6 +484,12 @@ server.registerTool('decide_regular_remuneration_batch', {
     'which is what decides how much filing there is. Pass previous_remuneration to get that ' +
     'comparison; without it the answer is null rather than false, because "no grade to compare" ' +
     'and "did not move" are different facts.\n\n' +
+    'Pass acquired_on, left_on or revision_month and each row also says whether that employee is ' +
+    'filed at all. 健康保険法第41条 leaves out anyone insured between 1 June and 1 July, anyone gone ' +
+    'before the 1 July reference date, and anyone revised from July to September. The run totals ' +
+    'to_file and not_required, which is the number of forms rather than the number of employees.
+
+' +
     'A row that cannot be decided is returned in errors with its index and id, and the rest of ' +
     'the run still completes — do not discard a whole run over one bad row.',
   inputSchema: {
@@ -488,8 +502,15 @@ server.registerTool('decide_regular_remuneration_batch', {
       worker_type: z.enum(['general', 'part_time_short_hours', 'short_time_insured']).optional(),
       previous_remuneration: z.number().optional().describe(
         'The 標準報酬月額 in force before this determination, so the result can say whether it moved.'),
+      acquired_on: z.string().optional().describe(
+        'Date cover began, YYYY-MM-DD. Between 1 June and 1 July is outside the determination.'),
+      left_on: z.string().optional().describe(
+        'Last day worked, YYYY-MM-DD. Gone before 1 July means not filed.'),
+      revision_month: z.number().optional().describe(
+        'Month a 随時改定 takes effect. July to September displaces the determination.'),
     })).describe('One entry per employee.'),
     defaults: z.object({
+      year: z.number().optional().describe('The determination year. Defaults to the current year.'),
       worker_type: z.enum(['general', 'part_time_short_hours', 'short_time_insured']).optional(),
       previous_remuneration: z.number().optional(),
     }).optional().describe('Applied to any row that omits the field.'),

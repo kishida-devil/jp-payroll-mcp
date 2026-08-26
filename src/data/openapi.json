@@ -1602,6 +1602,46 @@
     },
     "parameters": [
      {
+      "name": "year",
+      "in": "query",
+      "required": false,
+      "description": "The determination year. Its 1 July is the reference date.",
+      "schema": {
+       "type": "integer",
+       "example": 2026
+      }
+     },
+     {
+      "name": "acquired_on",
+      "in": "query",
+      "required": false,
+      "description": "Date cover began. 1 June to 1 July is outside the annual determination.",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-15"
+      }
+     },
+     {
+      "name": "left_on",
+      "in": "query",
+      "required": false,
+      "description": "Last day worked. Someone gone before 1 July is not filed.",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-30"
+      }
+     },
+     {
+      "name": "revision_month",
+      "in": "query",
+      "required": false,
+      "description": "Month a 随時改定 takes effect. July to September displaces the determination.",
+      "schema": {
+       "type": "integer",
+       "example": 8
+      }
+     },
+     {
       "name": "months",
       "in": "query",
       "required": true,

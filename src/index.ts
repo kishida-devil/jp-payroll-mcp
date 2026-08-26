@@ -41,6 +41,7 @@ import {
   FIXED_PAY_GUIDANCE, PAYMENT_BASIS_DAYS_GUIDANCE, REGULAR_DECISION_EXCLUSIONS,
   REVISION_ATTRIBUTION, acquisitionDecisionPeriod, annualAverageRegular,
   annualAverageRevision, judgeLeaveEndRevision, judgeRegularDecision, judgeRevision,
+  judgeSubmission,
   realGrade,
   type AnnualMonth, type PayMonth, type WorkerType,
 } from './remuneration-revision';
@@ -1324,7 +1325,54 @@ app.get('/v1/standard-remuneration/revision', (c) => {
   });
 });
 
+/**
+ * 算定基礎届の提出対象を判定するための入力。
+ * 年を渡さなければ今年。基準日が7月1日なので、どの年の定時決定かで結論が変わる。
+ */
+function parseSubmissionQuery(c: any): { value: any } | { err: any } {
+  const yearRaw = c.req.query('year');
+  const year = yearRaw === undefined ? new Date().getFullYear() : Number(yearRaw);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100)
+    return { err: bad(c, '"year" must be a four-digit year.',
+      'The determination year. Its 1 July is the reference date the article fixes.') };
+
+  const iso = (key: string) => {
+    const raw = c.req.query(key);
+    if (raw === undefined) return { ok: true as const, value: null };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || !parseDate(raw))
+      return { ok: false as const, value: null };
+    return { ok: true as const, value: raw };
+  };
+
+  const acquired = iso('acquired_on');
+  if (!acquired.ok)
+    return { err: bad(c, '"acquired_on" must be a valid ISO date (YYYY-MM-DD).',
+      '資格取得日。6月1日から7月1日までの取得は定時決定の対象外です (健康保険法第41条)。') };
+  const left = iso('left_on');
+  if (!left.ok)
+    return { err: bad(c, '"left_on" must be a valid ISO date (YYYY-MM-DD).',
+      '退職日。基準日である7月1日に使用されていなければ対象外です。') };
+
+  // 1〜12を受け取り、7〜9だけを除外事由にする。7〜9以外を拒否すると、6月に改定が
+  // あった人について「まだ出す」と答えられなくなり、判定が null に落ちてしまう。
+  const revRaw = c.req.query('revision_month');
+  const revision = revRaw === undefined ? null : Number(revRaw);
+  if (revRaw !== undefined && (!Number.isInteger(revision!) || revision! < 1 || revision! > 12))
+    return { err: bad(c, '"revision_month" must be a month number from 1 to 12.',
+      '定時決定を外すのは「七月から九月までのいずれかの月」からの随時改定だけです (健康保険法第41条)。' +
+      'それ以外の月の改定は定時決定を妨げないので、渡せば「提出対象」と返します。') };
+
+  return { value: { year, acquired_on: acquired.value, left_on: left.value, revision_month: revision } };
+}
+
 app.get('/v1/standard-remuneration/regular', (c) => {
+  // 未知パラメータを黙って捨てると、acquired_on の綴り間違いが「対象」に化ける。
+  const unknownQ = rejectUnknownQuery(c, [
+    'months', 'worker_type', 'previous_remuneration', 'acquired_month',
+    'year', 'acquired_on', 'left_on', 'revision_month',
+  ] as const);
+  if (unknownQ) return unknownQ;
+
   const months = parseMonths(c.req.query('months'));
   if (typeof months === 'string')
     return bad(c, months, 'Format: months=350000:30,352000:31,349000:30 for April, May and June.');
@@ -1343,12 +1391,16 @@ app.get('/v1/standard-remuneration/regular', (c) => {
   if (acquired !== undefined && (!Number.isInteger(acquired) || acquired < 1 || acquired > 12))
     return bad(c, '"acquired_month" must be a month number from 1 to 12.');
 
+  const sub = parseSubmissionQuery(c);
+  if ('err' in sub) return sub.err;
+
   return c.json({
     ...judgeRegularDecision({
       months: months as [PayMonth, PayMonth, PayMonth],
       worker_type: workerType,
       previous_remuneration: previous,
     }),
+    submission: judgeSubmission(sub.value),
     not_required_for: REGULAR_DECISION_EXCLUSIONS,
     ...(acquired !== undefined
       ? { acquisition_decision: acquisitionDecisionPeriod(acquired) }
@@ -1443,6 +1495,31 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
     if (previous !== undefined && (!Number.isFinite(previous) || previous < 0))
       return at('invalid_request', 'previous_remuneration must be a non-negative number.');
 
+    // 6月の作業は「誰を出すか」を選り分けること。等級だけ出しても提出物は決まらない。
+    const yearRaw = row.year ?? (defaults as any).year;
+    const year = yearRaw === undefined || yearRaw === null ? new Date().getFullYear() : Number(yearRaw);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100)
+      return at('invalid_request', 'year must be a four-digit year.');
+
+    const isoOf = (key: string) => {
+      const v = (row as any)[key] ?? (defaults as any)[key];
+      if (v === undefined || v === null) return { ok: true as const, value: null };
+      const str = String(v);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(str) || !parseDate(str)) return { ok: false as const, value: null };
+      return { ok: true as const, value: str };
+    };
+    const acquired = isoOf('acquired_on');
+    if (!acquired.ok) return at('invalid_request', 'acquired_on must be a valid ISO date (YYYY-MM-DD).');
+    const leftOn = isoOf('left_on');
+    if (!leftOn.ok) return at('invalid_request', 'left_on must be a valid ISO date (YYYY-MM-DD).');
+
+    const revRaw = (row as any).revision_month ?? (defaults as any).revision_month;
+    const revision = revRaw === undefined || revRaw === null ? null : Number(revRaw);
+    if (revRaw !== undefined && revRaw !== null
+        && (!Number.isInteger(revision!) || revision! < 1 || revision! > 12))
+      return at('invalid_request',
+        'revision_month must be a month number from 1 to 12. Only a revision from July to September displaces the determination (健康保険法第41条).');
+
     let decision;
     try {
       decision = judgeRegularDecision({
@@ -1462,7 +1539,11 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
       : realGrade('health', previous) !== decision.schemes.health.grade
         || realGrade('pension', previous) !== decision.schemes.pension.grade;
 
-    results.push({ index, ...(id !== undefined ? { id } : {}), ...decision, changed });
+    const submission = judgeSubmission({
+      year, acquired_on: acquired.value, left_on: leftOn.value, revision_month: revision,
+    });
+
+    results.push({ index, ...(id !== undefined ? { id } : {}), ...decision, changed, submission });
   });
 
   const decidedRows = results.filter((r) => r.changed !== null);
@@ -1482,6 +1563,10 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
       unchanged: decidedRows.filter((r) => r.changed === false).length,
       undetermined: results.length - decidedRows.length,
       insurer_determination: results.filter((r) => r.insurer_determination).length,
+      // 6月に提出する枚数。等級が動いた人数と提出枚数は別で、後者が作業量を決める。
+      to_file: results.filter((r) => r.submission?.required === true).length,
+      not_required: results.filter((r) => r.submission?.required === false).length,
+      filing_undetermined: results.filter((r) => r.submission?.required === null).length,
     },
     results,
     errors,
@@ -1492,7 +1577,10 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
         'nothing to compare, and reporting false there would read as "did not move".',
       months: 'The three entries are April, May and June in that order. A month under 17 payment-basis ' +
         'days is left out of the average (健康保険法第41条).',
-      submission: 'Which employees are exempt from filing is listed by GET /v1/standard-remuneration/regular.',
+      submission:
+        'submission.required judges 健康保険法第41条 from acquired_on, left_on and revision_month. ' +
+        'Without any of the three it is null — not knowing and not having to file are different answers. ' +
+        'An excluded employee is still graded, so the exclusion can be checked against a figure.',
     },
     attribution: REVISION_ATTRIBUTION,
   });
