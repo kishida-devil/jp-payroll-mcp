@@ -11,6 +11,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const client = new Client({ name: 'smoke', version: '0' });
@@ -361,6 +362,109 @@ for (const [name, args, check] of [
   ok(r.isError, 'a malformed months argument is rejected');
   ok(/3 entries|hint/i.test(r.text), 'and the reason reaches the caller', r.text.slice(0, 160));
 }
+{
+  // 通勤手当: 非課税は限度額まで、社会保険は全額。この2つが分かれることが肝。
+  const car = await callTool('commuting_allowance_exemption',
+    { amount: 12000, distance_km: 12, parking: 3000 });
+  ok(!car.isError, 'commuting_allowance_exemption answers', car.text.slice(0, 160));
+  ok(car.json?.non_taxable === 10300,
+     'a 12km commute with 3,000 parking exempts 7,300 + 3,000',
+     `${car.json?.non_taxable}`);
+  ok(car.json?.social_insurance?.remuneration === 12000,
+     'while social insurance still counts the whole 12,000 as remuneration',
+     `${car.json?.social_insurance?.remuneration}`);
+
+  const table = await callTool('commuting_allowance_exemption', {});
+  ok(table.json?.reference?.parking?.cap === 5000,
+     'the parking cap is 5,000 — 五千円, not 五万円',
+     `${table.json?.reference?.parking?.cap}`);
+  ok(table.json?.reference?.vehicle?.bands?.some((b) => b.limit === 7300),
+     'and the table carries the post-revision 7,300 band, not the old 7,100');
+  ok(table.json?.revisions?.length === 2,
+     'both revisions of the last twelve months are reported',
+     `${table.json?.revisions?.length}`);
+
+  const bad = await callTool('commuting_allowance_exemption', { amount: 10000, parking: 3000 });
+  ok(bad.isError || bad.json?.error,
+     'parking without a distance is refused rather than silently ignored',
+     bad.text.slice(0, 160));
+}
+{
+  // 深夜は加算。時間外10h(うち深夜5h)。時給1,875 = 300,000 / 160。
+  // 基発150号は区分ごとに端数処理するので 1875*10*1.25 と 1875*5*0.25 を別々に丸める。
+  const r = await callTool('calculate_overtime_pay',
+    { base_monthly_pay: 300000, monthly_scheduled_hours: 160, overtime_hours: 10, night_hours: 5 });
+  ok(!r.isError, 'calculate_overtime_pay answers', r.text.slice(0, 160));
+  ok(r.json?.hourly_rate?.value === 1875, 'the hourly rate is 300,000 / 160 = 1,875',
+     `${r.json?.hourly_rate?.value}`);
+  ok(r.json?.lines?.overtime?.amount === Math.floor(1875 * 10 * 1.25 + 0.5),
+     'overtime at 1.25 is rounded on its own', `${r.json?.lines?.overtime?.amount}`);
+  ok(r.json?.lines?.night_premium?.amount === Math.floor(1875 * 5 * 0.25 + 0.5),
+     'and the night premium is a separate 0.25 on top, not a whole extra hour',
+     `${r.json?.lines?.night_premium?.amount}`);
+
+  // 60時間超は50%。70時間なら60時間分が1.25、10時間分が1.5。
+  const long = await callTool('calculate_overtime_pay',
+    { base_monthly_pay: 300000, monthly_scheduled_hours: 160, overtime_hours: 70 });
+  ok(long.json?.lines?.overtime?.hours === 60 && long.json?.lines?.overtime_over_60h?.hours === 10,
+     '70 hours splits into 60 at 1.25 and 10 at 1.5',
+     `${long.json?.lines?.overtime?.hours} / ${long.json?.lines?.overtime_over_60h?.hours}`);
+
+  // 法定休日に時間外割増は付かない。1.35であって1.6ではない。
+  const hol = await callTool('calculate_overtime_pay',
+    { base_monthly_pay: 300000, monthly_scheduled_hours: 160, holiday_hours: 8 });
+  ok(hol.json?.lines?.holiday?.rate === 1.35,
+     'holiday work is 1.35, with no overtime premium added',
+     `${hol.json?.lines?.holiday?.rate}`);
+
+  ok(r.json?.excludable_allowances?.length === 7,
+     'and the seven excludable allowances are returned with the answer',
+     `${r.json?.excludable_allowances?.length}`);
+}
+{
+  // MCP は課金への入口なので、API に足した機能が MCP に出ていないと、
+  // 作ったこと自体が導線に届かない。第2反復で割増賃金がまさにそうだった。
+  // API にあって MCP から呼べない経路は、ここに理由を書いた分だけ許す。
+  const NOT_A_TOOL = {
+    '/v1/payroll/batch':
+      'Batch is the paid HTTP path. MCP is one person at a time by nature, and putting ' +
+      'batch here would blur the boundary the free tier is drawn on.',
+    '/v1/enums': 'Build-time reference for developers writing a client, not a question anyone asks.',
+    '/v1/prefectures': 'A list of the 47 prefectures. get_insurance_rates takes the name directly.',
+    '/v1/standard-remuneration/table':
+      'Bulk data. lookup_standard_remuneration answers the question a person actually has.',
+    '/v1/corporate-number/check-digit':
+      'Computing a check digit is for generating test numbers. validate_corporate_number covers the real use.',
+    '/v1/consumption-tax':
+      'Scores nothing on the three conditions in LOOP.md — one number, trivially copied, rarely changes. ' +
+      'Every extra tool makes the others harder to choose between.',
+    '/v1/consumption-tax/history': 'Same as /v1/consumption-tax.',
+  };
+
+  const src = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
+  const reached = new Set(src.match(/'\/v1\/[a-z0-9/-]+'/g)?.map((m) => m.slice(1, -1)) ?? []);
+  // 既定URLは MCP 本体から読む。ここに書き写すと、公開済みパッケージが指す先と
+  // テストが見る先が静かにずれる。
+  const fallback = /\?\?\s*'([^']+)'/.exec(src.slice(src.indexOf('const BASE')))?.[1];
+  ok(typeof fallback === 'string' && fallback.startsWith('https://'),
+     'the MCP server carries a default API URL', String(fallback));
+  const api = (process.env.JP_PAYROLL_API_URL ?? fallback).replace(/\/+$/, '');
+  const spec = await (await fetch(`${api}/openapi.json`)).json();
+  const documented = Object.keys(spec.paths ?? {}).filter((p) => p.startsWith('/v1'));
+
+  const missing = documented.filter((p) => !reached.has(p) && !(p in NOT_A_TOOL));
+  ok(missing.length === 0,
+     'every API endpoint either has an MCP tool or a written reason it does not',
+     missing.join(', ') || 'none');
+
+  // 除外理由が実在しない経路を指したまま残らないこと。
+  const stale = Object.keys(NOT_A_TOOL).filter((p) => !documented.includes(p));
+  ok(stale.length === 0, 'and no exclusion points at an endpoint that no longer exists',
+     stale.join(', ') || 'none');
+}
+
+
+
 
 await client.close();
 console.log(`  passed ${pass} / ${pass + fail}`);

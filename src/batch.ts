@@ -1,6 +1,8 @@
 import { empins, resolvePrefecture, type PrefKey } from './lib';
 import { computePayslip, summarise, type Payslip, type PayslipInput } from './payslip';
 import type { Column } from './withholding';
+import { allowanceError, readAllowance, type AllowanceInput } from './allowances';
+import { workersCompType } from './workers-comp';
 
 /**
  * Batch payroll.
@@ -27,9 +29,23 @@ export type BatchRow = {
   dependants?: number;
   income_tax?: boolean;
   resident_tax?: number;
+  /**
+   * 算定基礎届・月額変更届で決まっている標準報酬月額。
+   * 単発の /v1/payroll では渡せるのに batch では渡せず、残業のある月に等級を
+   * 引き直して過大控除になっていた。実際の給与計算は batch で回すので、
+   * 口が無いのは単発より重い。
+   */
+  standard_remuneration?: number | null;
+  employment_type?: string;
+  /** 労災保険の事業の種類の番号。 */
+  workers_comp_type?: string;
+  /** 基本給に足される支給項目。通勤手当はここに入れる。 */
+  allowances?: unknown;
 };
 
-export type BatchDefaults = Omit<BatchRow, 'id' | 'monthly_salary'>;
+export type BatchDefaults = Omit<BatchRow, 'id' | 'monthly_salary' | 'standard_remuneration' | 'allowances'>;
+
+const EMPLOYMENT_TYPES = ['employee', 'director', 'director_employee'] as const;
 
 export type RowError = { index: number; id?: string; code: string; error: string };
 
@@ -88,6 +104,38 @@ export function readRow(
   if (!Number.isFinite(residentTax) || residentTax < 0)
     return fail('invalid_request', 'resident_tax must be a non-negative number.');
 
+  // 標準報酬月額は行ごとにしか意味がないので defaults からは取らない。
+  let smr: number | null = null;
+  if (row.standard_remuneration !== undefined && row.standard_remuneration !== null) {
+    smr = Number(row.standard_remuneration);
+    if (!Number.isFinite(smr) || smr <= 0)
+      return fail('invalid_request',
+        'standard_remuneration must be a positive number — the 標準報酬月額 fixed by 算定基礎届 or 月額変更届.');
+  }
+
+  const empRaw = String(row.employment_type ?? defaults.employment_type ?? 'employee');
+  if (!(EMPLOYMENT_TYPES as readonly string[]).includes(empRaw))
+    return fail('invalid_request',
+      `Unknown employment_type: "${empRaw}". Use employee, director or director_employee.`);
+
+  const wcCandidate = row.workers_comp_type ?? defaults.workers_comp_type;
+  const wcRaw = wcCandidate === undefined || wcCandidate === null ? null : String(wcCandidate);
+  if (wcRaw !== null && !workersCompType(wcRaw))
+    return fail('invalid_request',
+      `Unknown workers_comp_type: "${wcRaw}". Use the 事業の種類の番号 from GET /v1/workers-compensation.`);
+
+  // 支給項目。1行だけ落として残りは走らせるので、行の中で検証する。
+  let allowances: AllowanceInput[] = [];
+  if (row.allowances !== undefined && row.allowances !== null) {
+    if (!Array.isArray(row.allowances))
+      return fail('invalid_request', 'allowances must be an array of pay items.');
+    for (let i = 0; i < row.allowances.length; i++) {
+      const err = allowanceError(row.allowances[i], i);
+      if (err) return fail('invalid_request', err);
+    }
+    allowances = row.allowances.map(readAllowance);
+  }
+
   return {
     ok: true,
     input: {
@@ -99,6 +147,10 @@ export function readRow(
       dependants,
       income_tax: incomeTax,
       resident_tax: residentTax,
+      standard_remuneration: smr,
+      employment_type: empRaw as 'employee' | 'director' | 'director_employee',
+      workers_comp_type: wcRaw,
+      allowances,
     },
   };
 }
@@ -129,8 +181,12 @@ export function runBatch(rows: BatchRow[], defaults: BatchDefaults, detail: Deta
         ...id, index,
         prefecture: parsed.input.prefecture,
         gross: slip.totals.gross,
+        taxable_gross: slip.totals.taxable_gross,
+        non_taxable: slip.totals.non_taxable,
         social_insurance_employee: slip.totals.social_insurance_employee,
         social_insurance_employer: slip.totals.social_insurance_employer,
+        workers_compensation_employer: slip.totals.workers_compensation_employer,
+        employer_cost: slip.totals.employer_cost,
         income_tax: slip.totals.income_tax,
         resident_tax: slip.totals.resident_tax,
         net_pay: slip.totals.net_pay,

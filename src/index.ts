@@ -23,6 +23,10 @@ import {
 import { COMPUTER_ATTRIBUTION, computerMethod } from './withholding-computer';
 import { MAX_BATCH, runBatch, type BatchDefaults, type BatchRow, type Detail } from './batch';
 import { computePayslip } from './payslip';
+import { COMMUTING_SOURCE, ALLOWANCE_KIND_MEANING, VEHICLE_BANDS, TRANSIT_CEILING, PARKING_CAP, commutingExemption } from './allowances';
+import {
+  WORKERS_COMP_ATTRIBUTION, WORKERS_COMP_META, WORKERS_COMP_TYPES, workersCompType,
+} from './workers-comp';
 import { BONUS_ATTRIBUTION, BONUS_EXCEPTIONS, bonusWithholding } from './bonus';
 import { BONUS_INSURANCE_ATTRIBUTION, bonusInsurance } from './bonus-insurance';
 import { OVERTIME_ATTRIBUTION, overtimePay } from './overtime';
@@ -230,6 +234,52 @@ function rejectUnknownQuery(c: any, allowed: readonly string[]) {
 }
 
 /**
+ * 料率が有効な期間。
+ *
+ * 料率は毎年変わる。協会けんぽの保険料額表は3月分から、雇用保険料率と労災保険率は
+ * 年度で切り替わる。ここに載っているのは1組だけなので、範囲外の日付を渡されたら
+ * **現行の率を黙って返してはいけない。**過去の給与を計算し直す人にとって、
+ * 黙って今年の率が返るのは、間違いに気づく手がかりが1つも無いということ。
+ *
+ * 範囲外は422で返し、何年何月分が載っているかを添える。
+ */
+const RATE_WINDOWS = {
+  social_insurance: {
+    from: '2026-03-01', through: '2027-02-28',
+    label: '協会けんぽ 令和8年3月分からの保険料額表',
+    note: '協会けんぽの料率は毎年3月分(4月納付分)から切り替わる。',
+  },
+  employment_insurance: {
+    from: '2026-04-01', through: '2027-03-31',
+    label: '令和8年度の雇用保険料率',
+    note: '雇用保険料率は年度で切り替わる。',
+  },
+  workers_compensation: {
+    from: '2024-04-01', through: '2027-03-31',
+    label: '労災保険率表(令和6年度~、令和8年度も同率)',
+    note: '労災保険率は概ね3年ごとに改定される。',
+  },
+} as const;
+
+type RateSet = keyof typeof RATE_WINDOWS;
+
+/** null when the date is inside the window, or a 422 response when it is not. */
+function outsideRateWindow(c: any, set: RateSet, iso: string | null) {
+  if (!iso) return null;
+  const w = RATE_WINDOWS[set];
+  if (iso >= w.from && iso <= w.through) return null;
+  return c.json({
+    error: `No ${set.replace(/_/g, ' ')} rates are published for ${iso}.`,
+    code: 'out_of_coverage',
+    coverage: { from: w.from, through: w.through, table: w.label },
+    hint: iso < w.from
+      ? `This API carries one rate table at a time — ${w.label}. ${w.note} ` +
+        'Returning the current rates for an earlier date would produce a plausible wrong figure, so it refuses instead.'
+      : `${w.note} The rates for ${iso} are not published yet; they appear here once the source publishes them.`,
+  }, 422);
+}
+
+/**
  * Errors carry a stable `code` alongside the prose. Integrators need to branch on
  * "the caller sent something wrong" versus "the date is outside what we publish",
  * and matching on English sentences breaks the moment the wording improves.
@@ -255,7 +305,7 @@ app.get('/', (c) =>
     name: 'Japan Payroll and Labor Constants API',
     description:
       'Japanese statutory reference data in one API — social and employment insurance rates for all 47 prefectures, the 50-grade standard remuneration table, 24 years of minimum wage history, public holidays with business-day arithmetic, consumption tax since 1989, and corporate/invoice number validation. Extracted programmatically from government open data and verified against the published figures.',
-    version: '2.9.0',
+    version: '2.10.0',
     endpoints: {
       'GET /v1/prefectures': 'All 47 prefectures with JIS codes and Japanese names',
       'GET /v1/insurance-rates?prefecture=Tokyo': 'Health, long-term care, pension and child-support rates',
@@ -285,6 +335,8 @@ app.get('/', (c) =>
       'GET /v1/bonus-insurance?prefecture=Tokyo&bonus=800000&age=40': 'Social insurance on a bonus, with the annual and per-payment caps',
       'GET /v1/bonus-tax?bonus=500000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2': 'Withholding tax on a bonus (賞与の算出率表)',
       'GET /v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=20&night_hours=5': '割増賃金 — overtime 25%, over 60h 50%, statutory holiday 35%, night 25% on top (労基法37条)',
+      'GET /v1/workers-compensation?business_type=98&wage_total=3600000': '労災保険料 — the whole premium falls on the employer, at a rate that runs from 2.5 to 88 per 1,000 by trade',
+      'GET /v1/commuting-allowance?amount=12000&distance_km=12&parking=3000': '通勤手当の非課税限度額 — social insurance counts it in full, income tax only above the ceiling. The table changed twice in twelve months, once retroactively',
       'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': 'Is a 随時改定 (月額変更) due? Judges health and pension separately',
       'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': 'Annual 定時決定 (算定基礎) from April-June pay',
       'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': 'Revision on returning from maternity or childcare leave (one grade is enough)',
@@ -351,11 +403,22 @@ app.get('/v1/prefectures', (c) =>
   }));
 
 app.get('/v1/insurance-rates', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['prefecture', 'pref', 'as_of'] as const);
+  if (unknownQ) return unknownQ;
   const r = needPref(c); if ('err' in r) return r.err;
+
+  const asOfRaw = c.req.query('as_of');
+  if (asOfRaw !== undefined && !parseDate(asOfRaw))
+    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+  const outside = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
+  if (outside) return outside;
+
   const p = insurance.prefectures[r.pref];
   return c.json({
     prefecture: r.pref, prefecture_ja: p.prefecture_ja, code: p.code,
+    ...(asOfRaw ? { as_of: asOfRaw } : {}),
     fiscal_year: insurance.meta.fiscal_year, effective_from: insurance.meta.effective_from,
+    applies: RATE_WINDOWS.social_insurance,
     rates: {
       health_insurance: p.health_insurance_rate,
       long_term_care: p.long_term_care_rate,
@@ -401,14 +464,25 @@ app.get('/v1/standard-remuneration', (c) => {
 });
 
 app.get('/v1/employment-insurance', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['business_type', 'as_of'] as const);
+  if (unknownQ) return unknownQ;
   const t = (c.req.query('business_type') ?? 'general').toLowerCase();
   const bt = (empins.business_types as any)[t];
   if (!bt)
     return bad(c, `Unknown business_type: "${t}"`,
       `One of: ${Object.keys(empins.business_types).join(', ')}`);
+
+  const asOfRaw = c.req.query('as_of');
+  if (asOfRaw !== undefined && !parseDate(asOfRaw))
+    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+  const outside = outsideRateWindow(c, 'employment_insurance', asOfRaw ?? null);
+  if (outside) return outside;
+
   return c.json({
     business_type: t, label_ja: bt.label_ja,
+    ...(asOfRaw ? { as_of: asOfRaw } : {}),
     fiscal_year: empins.meta.fiscal_year, effective_from: empins.meta.effective_from,
+    applies: RATE_WINDOWS.employment_insurance,
     rates: { employee: bt.employee_rate, employer: bt.employer_rate, total: bt.total_rate },
     breakdown: bt.breakdown,
     note: empins.meta.note,
@@ -454,6 +528,7 @@ const PAYROLL_PARAMS = [
   'prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',
   'as_of', 'business_type', 'employment_type', 'column', 'dependants', 'income_tax',
   'resident_tax', 'include',
+  'commuting_allowance', 'commuting_distance_km', 'commuting_fare', 'commuting_parking', 'workers_comp_type',
 ] as const;
 
 app.get('/v1/payroll', (c) => {
@@ -511,6 +586,10 @@ app.get('/v1/payroll', (c) => {
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
     return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+  // as_of は年齢の判定だけでなく**どの料率表を使うか**でもある。載っていない
+  // 時点を渡されて現行の率で答えるのは、間違いに気づく手がかりを消すこと。
+  const outsideRates = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
+  if (outsideRates) return outsideRates;
 
   const pref = insurance.prefectures[r.pref];
   // 標準報酬月額は算定基礎届で決まり、翌年8月まで固定される。渡されなければ
@@ -531,9 +610,58 @@ app.get('/v1/payroll', (c) => {
       'or "director_employee" (兼務役員 — covered when the employee side is genuine). Defaults to employee.');
   const empType = (empRaw ?? 'employee') as 'employee' | 'director' | 'director_employee';
 
+  // 通勤手当。社会保険では報酬に含み、所得税では非課税限度額まで課さない。
+  // 距離を渡せば交通用具の距離区分表、渡さなければ交通機関として月15万円が限度。
+  const commRaw = c.req.query('commuting_allowance');
+  const commuting = commRaw === undefined ? null : Number(commRaw);
+  if (commRaw !== undefined && (!Number.isFinite(commuting!) || commuting! < 0))
+    return bad(c, '"commuting_allowance" must be a non-negative number (yen per month).');
+
+  const kmRaw = c.req.query('commuting_distance_km');
+  const km = kmRaw === undefined ? null : Number(kmRaw);
+  if (kmRaw !== undefined && (!Number.isFinite(km!) || km! < 0))
+    return bad(c, '"commuting_distance_km" must be a non-negative number (one-way kilometres).',
+      'Pass it when the person commutes by car or bicycle; the non-taxable ceiling then comes from the distance table (国税庁 No.2585) instead of the 150,000 yen transit ceiling.');
+
+  const fareRaw = c.req.query('commuting_fare');
+  const fare = fareRaw === undefined ? null : Number(fareRaw);
+  if (fareRaw !== undefined && (!Number.isFinite(fare!) || fare! < 0))
+    return bad(c, '"commuting_fare" must be a non-negative number (yen per month).',
+      'The reasonable fare or toll paid on top of a car or bicycle commute. With commuting_distance_km it makes the combined ceiling: distance band + fare, capped at 150,000.');
+
+  // 駐車場等の利用料は距離区分の額への「加算」なので、距離が無ければ成り立たない。
+  const parkRaw = c.req.query('commuting_parking');
+  const parking = parkRaw === undefined ? null : Number(parkRaw);
+  if (parkRaw !== undefined && (!Number.isFinite(parking!) || parking! < 0))
+    return bad(c, '"commuting_parking" must be a non-negative number (yen per month).',
+      'The parking cost the employee bears for a car or bicycle commute. It is added to the distance band, up to 5,000 a month.');
+
+  if (commRaw === undefined && (kmRaw !== undefined || fareRaw !== undefined || parkRaw !== undefined))
+    return bad(c, 'commuting_distance_km, commuting_fare and commuting_parking only mean something alongside commuting_allowance.',
+      'Pass the allowance you actually pay; the distance, fare and parking decide how much of it is non-taxable.',
+      'missing_parameter');
+
+  if (parkRaw !== undefined && kmRaw === undefined)
+    return bad(c, 'commuting_parking is an addition to the distance band, so it needs commuting_distance_km.',
+      'The parking addition exists only for a commute by car or bicycle. Someone travelling only by train has no distance band for it to be added to.',
+      'missing_parameter');
+
+  // 労災保険は全額事業主負担。事業の種類ごとに率が35倍開くので既定値は置かない。
+  const wcRaw = c.req.query('workers_comp_type');
+  if (wcRaw !== undefined && !workersCompType(wcRaw))
+    return bad(c, `Unknown workers_comp_type: "${wcRaw}"`,
+      'Use the 事業の種類の番号 from GET /v1/workers-compensation, for example 98 for 卸売業・小売業、飲食店又は宿泊業.',
+      'unknown_workers_comp_type');
+
+  const allowances = commuting === null ? [] : [{
+    name: '通勤手当', amount: commuting, kind: 'commuting' as const,
+    distance_km: km, fare, parking,
+  }];
+
   const slip = computePayslip({
     prefecture: r.pref, monthly_salary: salary, age, birth_date: birth, as_of: asOf!,
     business_type: btKey, employment_type: empType, standard_remuneration: smr,
+    allowances, workers_comp_type: wcRaw ?? null,
     column: colRaw as Column, dependants, income_tax: withTax, resident_tax: residentTax,
   });
 
@@ -544,8 +672,15 @@ app.get('/v1/payroll', (c) => {
       ...(birth ? { birth_date: birthRaw, as_of: (asOf ?? new Date()).toISOString().slice(0, 10) } : {}),
       ...(withTax ? { column: colRaw, dependants } : {}),
       ...(residentTax ? { resident_tax: residentTax } : {}),
+      ...(commuting !== null ? {
+        commuting_allowance: commuting,
+        ...(km !== null ? { commuting_distance_km: km } : {}),
+        ...(fare !== null ? { commuting_fare: fare } : {}),
+        ...(parking !== null ? { commuting_parking: parking } : {}),
+      } : {}),
     },
     ...(slip.age_status ? { age_status: slip.age_status } : {}),
+    earnings: slip.earnings,
     coverage: slip.coverage,
     standard_remuneration: slip.standard_remuneration,
     long_term_care_applicable: slip.long_term_care_applicable,
@@ -576,12 +711,23 @@ app.get('/v1/payroll', (c) => {
       income_tax: withTax
         ? 'Income tax is computed from pay after social insurance, which this endpoint derives for you. Pass income_tax=false to omit it.'
         : 'Income tax omitted. Pass income_tax=true to include it.',
+      workers_compensation: wcRaw !== undefined
+        ? 'Workers compensation is borne entirely by the employer and is included in totals.employer_cost.'
+        : 'Workers compensation (労災保険) is not included unless you pass workers_comp_type; the rate runs from 2.5/1000 to 88/1000 by industry, so there is no safe default. totals.employer_cost is short by that amount until you do.',
       resident_tax: residentTax
         ? 'Resident tax is the figure you supplied; it is not computed here.'
         : 'Resident tax (住民税) is assessed by the municipality and is not computed here. Pass resident_tax= to subtract it.',
-      batch: 'POST /v1/payroll/batch runs many employees at once.',
+      batch: 'POST /v1/payroll/batch runs many employees at once, and takes named pay items as an array.',
+      commuting: commuting !== null
+        ? 'A commuting allowance is remuneration for social insurance in full, but income tax is charged only on what exceeds the non-taxable ceiling. earnings.items carries the split.'
+        : 'Pass commuting_allowance to have the allowance counted as remuneration for social insurance and exempted, up to the statutory ceiling, from income tax.',
     },
-    attribution: { ...ATTRIBUTION, ...(withTax ? { withholding_tax: WITHHOLDING_ATTRIBUTION } : {}) },
+    attribution: {
+      ...ATTRIBUTION,
+      ...(withTax ? { withholding_tax: WITHHOLDING_ATTRIBUTION } : {}),
+      ...(commuting !== null ? { commuting_allowance: COMMUTING_SOURCE } : {}),
+      ...(wcRaw !== undefined ? { workers_compensation: WORKERS_COMP_ATTRIBUTION } : {}),
+    },
   });
 });
 
@@ -951,6 +1097,76 @@ app.post('/v1/payroll/batch', async (c) => {
   });
 });
 
+/**
+ * 労災保険率表。事業の種類の番号で引く。
+ *
+ * 番号は徴収法施行規則別表第1のもので、労働保険関係成立届に書くのと同じ番号。
+ * 事業主が既に持っている値で引けるようにしてある。
+ */
+app.get('/v1/workers-compensation', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['business_type', 'wage_total', 'as_of'] as const);
+  if (unknownQ) return unknownQ;
+
+  const asOfRaw = c.req.query('as_of');
+  if (asOfRaw !== undefined && !parseDate(asOfRaw))
+    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+  const outside = outsideRateWindow(c, 'workers_compensation', asOfRaw ?? null);
+  if (outside) return outside;
+
+  const raw = c.req.query('business_type');
+  if (raw === undefined) {
+    return c.json({
+      fiscal_year: WORKERS_COMP_META.fiscal_year,
+      effective_from: WORKERS_COMP_META.effective_from,
+      applies: RATE_WINDOWS.workers_compensation,
+      burden: WORKERS_COMP_META.burden,
+      count: WORKERS_COMP_TYPES.length,
+      business_types: WORKERS_COMP_TYPES,
+      notes: {
+        lookup: 'Pass business_type= the 事業の種類の番号 (for example 98) to get one row, and wage_total= to have the premium worked out.',
+        payroll: 'GET /v1/payroll?workers_comp_type=98 folds it into totals.employer_cost.',
+        excluded: WORKERS_COMP_META.excluded,
+      },
+      attribution: WORKERS_COMP_ATTRIBUTION,
+    });
+  }
+
+  const type = workersCompType(raw);
+  if (!type)
+    return bad(c, `Unknown business_type: "${raw}"`,
+      'Use the 事業の種類の番号 from GET /v1/workers-compensation (02-99).',
+      'unknown_workers_comp_type');
+
+  const wageRaw = c.req.query('wage_total');
+  const wage = wageRaw === undefined ? null : Number(wageRaw);
+  if (wageRaw !== undefined && (!Number.isFinite(wage!) || wage! < 0))
+    return bad(c, '"wage_total" must be a non-negative number (yen).',
+      'The 賃金総額 for the period — the same wage base employment insurance uses.');
+
+  return c.json({
+    fiscal_year: WORKERS_COMP_META.fiscal_year,
+    effective_from: WORKERS_COMP_META.effective_from,
+    applies: RATE_WINDOWS.workers_compensation,
+    business_type: type,
+    burden: WORKERS_COMP_META.burden,
+    ...(wage !== null ? {
+      premium: {
+        wage_total: wage,
+        employee: 0,
+        employer: Math.round(wage * type.rate * 100) / 100,
+        total: Math.round(wage * type.rate * 100) / 100,
+        working: `${wage} * ${type.rate_per_1000}/1000`,
+      },
+    } : {}),
+    notes: {
+      burden: 'The whole premium falls on the employer; nothing is deducted from the employee.',
+      wage_base: 'Charged on 賃金総額 (徴収法第2条第2項) — the same base as employment insurance, so a commuting allowance counts and a reimbursement does not.',
+      excluded: WORKERS_COMP_META.excluded,
+    },
+    attribution: WORKERS_COMP_ATTRIBUTION,
+  });
+});
+
 app.get('/v1/leave-exemption', (c) => {
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
@@ -1290,6 +1506,115 @@ const BONUS_INSURANCE_PARAMS = [
   'prefecture', 'pref', 'bonus', 'fiscal_year_to_date', 'age', 'birth_date', 'as_of',
   'paid_on', 'left_on', 'leave_exempt', 'include',
 ] as const;
+
+/**
+ * 通勤手当の非課税限度額。
+ *
+ * 給与明細を丸ごと計算しないと限度額が分からないのは経路として長すぎる。
+ * 「片道12キロなら月いくらまで非課税か」は単独で答えるべき問い。
+ *
+ * この表は12か月に2度動いている。令和7年11月19日公布の政令が10キロメートル以上の
+ * 額を引き上げ、しかも**令和7年4月1日以後に支払われるべき通勤手当に遡って**適用された。
+ * 続いて令和8年4月1日に65キロメートル以上の4区分と駐車場等の加算が新設された。
+ * 一度写した表が腐るのはこういう形で起きる。
+ */
+app.get('/v1/commuting-allowance', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['amount', 'distance_km', 'fare', 'parking'] as const);
+  if (unknownQ) return unknownQ;
+
+  const num = (key: string) => {
+    const raw = c.req.query(key);
+    if (raw === undefined) return { raw, value: null as number | null, bad: false };
+    const value = Number(raw);
+    return { raw, value, bad: !Number.isFinite(value) || value < 0 };
+  };
+
+  const amount = num('amount');
+  const km = num('distance_km');
+  const fare = num('fare');
+  const parking = num('parking');
+
+  for (const [key, f] of [['amount', amount], ['distance_km', km], ['fare', fare], ['parking', parking]] as const)
+    if (f.bad) return bad(c, `"${key}" must be a non-negative number.`);
+
+  const reference = {
+    transit: {
+      ceiling: TRANSIT_CEILING,
+      label_ja: '交通機関・有料道路の利用者',
+      rule: '1か月当たりの合理的な運賃等の額。最高限度は月150,000円。',
+    },
+    vehicle: {
+      label_ja: '交通用具(マイカー・自転車等)の利用者',
+      rule: '片道の通勤距離で決まる。片道2キロメートル未満は全額課税。',
+      bands: VEHICLE_BANDS,
+    },
+    parking: {
+      cap: PARKING_CAP,
+      label_ja: '駐車場等の利用料',
+      rule: '交通用具通勤者が負担する駐車場等の利用料は、距離区分の額に月5,000円まで加算される。' +
+        '片道2キロメートル未満の者には加算されない。令和8年4月1日以後に支払われるべき通勤手当から。',
+    },
+    combined: {
+      rule: '交通機関と交通用具の併用は「距離区分の額 + 合理的な運賃等の額(+ 駐車場等の加算)」が限度で、' +
+        '合計の最高限度は月150,000円。',
+    },
+  };
+
+  const revisions = [
+    {
+      effective_from: '2025-04-01',
+      promulgated: '2025-11-19',
+      summary: '片道10キロメートル以上の各区分を引き上げ。公布は令和7年11月19日だが、' +
+        '令和7年4月1日以後に支払われるべき通勤手当に遡って適用された。',
+      caution: '令和7年中に月次で処理済みの給与は、年末調整で差額を精算する必要が生じた。',
+    },
+    {
+      effective_from: '2026-04-01',
+      summary: '片道65キロメートル以上に4区分(45,700 / 52,700 / 59,600 / 66,400)を新設。' +
+        '駐車場等の利用料について月5,000円までの加算を新設。',
+    },
+  ];
+
+  if (amount.raw === undefined) {
+    if (km.raw !== undefined || fare.raw !== undefined || parking.raw !== undefined)
+      return bad(c, 'distance_km, fare and parking only mean something alongside amount.',
+        'Pass amount= the commuting allowance you actually pay, and the rest decides how much of it is non-taxable. With no parameters at all you get the whole table.',
+        'missing_parameter');
+    return c.json({ reference, revisions, attribution: COMMUTING_SOURCE });
+  }
+
+  if (parking.raw !== undefined && km.raw === undefined)
+    return bad(c, 'parking is an addition to the distance band, so it needs distance_km.',
+      'The parking addition exists only for a commute by car or bicycle. Someone travelling only by train has no distance band for it to be added to.',
+      'missing_parameter');
+
+  const split = commutingExemption({
+    amount: amount.value!, distance_km: km.value, fare: fare.value, parking: parking.value,
+  });
+
+  return c.json({
+    input: {
+      amount: amount.value,
+      ...(km.value !== null ? { distance_km: km.value } : {}),
+      ...(fare.value !== null ? { fare: fare.value } : {}),
+      ...(parking.value !== null ? { parking: parking.value } : {}),
+    },
+    non_taxable: split.non_taxable,
+    taxable: split.taxable,
+    limit: split.limit,
+    band: split.band,
+    parking_added: split.parking_added,
+    basis: split.basis,
+    social_insurance: {
+      remuneration: amount.value,
+      note: '社会保険では通勤手当の全額が報酬に算入される(健康保険法第3条第5項)。' +
+        '非課税かどうかは所得税の話であって、標準報酬月額には影響しない。',
+    },
+    reference,
+    revisions,
+    attribution: COMMUTING_SOURCE,
+  });
+});
 
 app.get('/v1/bonus-insurance', (c) => {
   const unknown = rejectUnknownQuery(c, BONUS_INSURANCE_PARAMS);

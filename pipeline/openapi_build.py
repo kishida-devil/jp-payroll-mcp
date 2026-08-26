@@ -160,3 +160,35 @@ def write_spec(recipe: dict[str, Any]) -> Path:
         served.write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
 
     return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    """レシピから spec を生成して書き出す。
+
+    以前ここに入口が無く、`python pipeline/openapi_build.py` は関数を定義して
+    黙って終了していた。生成したつもりで配信される仕様書だけが古いまま残る。
+    実行して何も起きないコマンドは、失敗するコマンドより見つけにくい。
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("slug", nargs="*", help="recipes/<slug>/ の名前。省略すると全件。")
+    args = parser.parse_args(argv)
+
+    slugs = args.slug or sorted(
+        p.name for p in RECIPES_DIR.iterdir() if (p / "recipe.py").exists()
+    )
+    if not slugs:
+        print(f"レシピがありません: {RECIPES_DIR}")
+        return 1
+
+    for slug in slugs:
+        recipe = load_recipe(slug)
+        out = write_spec(recipe)
+        spec = json.loads(out.read_text(encoding="utf-8"))
+        print(f"{slug}: {len(spec['paths'])} paths -> {out.relative_to(REPO_ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

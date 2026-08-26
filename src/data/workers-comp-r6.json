@@ -1,0 +1,404 @@
+{
+  "meta": {
+    "fiscal_year": "R8",
+    "gregorian_year": 2026,
+    "effective_from": "2024-04-01",
+    "note": "令和6年4月1日施行。令和8年度の労災保険率は令和7年度から変更がない。労災保険率は概ね3年ごとに改定される。",
+    "source": "厚生労働省 労災保険率表(令和6年度~) / 労災保険率適用事業細目表",
+    "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/rousai/rousaihoken06/rousai_hokenritsu_kaitei.html",
+    "rate_unit": "1/1000",
+    "burden": "全額事業主負担 (労働保険の保険料の徴収等に関する法律第31条の反対解釈: 労災保険分は事業主のみ)",
+    "statutes": [
+      "労働保険の保険料の徴収等に関する法律第12条第2項",
+      "同法施行規則第16条及び別表第1"
+    ],
+    "excluded": "一般拠出金(石綿健康被害救済法)、メリット制による増減、建設事業の請負金額×労務費率による計算、特別加入保険料率は含まない。"
+  },
+  "business_types": [
+    {
+      "number": "02",
+      "category_ja": "林業",
+      "label_ja": "林業",
+      "rate_per_1000": 52.0,
+      "rate": 0.052
+    },
+    {
+      "number": "03",
+      "category_ja": "林業",
+      "label_ja": "林業",
+      "rate_per_1000": 52.0,
+      "rate": 0.052
+    },
+    {
+      "number": "11",
+      "category_ja": "漁業",
+      "label_ja": "海面漁業(定置網漁業又は海面魚類養殖業を除く。)",
+      "rate_per_1000": 18.0,
+      "rate": 0.018
+    },
+    {
+      "number": "12",
+      "category_ja": "漁業",
+      "label_ja": "定置網漁業又は海面魚類養殖業",
+      "rate_per_1000": 37.0,
+      "rate": 0.037
+    },
+    {
+      "number": "21",
+      "category_ja": "鉱業",
+      "label_ja": "金属鉱業、非金属鉱業(石灰石鉱業又はドロマイト鉱業を除く。)又は石炭鉱業",
+      "rate_per_1000": 88.0,
+      "rate": 0.088
+    },
+    {
+      "number": "23",
+      "category_ja": "鉱業",
+      "label_ja": "石灰石鉱業又はドロマイト鉱業",
+      "rate_per_1000": 13.0,
+      "rate": 0.013
+    },
+    {
+      "number": "24",
+      "category_ja": "鉱業",
+      "label_ja": "原油又は天然ガス鉱業",
+      "rate_per_1000": 2.5,
+      "rate": 0.0025
+    },
+    {
+      "number": "25",
+      "category_ja": "鉱業",
+      "label_ja": "採石業",
+      "rate_per_1000": 37.0,
+      "rate": 0.037
+    },
+    {
+      "number": "26",
+      "category_ja": "鉱業",
+      "label_ja": "その他の鉱業",
+      "rate_per_1000": 26.0,
+      "rate": 0.026
+    },
+    {
+      "number": "31",
+      "category_ja": "建設事業",
+      "label_ja": "水力発電施設、ずい道等新設事業",
+      "rate_per_1000": 34.0,
+      "rate": 0.034
+    },
+    {
+      "number": "32",
+      "category_ja": "建設事業",
+      "label_ja": "道路新設事業",
+      "rate_per_1000": 11.0,
+      "rate": 0.011
+    },
+    {
+      "number": "33",
+      "category_ja": "建設事業",
+      "label_ja": "ほ装工事業",
+      "rate_per_1000": 9.0,
+      "rate": 0.009
+    },
+    {
+      "number": "34",
+      "category_ja": "建設事業",
+      "label_ja": "鉄道又は軌道新設事業",
+      "rate_per_1000": 9.0,
+      "rate": 0.009
+    },
+    {
+      "number": "35",
+      "category_ja": "建設事業",
+      "label_ja": "建築事業(既設建築物設備工事業を除く。)",
+      "rate_per_1000": 9.5,
+      "rate": 0.0095
+    },
+    {
+      "number": "38",
+      "category_ja": "建設事業",
+      "label_ja": "既設建築物設備工事業",
+      "rate_per_1000": 12.0,
+      "rate": 0.012
+    },
+    {
+      "number": "36",
+      "category_ja": "建設事業",
+      "label_ja": "機械装置の組立て又はすえ付けの事業",
+      "rate_per_1000": 6.0,
+      "rate": 0.006
+    },
+    {
+      "number": "37",
+      "category_ja": "建設事業",
+      "label_ja": "その他の建設事業",
+      "rate_per_1000": 15.0,
+      "rate": 0.015
+    },
+    {
+      "number": "41",
+      "category_ja": "製造業",
+      "label_ja": "食料品製造業",
+      "rate_per_1000": 5.5,
+      "rate": 0.0055
+    },
+    {
+      "number": "42",
+      "category_ja": "製造業",
+      "label_ja": "繊維工業又は繊維製品製造業",
+      "rate_per_1000": 4.0,
+      "rate": 0.004
+    },
+    {
+      "number": "44",
+      "category_ja": "製造業",
+      "label_ja": "木材又は木製品製造業",
+      "rate_per_1000": 13.0,
+      "rate": 0.013
+    },
+    {
+      "number": "45",
+      "category_ja": "製造業",
+      "label_ja": "パルプ又は紙製造業",
+      "rate_per_1000": 7.0,
+      "rate": 0.007
+    },
+    {
+      "number": "46",
+      "category_ja": "製造業",
+      "label_ja": "印刷又は製本業",
+      "rate_per_1000": 3.5,
+      "rate": 0.0035
+    },
+    {
+      "number": "47",
+      "category_ja": "製造業",
+      "label_ja": "化学工業",
+      "rate_per_1000": 4.5,
+      "rate": 0.0045
+    },
+    {
+      "number": "48",
+      "category_ja": "製造業",
+      "label_ja": "ガラス又はセメント製造業",
+      "rate_per_1000": 6.0,
+      "rate": 0.006
+    },
+    {
+      "number": "66",
+      "category_ja": "製造業",
+      "label_ja": "コンクリート製造業",
+      "rate_per_1000": 13.0,
+      "rate": 0.013
+    },
+    {
+      "number": "62",
+      "category_ja": "製造業",
+      "label_ja": "陶磁器製品製造業",
+      "rate_per_1000": 17.0,
+      "rate": 0.017
+    },
+    {
+      "number": "49",
+      "category_ja": "製造業",
+      "label_ja": "その他の窯業又は土石製品製造業",
+      "rate_per_1000": 23.0,
+      "rate": 0.023
+    },
+    {
+      "number": "50",
+      "category_ja": "製造業",
+      "label_ja": "金属精錬業(非鉄金属精錬業を除く。)",
+      "rate_per_1000": 6.5,
+      "rate": 0.0065
+    },
+    {
+      "number": "51",
+      "category_ja": "製造業",
+      "label_ja": "非鉄金属精錬業",
+      "rate_per_1000": 7.0,
+      "rate": 0.007
+    },
+    {
+      "number": "52",
+      "category_ja": "製造業",
+      "label_ja": "金属材料品製造業(鋳物業を除く。)",
+      "rate_per_1000": 5.0,
+      "rate": 0.005
+    },
+    {
+      "number": "53",
+      "category_ja": "製造業",
+      "label_ja": "鋳物業",
+      "rate_per_1000": 16.0,
+      "rate": 0.016
+    },
+    {
+      "number": "54",
+      "category_ja": "製造業",
+      "label_ja": "金属製品製造業又は金属加工業(洋食器、刃物、手工具又は一般金物製造業及びめつき業を除く。)",
+      "rate_per_1000": 9.0,
+      "rate": 0.009
+    },
+    {
+      "number": "63",
+      "category_ja": "製造業",
+      "label_ja": "洋食器、刃物、手工具又は一般金物製造業(めつき業を除く。)",
+      "rate_per_1000": 6.5,
+      "rate": 0.0065
+    },
+    {
+      "number": "55",
+      "category_ja": "製造業",
+      "label_ja": "めつき業",
+      "rate_per_1000": 6.5,
+      "rate": 0.0065
+    },
+    {
+      "number": "56",
+      "category_ja": "製造業",
+      "label_ja": "機械器具製造業(電気機械器具製造業、輸送用機械器具製造業、船舶製造又は修理業及び計量器、光学機械、時計等製造業を除く。)",
+      "rate_per_1000": 5.0,
+      "rate": 0.005
+    },
+    {
+      "number": "57",
+      "category_ja": "製造業",
+      "label_ja": "電気機械器具製造業",
+      "rate_per_1000": 3.0,
+      "rate": 0.003
+    },
+    {
+      "number": "58",
+      "category_ja": "製造業",
+      "label_ja": "輸送用機械器具製造業(船舶製造又は修理業を除く。)",
+      "rate_per_1000": 4.0,
+      "rate": 0.004
+    },
+    {
+      "number": "59",
+      "category_ja": "製造業",
+      "label_ja": "船舶製造又は修理業",
+      "rate_per_1000": 23.0,
+      "rate": 0.023
+    },
+    {
+      "number": "60",
+      "category_ja": "製造業",
+      "label_ja": "計量器、光学機械、時計等製造業(電気機械器具製造業を除く。)",
+      "rate_per_1000": 2.5,
+      "rate": 0.0025
+    },
+    {
+      "number": "64",
+      "category_ja": "製造業",
+      "label_ja": "貴金属製品、装身具、皮革製品等製造業",
+      "rate_per_1000": 3.5,
+      "rate": 0.0035
+    },
+    {
+      "number": "61",
+      "category_ja": "製造業",
+      "label_ja": "その他の製造業",
+      "rate_per_1000": 6.0,
+      "rate": 0.006
+    },
+    {
+      "number": "71",
+      "category_ja": "運輸業",
+      "label_ja": "交通運輸事業",
+      "rate_per_1000": 4.0,
+      "rate": 0.004
+    },
+    {
+      "number": "72",
+      "category_ja": "運輸業",
+      "label_ja": "貨物取扱事業(港湾貨物取扱事業及び港湾荷役業を除く。)",
+      "rate_per_1000": 8.5,
+      "rate": 0.0085
+    },
+    {
+      "number": "73",
+      "category_ja": "運輸業",
+      "label_ja": "港湾貨物取扱事業(港湾荷役業を除く。)",
+      "rate_per_1000": 9.0,
+      "rate": 0.009
+    },
+    {
+      "number": "74",
+      "category_ja": "運輸業",
+      "label_ja": "港湾荷役業",
+      "rate_per_1000": 12.0,
+      "rate": 0.012
+    },
+    {
+      "number": "81",
+      "category_ja": "電気、ガス、水道又は熱供給の事業",
+      "label_ja": "電気、ガス、水道又は熱供給の事業",
+      "rate_per_1000": 3.0,
+      "rate": 0.003
+    },
+    {
+      "number": "95",
+      "category_ja": "その他の事業",
+      "label_ja": "農業又は海面漁業以外の漁業",
+      "rate_per_1000": 13.0,
+      "rate": 0.013
+    },
+    {
+      "number": "91",
+      "category_ja": "その他の事業",
+      "label_ja": "清掃、火葬又はと畜の事業",
+      "rate_per_1000": 13.0,
+      "rate": 0.013
+    },
+    {
+      "number": "93",
+      "category_ja": "その他の事業",
+      "label_ja": "ビルメンテナンス業",
+      "rate_per_1000": 6.0,
+      "rate": 0.006
+    },
+    {
+      "number": "96",
+      "category_ja": "その他の事業",
+      "label_ja": "倉庫業、警備業、消毒又は害虫駆除の事業又はゴルフ場の事業",
+      "rate_per_1000": 6.5,
+      "rate": 0.0065
+    },
+    {
+      "number": "97",
+      "category_ja": "その他の事業",
+      "label_ja": "通信業、放送業、新聞業又は出版業",
+      "rate_per_1000": 2.5,
+      "rate": 0.0025
+    },
+    {
+      "number": "98",
+      "category_ja": "その他の事業",
+      "label_ja": "卸売業・小売業、飲食店又は宿泊業",
+      "rate_per_1000": 3.0,
+      "rate": 0.003
+    },
+    {
+      "number": "99",
+      "category_ja": "その他の事業",
+      "label_ja": "金融業、保険業又は不動産業",
+      "rate_per_1000": 2.5,
+      "rate": 0.0025
+    },
+    {
+      "number": "94",
+      "category_ja": "その他の事業",
+      "label_ja": "その他の各種事業",
+      "rate_per_1000": 3.0,
+      "rate": 0.003
+    },
+    {
+      "number": "90",
+      "category_ja": "船舶所有者の事業",
+      "label_ja": "船舶所有者の事業",
+      "rate_per_1000": 42.0,
+      "rate": 0.042
+    }
+  ]
+}

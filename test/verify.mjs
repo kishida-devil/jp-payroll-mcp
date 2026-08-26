@@ -24,9 +24,33 @@ try {
   process.exit(1);
 }
 
-const get = async (p) => {
-  const r = await fetch(BASE + p);
-  return { status: r.status, body: await r.json() };
+/**
+ * A request that cannot hang.
+ *
+ * `wrangler dev` restarts the local worker whenever anything in the project
+ * changes, and a request that was in flight at that moment is never answered.
+ * A bare `fetch` then waits forever, and the run looks identical to a slow one
+ * -- that cost two full suite runs before it was understood. Time out and retry
+ * once instead: a genuine failure still fails, a restart no longer wedges the
+ * suite.
+ */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const ATTEMPTS = 5;
+
+const get = async (p, attempt = 0) => {
+  try {
+    const r = await fetch(BASE + p, { signal: AbortSignal.timeout(20000) });
+    return { status: r.status, body: await r.json() };
+  } catch (e) {
+    if (attempt < ATTEMPTS - 1) {
+      // 待たずに retry すると、3回とも再起動中に着弾して同じ失敗になる。
+      // workerd はこの負荷で実際にクラッシュし、復帰まで1秒前後かかる。
+      await sleep(250 * 2 ** attempt);
+      return get(p, attempt + 1);
+    }
+    throw new Error(`GET ${p} failed after ${ATTEMPTS} attempts: ${e?.message ?? e}`);
+  }
 };
 
 let pass = 0, fail = 0;
@@ -1891,7 +1915,7 @@ for (const [p, want, label] of [
   // 金額を扱うAPIで綴り間違いを黙って無視するのは事故製造機になる。
   // 批評で挙がった不具合の複数が「渡したのに無視された」だった。
   for (const [path, param] of [
-    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000', 'commuting_allowance=15000'],
+    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000', 'commute_allowance=15000'],
     ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000', 'zzz_bogus=999'],
     ['/v1/bonus-insurance?prefecture=Tokyo&bonus=500000', 'left_date=2026-03-30'],
     ['/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160', 'overtime=20'],
@@ -1909,6 +1933,449 @@ for (const [p, want, label] of [
   ok((await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&standard_remuneration=300000&employment_type=director&income_tax=false')).status === 200,
      'every accepted parameter still works together');
 }
+
+
+// --- 通勤手当: 社保では報酬、所得税では非課税限度額 (F-03) ---
+// バー: 国税庁 タックスアンサー No.2585 / No.2582 (令和8年4月1日現在法令等)、
+// 所得税法第9条第1項第5号、所得税法施行令第20条の2。
+// 社会保険で報酬に含めるのは健康保険法第3条第5項(名称の如何を問わず労働者が
+// 労務の対償として受けるもの)。この二つが食い違うのが給与計算の根幹で、
+// 単一の monthly_salary では構造的に表現できなかった。
+{
+  const p = (q) => get(`/v1/payroll?prefecture=Tokyo&age=42&${q}`);
+
+  const bare = (await p('monthly_salary=300000')).body;
+  const t = (await p('monthly_salary=300000&commuting_allowance=15000')).body;
+
+  // 支給の内訳が返ること (F-16)。これが無いと賃金台帳も給与明細も作れない。
+  ok(t.earnings?.gross === 315000, 'gross pay includes the commuting allowance',
+     `${t.earnings?.gross}`);
+  ok(t.earnings?.non_taxable === 15000, '15,000 is under the 150,000 ceiling, so none of it is taxed',
+     `${t.earnings?.non_taxable}`);
+  ok(t.earnings?.taxable === 300000, 'leaving the base pay as the taxable part',
+     `${t.earnings?.taxable}`);
+
+  // 社会保険では報酬に含む。等級が 22 (300,000) から 23 (320,000) に上がる。
+  ok(t.earnings?.remuneration_basis === 315000,
+     'while social insurance counts the same allowance as remuneration',
+     `${t.earnings?.remuneration_basis}`);
+  ok(bare.standard_remuneration.health === 300000, 'without it the grade is 300,000',
+     `${bare.standard_remuneration.health}`);
+  ok(t.standard_remuneration.health === 320000, 'with it 315,000 falls in the 320,000 grade',
+     `${t.standard_remuneration.health}`);
+
+  // 雇用保険は賃金総額にかかり、通勤手当は賃金に含まれる。315,000 * 0.005 = 1,575。
+  ok(t.earnings?.employment_insurance_basis === 315000,
+     'employment insurance is charged on total wages, commuting allowance included',
+     `${t.earnings?.employment_insurance_basis}`);
+  ok(t.deductions.employment_insurance.employee === 1575,
+     '315,000 * 0.005 = 1,575', `${t.deductions.employment_insurance.employee}`);
+  ok(bare.deductions.employment_insurance.employee === 1500,
+     'against 300,000 * 0.005 = 1,500 without it',
+     `${bare.deductions.employment_insurance.employee}`);
+
+  // 所得税の課税対象は非課税分を除いた支給額から社会保険料を引いた額。
+  ok(t.income_tax.taxable_amount === 300000 - t.totals.social_insurance_employee,
+     'income tax is charged on taxable pay after social insurance, not on gross',
+     `${t.income_tax.taxable_amount}`);
+
+  // 限度超過分は課税される。160,000 - 150,000 = 10,000。
+  const over = (await p('monthly_salary=300000&commuting_allowance=160000')).body;
+  ok(over.earnings?.non_taxable === 150000, 'the transit ceiling is 150,000 a month',
+     `${over.earnings?.non_taxable}`);
+  ok(over.earnings?.taxable === 310000, 'and 160,000 - 150,000 = 10,000 of it is taxed',
+     `${over.earnings?.taxable}`);
+  ok(over.earnings?.remuneration_basis === 460000,
+     'social insurance still counts all 160,000 as remuneration',
+     `${over.earnings?.remuneration_basis}`);
+
+  // 交通用具通勤は片道距離の区分表。10km以上15km未満は7,300円。
+  const car = (await p('monthly_salary=300000&commuting_allowance=10000&commuting_distance_km=12')).body;
+  ok(car.earnings?.non_taxable === 7300, '12km one way falls in the 10-15km band: 7,300',
+     `${car.earnings?.non_taxable}`);
+  ok(car.earnings?.taxable === 302700, 'so 10,000 - 7,300 = 2,700 is taxed',
+     `${car.earnings?.taxable}`);
+
+  // 片道2km未満は全額課税。
+  const near2 = (await p('monthly_salary=300000&commuting_allowance=5000&commuting_distance_km=1.5')).body;
+  ok(near2.earnings?.non_taxable === 0, 'under 2km one way nothing is exempt',
+     `${near2.earnings?.non_taxable}`);
+  ok(near2.earnings?.taxable === 305000, 'the whole allowance is taxed',
+     `${near2.earnings?.taxable}`);
+
+  // 95km以上は66,400円。
+  const far = (await p('monthly_salary=300000&commuting_allowance=70000&commuting_distance_km=100')).body;
+  ok(far.earnings?.non_taxable === 66400, '100km one way is the top band: 66,400',
+     `${far.earnings?.non_taxable}`);
+
+  // 併用は「運賃等の額 + 距離区分」が限度。25km区分19,700 + 運賃30,000 = 49,700。
+  const both = (await p('monthly_salary=300000&commuting_allowance=60000&commuting_distance_km=25&commuting_fare=30000')).body;
+  ok(both.earnings?.non_taxable === 49700, '19,700 (25-35km band) + 30,000 fare = 49,700',
+     `${both.earnings?.non_taxable}`);
+  ok(both.earnings?.taxable === 310300, 'and 60,000 - 49,700 = 10,300 is taxed',
+     `${both.earnings?.taxable}`);
+
+  // 併用でも合計15万が上限。66,400 + 140,000 = 206,400 だが 150,000 で頭打ち。
+  const capped = (await p('monthly_salary=300000&commuting_allowance=200000&commuting_distance_km=100&commuting_fare=140000')).body;
+  ok(capped.earnings?.non_taxable === 150000, 'the combined ceiling is still 150,000',
+     `${capped.earnings?.non_taxable}`);
+
+  // 支給額を超えて非課税にはならない。
+  const small = (await p('monthly_salary=300000&commuting_allowance=3000&commuting_distance_km=50')).body;
+  ok(small.earnings?.non_taxable === 3000,
+     'the exemption never exceeds what was actually paid', `${small.earnings?.non_taxable}`);
+
+  // 通勤手当が無いときは gross と課税支給額が一致し、従来の答えが変わらないこと。
+  ok(bare.earnings?.gross === 300000 && bare.earnings?.taxable === 300000,
+     'with no allowances the breakdown collapses to the salary', `${bare.earnings?.gross}`);
+  ok(bare.totals.net_pay === bare.totals.gross - bare.totals.social_insurance_employee
+       - bare.totals.income_tax - bare.totals.resident_tax,
+     'and net pay still reconciles');
+
+  // 手取りは通勤手当を含んだ支給額から引いたもの。
+  ok(t.totals.net_pay === 315000 - t.totals.social_insurance_employee - t.totals.income_tax,
+     'net pay is gross less deductions, commuting allowance included',
+     `${t.totals.net_pay}`);
+
+  // 駐車場等の利用料は距離区分の額に加算される。上限5,000円で、片道2km以上に限る
+  // (所得税法施行令第20条の2、令和8年4月1日施行)。10-15km区分7,300 + 3,000 = 10,300。
+  const park = (await p('monthly_salary=300000&commuting_allowance=12000&commuting_distance_km=12&commuting_parking=3000')).body;
+  ok(park.earnings?.non_taxable === 7300 + 3000,
+     'parking is added to the distance band: 7,300 + 3,000 = 10,300',
+     `${park.earnings?.non_taxable}`);
+
+  // 加算は5,000円で頭打ち。8,000円払っていても5,000円まで。
+  const parkCap = (await p('monthly_salary=300000&commuting_allowance=20000&commuting_distance_km=12&commuting_parking=8000')).body;
+  ok(parkCap.earnings?.non_taxable === 7300 + 5000,
+     'the parking addition stops at 5,000, so 7,300 + 5,000 = 12,300',
+     `${parkCap.earnings?.non_taxable}`);
+
+  // 片道2km未満は距離区分が0なので、駐車場代を払っていても加算されない。
+  const parkNear = (await p('monthly_salary=300000&commuting_allowance=6000&commuting_distance_km=1.5&commuting_parking=5000')).body;
+  ok(parkNear.earnings?.non_taxable === 0,
+     'under 2km one way the parking addition does not apply either',
+     `${parkNear.earnings?.non_taxable}`);
+
+  // 併用でも加算され、合計15万が上限であることは変わらない。
+  const parkBoth = (await p('monthly_salary=300000&commuting_allowance=60000&commuting_distance_km=25&commuting_fare=30000&commuting_parking=4000')).body;
+  ok(parkBoth.earnings?.non_taxable === 19700 + 30000 + 4000,
+     'combined: 19,700 band + 30,000 fare + 4,000 parking = 53,700',
+     `${parkBoth.earnings?.non_taxable}`);
+
+  // 駐車場代の加算は交通用具通勤の制度なので、距離が無ければ意味を成さない。
+  ok((await p('monthly_salary=300000&commuting_allowance=12000&commuting_parking=3000')).status === 400,
+     'parking with no distance is refused');
+  ok((await p('monthly_salary=300000&commuting_parking=3000')).status === 400,
+     'parking with no commuting allowance is refused');
+  ok((await p('monthly_salary=300000&commuting_allowance=12000&commuting_distance_km=12&commuting_parking=-1')).status === 400,
+     'a negative parking cost is refused');
+
+  // 距離だけ渡して手当を渡さないのは指定誤り。
+  ok((await p('monthly_salary=300000&commuting_distance_km=12')).status === 400,
+     'a distance with no allowance is refused');
+  ok((await p('monthly_salary=300000&commuting_allowance=-1')).status === 400,
+     'a negative commuting allowance is refused');
+  ok((await p('monthly_salary=300000&commuting_allowance=10000&commuting_distance_km=-3')).status === 400,
+     'a negative distance is refused');
+}
+
+// --- 支給項目を配列で受け、賃金台帳が作れる内訳を返すこと (F-16) ---
+{
+  const post = async (body) => {
+    const r = await fetch(BASE + '/v1/payroll/batch', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+
+  const r = await post({
+    defaults: { prefecture: 'Tokyo', age: 42 },
+    employees: [{
+      id: 'e1', monthly_salary: 300000, standard_remuneration: 340000,
+      allowances: [
+        { name: '通勤手当', amount: 15000, kind: 'commuting' },
+        { name: '役職手当', amount: 30000, kind: 'taxable' },
+        { name: '出張旅費', amount: 8000, kind: 'reimbursement' },
+      ],
+    }],
+  });
+  ok(r.status === 200, 'a row can carry named pay items', JSON.stringify(r.body).slice(0, 200));
+  const row = r.body.results?.[0] ?? {};
+  const e = row.earnings ?? {};
+
+  // 300,000 + 15,000 + 30,000 + 8,000 = 353,000
+  ok(e.gross === 353000, 'gross is every item paid', `${e.gross}`);
+  // 課税: 基本給 300,000 + 役職手当 30,000
+  ok(e.taxable === 330000, 'commuting under the ceiling and reimbursement are not taxed', `${e.taxable}`);
+  ok(e.non_taxable === 23000, '15,000 + 8,000 = 23,000', `${e.non_taxable}`);
+  // 報酬: 実費弁償は労務の対償ではないので外れる。300,000 + 15,000 + 30,000
+  ok(e.remuneration_basis === 345000,
+     'a reimbursement is not remuneration and not wages', `${e.remuneration_basis}`);
+  ok(e.employment_insurance_basis === 345000, 'the same total is the wage base',
+     `${e.employment_insurance_basis}`);
+
+  // 明細に出せる形で並んでいること。
+  ok(Array.isArray(e.items) && e.items.length === 4,
+     'the base pay is itemised alongside the allowances', `${e.items?.length}`);
+  ok(e.items?.[0]?.name === '基本給' && e.items?.[0]?.amount === 300000,
+     'starting with the base pay', JSON.stringify(e.items?.[0]));
+  ok(e.items?.[1]?.non_taxable === 15000 && e.items?.[1]?.taxable === 0,
+     'each item carries its own taxable / non-taxable split', JSON.stringify(e.items?.[1]));
+  ok(e.items?.[3]?.remunerative === false,
+     'and whether it counts as remuneration', JSON.stringify(e.items?.[3]));
+
+  // 渡した標準報酬月額が batch でも効くこと(単発と同じ口が無かった)。
+  ok(row.standard_remuneration?.health === 340000,
+     'a batch row can fix its own standard remuneration', `${row.standard_remuneration?.health}`);
+
+  // 集計にも支給内訳が出ること。
+  ok(r.body.summary?.gross === 353000, 'the run summary totals the same gross', `${r.body.summary?.gross}`);
+  ok(r.body.summary?.taxable === 330000, 'and the taxable part', `${r.body.summary?.taxable}`);
+  ok(r.body.summary?.non_taxable === 23000, 'and the non-taxable part', `${r.body.summary?.non_taxable}`);
+
+  // 役員は batch でも雇用保険を引かない。
+  const dir = await post({
+    defaults: { prefecture: 'Tokyo', age: 42 },
+    employees: [{ monthly_salary: 800000, employment_type: 'director' }],
+  });
+  ok(dir.body.results?.[0]?.deductions?.employment_insurance?.employee === 0,
+     'a batch row can say the person is a director',
+     JSON.stringify(dir.body.results?.[0]?.deductions?.employment_insurance));
+
+  // 不正な項目は行ごとに落ちる。
+  const badRow = await post({
+    defaults: { prefecture: 'Tokyo', age: 42 },
+    employees: [{ monthly_salary: 300000, allowances: [{ name: 'x', amount: 1000, kind: 'nonsense' }] }],
+  });
+  ok(badRow.body.errors?.length === 1, 'an unknown allowance kind fails its own row',
+     JSON.stringify(badRow.body.errors));
+  ok(/nonsense/.test(badRow.body.errors?.[0]?.error ?? ''), 'and says which one',
+     badRow.body.errors?.[0]?.error);
+}
+
+// --- 労災保険 (F-02): 全額事業主負担 ---
+// バー: 厚生労働省 労災保険率表(令和6年度~、令和8年度も同率)、
+// 徴収法第12条第2項・同法施行規則第16条及び別表第1。
+// 事業主負担の総額を名乗る以上、これが欠けていると総額が必ず不足する。
+{
+  const list = await get('/v1/workers-compensation');
+  ok(list.status === 200, 'the rate table is published', `${list.status}`);
+  ok(list.body.business_types?.length === 55,
+     '54 事業の種類 plus 船舶所有者の事業', `${list.body.business_types?.length}`);
+
+  // 公表された率そのもの。1/1000単位で印刷されている値と一致すること。
+  const rateOf = (n) => list.body.business_types.find((b) => b.number === n)?.rate_per_1000;
+  for (const [num, per1000] of [
+    ['02', 52],   // 林業
+    ['12', 37],   // 定置網漁業又は海面魚類養殖業
+    ['21', 88],   // 金属鉱業、非金属鉱業又は石炭鉱業 — 表の最大
+    ['24', 2.5],  // 原油又は天然ガス鉱業 — 表の最小に並ぶ
+    ['35', 9.5],  // 建築事業
+    ['41', 5.5],  // 食料品製造業
+    ['59', 23],   // 船舶製造又は修理業
+    ['81', 3],    // 電気、ガス、水道又は熱供給の事業
+    ['94', 3],    // その他の各種事業
+    ['98', 3],    // 卸売業・小売業、飲食店又は宿泊業
+    ['99', 2.5],  // 金融業、保険業又は不動産業
+    ['90', 42],   // 船舶所有者の事業
+  ]) {
+    ok(rateOf(num) === per1000, `事業の種類 ${num} is ${per1000}/1000`, `${rateOf(num)}`);
+  }
+
+  // 率の開きが大きいので既定値を置けない、という前提そのものを確かめる。
+  const rates = list.body.business_types.map((b) => b.rate_per_1000);
+  ok(Math.max(...rates) === 88 && Math.min(...rates) === 2.5,
+     'the table spans 2.5 to 88 per 1000 — 35 times, so there is no safe default',
+     `${Math.min(...rates)}-${Math.max(...rates)}`);
+
+  // 賃金総額を渡せば保険料が出る。3,000,000 * 3/1000 = 9,000。
+  const one = (await get('/v1/workers-compensation?business_type=98&wage_total=3000000')).body;
+  ok(one.premium?.employer === 9000, '3,000,000 * 3/1000 = 9,000', `${one.premium?.employer}`);
+  ok(one.premium?.employee === 0, 'and none of it comes out of the employee',
+     `${one.premium?.employee}`);
+
+  // 1桁で渡しても同じ行を引く(表は2桁で印刷されている)。
+  ok((await get('/v1/workers-compensation?business_type=2')).body.business_type?.number === '02',
+     'a single digit resolves to the two-digit row');
+  ok((await get('/v1/workers-compensation?business_type=07')).status === 400,
+     'a number that is not in the table is refused');
+
+  // 給与計算に組み込むと事業主負担の総額に入ること。
+  const p = (q) => get(`/v1/payroll?prefecture=Tokyo&age=42&monthly_salary=300000&${q}`);
+  const without = (await p('income_tax=false')).body;
+  const with98 = (await p('income_tax=false&workers_comp_type=98')).body;
+
+  ok(without.deductions.workers_compensation === undefined,
+     'without a business type no workers compensation is invented');
+  ok(without.totals.workers_compensation_employer === 0,
+     'and the employer figure says so plainly',
+     `${without.totals.workers_compensation_employer}`);
+
+  // 300,000 * 3/1000 = 900
+  ok(with98.deductions.workers_compensation?.employer === 900,
+     '300,000 * 3/1000 = 900', `${with98.deductions.workers_compensation?.employer}`);
+  ok(with98.deductions.workers_compensation?.employee === 0,
+     'the employee pays none of it', `${with98.deductions.workers_compensation?.employee}`);
+  ok(with98.totals.employer_cost === with98.totals.gross
+       + with98.totals.social_insurance_employer + 900,
+     'employer_cost is pay plus the employer social insurance share plus workers compensation',
+     `${with98.totals.employer_cost}`);
+  ok(with98.totals.employer_cost - without.totals.employer_cost === 900,
+     'which is exactly what was missing before',
+     `${with98.totals.employer_cost - without.totals.employer_cost}`);
+
+  // 労働者にかかる保険なので、役員には課さない(雇用保険と同じ扱い)。
+  const dir = (await p('income_tax=false&workers_comp_type=98&employment_type=director')).body;
+  ok(dir.totals.workers_compensation_employer === 0,
+     'a director is not a 労働者, so no workers compensation is charged',
+     `${dir.totals.workers_compensation_employer}`);
+
+  // 賃金総額が基礎なので、通勤手当を足すと保険料も増える。315,000 * 3/1000 = 945。
+  const comm = (await p('income_tax=false&workers_comp_type=98&commuting_allowance=15000')).body;
+  ok(comm.deductions.workers_compensation?.employer === 945,
+     '315,000 * 3/1000 = 945 — the commuting allowance is part of 賃金総額',
+     `${comm.deductions.workers_compensation?.employer}`);
+
+  // 綴り間違いは黙って無視しない。
+  ok((await p('workers_comp_type=999')).status === 400,
+     'an unknown workers_comp_type is refused rather than dropped');
+}
+
+// --- 料率の時点指定 (F-29 / F-30) ---
+// 過去・未来の日付で現行料率を黙って返すと、間違いに気づく手がかりが1つも無い。
+{
+  const win = (await get('/v1/insurance-rates?prefecture=Tokyo')).body.applies;
+  ok(win?.from === '2026-03-01' && win?.through === '2027-02-28',
+     'the response says which period the rates are for', JSON.stringify(win));
+
+  // 範囲内は通る。
+  ok((await get('/v1/insurance-rates?prefecture=Tokyo&as_of=2026-06-01')).status === 200,
+     'a date inside the published period is answered');
+
+  // 過去の日付は422。以前は現行料率が黙って返っていた。
+  const past = await get('/v1/insurance-rates?prefecture=Tokyo&as_of=2024-05-01');
+  ok(past.status === 422, 'an earlier date is refused, not answered with this year rates',
+     `${past.status}`);
+  ok(past.body.code === 'out_of_coverage', 'with a code a client can branch on', past.body.code);
+  ok(past.body.coverage?.from === '2026-03-01', 'and says what is published instead',
+     JSON.stringify(past.body.coverage));
+
+  // 未来の日付も同じ。料率は毎年3月に変わるので、来年分は載っていない。
+  ok((await get('/v1/insurance-rates?prefecture=Tokyo&as_of=2028-01-01')).status === 422,
+     'a date past the published period is refused too');
+
+  // 雇用保険料率は年度で切り替わる。
+  ok((await get('/v1/employment-insurance?as_of=2026-05-01')).status === 200,
+     'employment insurance answers inside its fiscal year');
+  ok((await get('/v1/employment-insurance?as_of=2026-03-31')).status === 422,
+     'and refuses the day before it takes effect');
+  ok((await get('/v1/employment-insurance?as_of=2027-04-01')).status === 422,
+     'and the day after the fiscal year ends');
+
+  // 労災保険率は令和6年4月1日施行で、令和8年度も同率。
+  ok((await get('/v1/workers-compensation?as_of=2025-01-01')).status === 200,
+     'workers compensation rates cover from 2024-04-01');
+  ok((await get('/v1/workers-compensation?as_of=2024-03-31')).status === 422,
+     'but not before the revision took effect');
+
+  // 給与計算そのものも、載っていない時点で回してはいけない。
+  const oldRun = await get('/v1/payroll?prefecture=Tokyo&age=42&monthly_salary=300000&as_of=2024-05-01');
+  ok(oldRun.status === 422, 'payroll refuses to run a month it has no rates for',
+     `${oldRun.status}`);
+  ok(oldRun.body.code === 'out_of_coverage', 'for the same reason and with the same code',
+     oldRun.body.code);
+
+  // birth_date と as_of を組み合わせた年齢判定は、範囲内なら従来どおり動く。
+  ok((await get('/v1/payroll?prefecture=Tokyo&birth_date=1960-01-01&monthly_salary=300000&as_of=2026-06-01')).status === 200,
+     'inside the window as_of still drives the age milestones');
+}
+// ---- 45. 通勤手当の非課税限度額を単独で引けること ----
+{
+  const ca = async (qs) => {
+    const r = await fetch(`${BASE}/v1/commuting-allowance${qs ? '?' + qs : ''}`);
+    return { status: r.status, body: await r.json() };
+  };
+
+  const table = (await ca('')).body;
+  ok(table.reference?.transit?.ceiling === 150000,
+     'the transit ceiling is 150,000 a month', `${table.reference?.transit?.ceiling}`);
+  ok(table.reference?.vehicle?.bands?.length === 12,
+     'the distance table has all twelve bands, under 2km up to 95km and over',
+     `${table.reference?.vehicle?.bands?.length}`);
+  ok(table.reference?.parking?.cap === 5000,
+     'the parking addition is capped at 5,000 — the statute says 五千円, not 五万円',
+     `${table.reference?.parking?.cap}`);
+
+  // 令和7年11月19日公布の政令が令和7年4月1日に遡って適用された。写した表が腐る実例。
+  ok(table.revisions?.some((r) => r.effective_from === '2025-04-01' && /遡/.test(r.summary ?? '')),
+     'the April 2025 revision is recorded, and recorded as retroactive');
+  ok(table.revisions?.some((r) => r.effective_from === '2026-04-01'),
+     'and so is the April 2026 revision that added the 65km bands');
+
+  // 改正後の額であること。改正前は 7,100 / 12,900 / 18,700 だった。
+  const band = (km) => table.reference.vehicle.bands.find(
+    (b) => km >= b.from_km && (b.to_km === null || km < b.to_km));
+  ok(band(12).limit === 7300, '10-15km is 7,300 after the revision, not the old 7,100', `${band(12).limit}`);
+  ok(band(20).limit === 13500, '15-25km is 13,500, not the old 12,900', `${band(20).limit}`);
+  ok(band(30).limit === 19700, '25-35km is 19,700, not the old 18,700', `${band(30).limit}`);
+  ok(band(100).limit === 66400, '95km and over is 66,400', `${band(100).limit}`);
+  ok(band(1).limit === 0, 'under 2km one way nothing is exempt', `${band(1).limit}`);
+
+  const car = (await ca('amount=12000&distance_km=12&parking=3000')).body;
+  ok(car.non_taxable === 7300 + 3000 && car.taxable === 12000 - 10300,
+     'a 12km commute with 3,000 parking exempts 10,300 and taxes 1,700',
+     `${car.non_taxable} / ${car.taxable}`);
+
+  // 非課税でも社会保険では報酬。ここが分かれるのが給与計算の核心。
+  ok(car.social_insurance?.remuneration === 12000,
+     'the whole allowance is still remuneration for social insurance',
+     `${car.social_insurance?.remuneration}`);
+
+  const transit = (await ca('amount=200000')).body;
+  ok(transit.non_taxable === 150000 && transit.taxable === 50000,
+     'a 200,000 train pass is exempt only up to 150,000', `${transit.non_taxable}`);
+
+  ok((await ca('distance_km=12')).status === 400, 'a distance with no amount is refused');
+  ok((await ca('amount=10000&parking=3000')).status === 400, 'parking with no distance is refused');
+  ok((await ca('amount=-1')).status === 400, 'a negative amount is refused');
+  ok((await ca('amount=10000&bogus=1')).status === 400, 'an unknown parameter is refused');
+}
+// ---- 46. 公開面の整合 — 実装・ルート一覧・OpenAPI が食い違わないこと ----
+{
+  // 実装はあるが一覧に無い、あるいは仕様書に無いエンドポイントは、存在しないのと
+  // 同じになる。第2反復で /v1/overtime-pay と /v1/workers-compensation が
+  // まさにその状態だった。割増賃金は作ったのに RapidAPI の出品面に出ていなかった。
+  const root = await (await fetch(`${BASE}/`)).json();
+  const spec = await (await fetch(`${BASE}/openapi.json`)).json();
+
+  const listed = new Set(
+    Object.keys(root.endpoints ?? {})
+      .map((k) => /^(?:GET|POST)\s+(\/\S*)/.exec(k)?.[1])
+      .filter(Boolean)
+      .map((p) => p.split('?')[0]),
+  );
+  const specced = new Set(Object.keys(spec.paths ?? {}));
+
+  // 仕様書に載っているものは、すべてルート一覧からも辿れること。
+  const unlisted = [...specced].filter((p) => p.startsWith('/v1') && !listed.has(p));
+  ok(unlisted.length === 0,
+     'every documented endpoint is discoverable from the root listing',
+     unlisted.join(', ') || 'none');
+
+  // ルート一覧のものは、すべて仕様書にあること(RapidAPI の購読者に見える面)。
+  const undocumented = [...listed].filter((p) => p.startsWith('/v1') && !specced.has(p));
+  ok(undocumented.length === 0,
+     'and every listed endpoint reaches the OpenAPI spec, so subscribers can see it',
+     undocumented.join(', ') || 'none');
+
+  // 一覧に書いた経路が実際に応答すること(404を出品しない)。
+  for (const path of ['/v1/commuting-allowance', '/v1/overtime-pay', '/v1/workers-compensation']) {
+    const r = await fetch(`${BASE}${path}`);
+    ok(r.status !== 404, `${path} answers rather than 404`, `${r.status}`);
+  }
+}
+
 
 
 console.log(`\n  passed ${pass} / ${pass + fail}`);

@@ -400,6 +400,138 @@
        "type": "integer",
        "example": 15000
       }
+     },
+     {
+      "name": "standard_remuneration",
+      "in": "query",
+      "required": false,
+      "description": "The 標準報酬月額 fixed by 算定基礎届 or 月額変更届. Pass it whenever you know it: without it the grade is re-derived from the pay you send, which is wrong in any month with overtime. GET /v1/standard-remuneration/regular decides it.",
+      "schema": {
+       "type": "integer",
+       "example": 300000
+      }
+     },
+     {
+      "name": "employment_type",
+      "in": "query",
+      "required": false,
+      "description": "役員 are not covered by employment insurance (雇用保険法第4条), so a director's premium is zero while health and pension still apply.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "employee",
+        "director",
+        "director_employee"
+       ],
+       "example": "employee"
+      }
+     },
+     {
+      "name": "commuting_allowance",
+      "in": "query",
+      "required": false,
+      "description": "Commuting allowance in yen per month. Counted as remuneration for social insurance in full, but exempt from income tax up to the statutory ceiling (150,000 a month by public transport). The split is returned in earnings.items.",
+      "schema": {
+       "type": "integer",
+       "example": 15000
+      }
+     },
+     {
+      "name": "commuting_distance_km",
+      "in": "query",
+      "required": false,
+      "description": "One-way distance for a car or bicycle commute. The non-taxable ceiling then comes from the distance table (国税庁 No.2585) instead of the 150,000 yen transit ceiling; under 2km nothing is exempt.",
+      "schema": {
+       "type": "number",
+       "example": 12
+      }
+     },
+     {
+      "name": "commuting_fare",
+      "in": "query",
+      "required": false,
+      "description": "Reasonable fare or toll paid on top of a car or bicycle commute. Combined with commuting_distance_km the ceiling is the distance band plus this amount, capped at 150,000.",
+      "schema": {
+       "type": "integer",
+       "example": 30000
+      }
+     },
+     {
+      "name": "workers_comp_type",
+      "in": "query",
+      "required": false,
+      "description": "労災保険 事業の種類の番号. Workers compensation is borne entirely by the employer; pass this to have it included in totals.employer_cost. Rates run from 2.5/1000 to 88/1000 by industry, so there is no default. See GET /v1/workers-compensation.",
+      "schema": {
+       "type": "string",
+       "example": "98"
+      }
+     },
+     {
+      "name": "as_of",
+      "in": "query",
+      "required": false,
+      "description": "The date the pay relates to. Drives the age milestones and selects the rate table; a date outside the published period returns 422 rather than this year's rates.",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-01"
+      }
+     }
+    ],
+    "tags": [
+     "Payroll"
+    ]
+   }
+  },
+  "/v1/workers-compensation": {
+   "get": {
+    "summary": "労災保険率 by business type, and the employer premium",
+    "description": "The workers' compensation rate table (labour insurance), keyed by the official 事業の種類の番号 from 徴収法施行規則別表第1 — the same number on the 労働保険関係成立届.\n\nThe whole premium falls on the employer; nothing is deducted from the employee. Pass wage_total to have the premium worked out on 賃金総額, the same wage base employment insurance uses.",
+    "operationId": "getV1WorkersCompensation",
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid or missing query parameter"
+     }
+    },
+    "parameters": [
+     {
+      "name": "business_type",
+      "in": "query",
+      "required": false,
+      "description": "事業の種類の番号 (02-99). Omit to get the whole table.",
+      "schema": {
+       "type": "string",
+       "example": "98"
+      }
+     },
+     {
+      "name": "wage_total",
+      "in": "query",
+      "required": false,
+      "description": "賃金総額 for the period, in yen.",
+      "schema": {
+       "type": "integer",
+       "example": 3000000
+      }
+     },
+     {
+      "name": "as_of",
+      "in": "query",
+      "required": false,
+      "description": "Date the wages relate to; outside the published period returns 422.",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-01"
+      }
      }
     ],
     "tags": [
@@ -1851,6 +1983,160 @@
       "schema": {
        "type": "integer",
        "example": 0
+      }
+     }
+    ],
+    "tags": [
+     "Payroll"
+    ]
+   }
+  },
+  "/v1/overtime-pay": {
+   "get": {
+    "summary": "Overtime, night and holiday premiums",
+    "description": "The rates are not simply additive. A night premium stacks on top of overtime or holiday work, but a statutory holiday carries no overtime premium at all — a day with no duty to work has nothing to exceed. Overtime past sixty hours in a month is fifty per cent, and the small-business deferral for that ended in April 2023, so it now applies whatever the headcount. Rounding follows 基発第150号, which rounds each category separately, so the total is not the same as rounding once at the end. Also lists the seven allowances that may be left out of the base, which the statute enumerates exhaustively and judges by substance rather than by name.",
+    "operationId": "getV1OvertimePay",
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid or missing query parameter"
+     }
+    },
+    "parameters": [
+     {
+      "name": "base_monthly_pay",
+      "in": "query",
+      "required": true,
+      "description": "Monthly pay counted in the premium base, after removing any of the seven excludable allowances.",
+      "schema": {
+       "type": "integer",
+       "example": 300000
+      }
+     },
+     {
+      "name": "monthly_scheduled_hours",
+      "in": "query",
+      "required": true,
+      "description": "月平均所定労働時間 — annual scheduled days times daily hours, over twelve.",
+      "schema": {
+       "type": "number",
+       "example": 160
+      }
+     },
+     {
+      "name": "overtime_hours",
+      "in": "query",
+      "required": false,
+      "description": "Statutory overtime worked, excluding statutory holidays.",
+      "schema": {
+       "type": "number",
+       "example": 20
+      }
+     },
+     {
+      "name": "night_hours",
+      "in": "query",
+      "required": false,
+      "description": "Hours of that falling between 22:00 and 05:00.",
+      "schema": {
+       "type": "number",
+       "example": 5
+      }
+     },
+     {
+      "name": "holiday_hours",
+      "in": "query",
+      "required": false,
+      "description": "Hours worked on a statutory holiday.",
+      "schema": {
+       "type": "number",
+       "example": 8
+      }
+     },
+     {
+      "name": "holiday_night_hours",
+      "in": "query",
+      "required": false,
+      "description": "Hours of that falling between 22:00 and 05:00.",
+      "schema": {
+       "type": "number",
+       "example": 0
+      }
+     }
+    ],
+    "tags": [
+     "Payroll"
+    ]
+   }
+  },
+  "/v1/commuting-allowance": {
+   "get": {
+    "summary": "How much of a commuting allowance escapes income tax",
+    "description": "The same allowance lands in two different bases. Social insurance counts it as remuneration in full, while income tax is charged only on what exceeds the statutory ceiling — 150,000 a month by train, or a figure set by one-way distance for a car or bicycle, with up to 5,000 more for parking the employee pays for. That asymmetry is the heart of Japanese payroll, and a single gross-pay figure cannot express it. The table moved twice in twelve months: a cabinet order promulgated in November 2025 raised every band over ten kilometres and applied retroactively to allowances payable from April 2025, then April 2026 added four bands above sixty-five kilometres. Copies of this table go stale, and the response records both revisions so you can tell which figures you are holding.",
+    "operationId": "getV1CommutingAllowance",
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid or missing query parameter"
+     }
+    },
+    "parameters": [
+     {
+      "name": "amount",
+      "in": "query",
+      "required": false,
+      "description": "The commuting allowance actually paid, per month. Leave it out to get the whole table instead.",
+      "schema": {
+       "type": "integer",
+       "example": 12000
+      }
+     },
+     {
+      "name": "distance_km",
+      "in": "query",
+      "required": false,
+      "description": "One-way distance for a commute by car or bicycle. Under two kilometres nothing is exempt.",
+      "schema": {
+       "type": "number",
+       "example": 12
+      }
+     },
+     {
+      "name": "fare",
+      "in": "query",
+      "required": false,
+      "description": "Reasonable fare or toll paid alongside the vehicle commute.",
+      "schema": {
+       "type": "integer",
+       "example": 0
+      }
+     },
+     {
+      "name": "parking",
+      "in": "query",
+      "required": false,
+      "description": "Monthly parking cost the employee bears. Added to the distance band, up to 5,000. Needs distance_km.",
+      "schema": {
+       "type": "integer",
+       "example": 3000
       }
      }
     ],

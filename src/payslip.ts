@@ -4,7 +4,9 @@ import {
   type PrefKey,
 } from './lib';
 import { withholdingTax, type Column } from './withholding';
+import { resolveEarnings, type AllowanceInput, type Earnings } from './allowances';
 import { ageStatus } from './age';
+import { workersCompPremium, workersCompType } from './workers-comp';
 
 /**
  * One employee's monthly payslip.
@@ -43,6 +45,21 @@ export type PayslipInput = {
    * 無かった。左手が出した答えを右手が受け取れない状態だった。
    */
   standard_remuneration?: number | null;
+  /**
+   * 基本給に足される支給項目。
+   *
+   * 通勤手当は社会保険では報酬に含まれ、所得税では非課税限度額まで課されない。
+   * `monthly_salary` 単独ではその区別が表現できず、通勤手当を足せば所得税が
+   * 過大に、足さなければ社会保険料が過少になる。どちらに寄せても誤りなので、
+   * 項目として受け取る以外に正しくする方法がない。
+   */
+  allowances?: AllowanceInput[];
+  /**
+   * 労災保険の事業の種類の番号(徴収法施行規則別表第1)。
+   * 渡さなければ労災保険料は出さない — 率が 2.5/1000 から 88/1000 まで開くので、
+   * 既定値を置くとほぼ必ず誤った額になる。
+   */
+  workers_comp_type?: string | null;
   column: Column;
   dependants: number;
   income_tax: boolean;
@@ -56,8 +73,12 @@ export function computePayslip(input: PayslipInput) {
   const bt = (empins.business_types as any)[input.business_type];
   const salary = input.monthly_salary;
 
-  // 標準報酬月額が渡されていればそれを使う。渡されていなければ支給額から引く。
-  const smrBasis = input.standard_remuneration ?? salary;
+  // 支給項目に分解する。手当が無ければ基本給1行になり、以前と同じ答えになる。
+  const earnings: Earnings = resolveEarnings(salary, input.allowances ?? []);
+
+  // 標準報酬月額が渡されていればそれを使う。渡されていなければ**報酬**から引く。
+  // 支給額(gross)ではない — 実費弁償は報酬に入らないため。
+  const smrBasis = input.standard_remuneration ?? earnings.remuneration_basis;
   const grade = findGrade(smrBasis);
   const pen = pensionStandardRemuneration(grade);
   const smrWasGiven = input.standard_remuneration != null;
@@ -92,9 +113,17 @@ export function computePayslip(input: PayslipInput) {
 
   // 役員は雇用保険の被保険者にならない。以前は employment_type を受け取らず、
   // 中小企業の社長が自分の分を計算すると必ず過大になっていた。
+  // 雇用保険は賃金総額にかかる(徴収法第2条第2項)。通勤手当は賃金に含まれ、
+  // 実費弁償は含まれない。以前は基本給だけを基礎にしていた。
+  const eiBasis = earnings.employment_insurance_basis;
   const eiInsured = (input.employment_type ?? 'employee') !== 'director';
-  const eiEmployee = eiInsured ? roundEmployeeShare(salary * bt.employee_rate) : 0;
-  const eiEmployer = eiInsured ? round2(salary * bt.employer_rate) : 0;
+  const eiEmployee = eiInsured ? roundEmployeeShare(eiBasis * bt.employee_rate) : 0;
+  const eiEmployer = eiInsured ? round2(eiBasis * bt.employer_rate) : 0;
+
+  // 労災保険は全額事業主負担。労働者にかかるものなので、役員は対象外。
+  const wcType = workersCompType(input.workers_comp_type);
+  const wcInsured = (input.employment_type ?? 'employee') !== 'director';
+  const workersComp = wcType && wcInsured ? workersCompPremium(eiBasis, wcType) : null;
 
   const employeeTotal =
     health.employee + longTermCare.employee + pension.employee + childSupport.employee + eiEmployee;
@@ -102,15 +131,20 @@ export function computePayslip(input: PayslipInput) {
     health.employer + longTermCare.employer + pension.employer + childSupport.employer +
     eiEmployer + childCareEmployer;
 
-  const afterSocialInsurance = round2(salary - employeeTotal);
+  // 実際に社会保険料を引いたあとの現金。
+  const afterSocialInsurance = round2(earnings.gross - employeeTotal);
+  // 源泉徴収の課税対象は「社会保険料等控除後の給与等の金額」。非課税の通勤手当は
+  // そもそも給与等に入らないので、gross ではなく課税支給額から引く。
+  const taxableAfterSocialInsurance = round2(Math.max(0, earnings.taxable - employeeTotal));
   const incomeTax = input.income_tax
-    ? withholdingTax(Math.floor(afterSocialInsurance), input.column, input.dependants)
+    ? withholdingTax(Math.floor(taxableAfterSocialInsurance), input.column, input.dependants)
     : null;
   const incomeTaxAmount = incomeTax ? incomeTax.tax : 0;
   const netPay = round2(afterSocialInsurance - incomeTaxAmount - input.resident_tax);
 
   return {
     ...(status ? { age_status: status } : {}),
+    earnings,
     coverage: {
       health_insurance: healthApplies,
       long_term_care: ltc,
@@ -134,17 +168,25 @@ export function computePayslip(input: PayslipInput) {
         employee: eiEmployee, employer: eiEmployer, total: round2(eiEmployee + eiEmployer),
       },
       child_care_contribution: { employee: 0, employer: round2(childCareEmployer) },
+      ...(workersComp ? { workers_compensation: workersComp } : {}),
     },
     income_tax: incomeTax,
     totals: {
-      gross: salary,
+      gross: earnings.gross,
+      taxable_gross: earnings.taxable,
+      non_taxable: earnings.non_taxable,
+      remuneration_basis: earnings.remuneration_basis,
       social_insurance_employee: round2(employeeTotal),
       social_insurance_employer: round2(employerTotal),
       social_insurance_combined: round2(employeeTotal + employerTotal),
       after_social_insurance: afterSocialInsurance,
+      taxable_after_social_insurance: taxableAfterSocialInsurance,
       income_tax: incomeTaxAmount,
       resident_tax: input.resident_tax,
       net_pay: netPay,
+      workers_compensation_employer: workersComp ? workersComp.employer : 0,
+      // 事業主が実際に出す総額。支給額 + 社会保険の事業主負担 + 労災保険。
+      employer_cost: round2(earnings.gross + employerTotal + (workersComp ? workersComp.employer : 0)),
     },
   };
 }
@@ -157,16 +199,17 @@ export function summarise(slips: Payslip[]) {
   return {
     employees: slips.length,
     gross: sum((s) => s.totals.gross),
+    taxable: sum((s) => s.totals.taxable_gross),
+    non_taxable: sum((s) => s.totals.non_taxable),
     social_insurance: {
       employee: sum((s) => s.totals.social_insurance_employee),
       employer: sum((s) => s.totals.social_insurance_employer),
       combined: sum((s) => s.totals.social_insurance_combined),
     },
+    workers_compensation_employer: sum((s) => s.totals.workers_compensation_employer),
     income_tax: sum((s) => s.totals.income_tax),
     resident_tax: sum((s) => s.totals.resident_tax),
     net_pay: sum((s) => s.totals.net_pay),
-    employer_cost: round2(
-      slips.reduce((a, s) => a + s.totals.gross + s.totals.social_insurance_employer, 0),
-    ),
+    employer_cost: sum((s) => s.totals.employer_cost),
   };
 }

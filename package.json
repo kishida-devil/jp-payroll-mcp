@@ -13,7 +13,8 @@
     "watch:dry": "python pipeline/watch_sources.py --dry-run",
     "mcp": "node mcp/src/index.mjs",
     "mcp:test": "node mcp/test/smoke.mjs",
-    "stats": "node scripts/stats.mjs"
+    "stats": "node scripts/stats.mjs",
+    "openapi": "python pipeline/openapi_build.py"
   },
   "dependencies": {
     "hono": "^4.6.14"

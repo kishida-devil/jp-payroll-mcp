@@ -34,7 +34,7 @@ import { z } from 'zod';
 // mistyped setting.
 const BASE = (process.env.JP_PAYROLL_API_URL ?? 'https://japan-payroll-api.tsumugi.workers.dev')
   .replace(/\/+$/, '');
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 // A floor of 1000ms: a timeout shorter than a round trip fails every call, and
 // the resulting "the API did not respond" is a confusing way to learn that.
@@ -226,8 +226,55 @@ server.registerTool('calculate_payslip', {
       'Resident tax to deduct, in yen. It is levied by the municipality on the previous ' +
       'year\'s income and is never derived here — pass the figure from the 特別徴収税額通知書.'),
     income_tax: z.boolean().optional().describe('Set false to skip withholding tax. Defaults to true.'),
+    standard_remuneration: z.number().optional().describe(
+      'The 標準報酬月額 fixed by 算定基礎届 or 月額変更届. Pass it whenever it is known. Without ' +
+      'it the grade is re-derived from the pay you send, which is wrong in any month with ' +
+      'overtime — a 300,000 yen earner who made 369,469 in a busy month is over-deducted by ' +
+      '8,445 yen. decide_regular_determination returns the right figure.'),
+    employment_type: z.enum(['employee', 'director', 'director_employee']).optional().describe(
+      '役員 are not employment-insurance insured (雇用保険法第4条). Pass "director" for a ' +
+      'company officer, or the premium comes out too high. Defaults to employee.'),
+    commuting_allowance: z.number().optional().describe(
+      'Commuting allowance in yen per month. Social insurance counts it as remuneration in ' +
+      'full, income tax exempts it up to a ceiling — 150,000 a month by public transport. ' +
+      'Do NOT fold it into monthly_salary: doing so taxes it, and leaving it out understates ' +
+      'the premiums. The split comes back in earnings.items.'),
+    commuting_distance_km: z.number().optional().describe(
+      'One-way distance for a car or bicycle commute. The exempt ceiling then comes from the ' +
+      'distance table (国税庁 No.2585) rather than the 150,000 transit ceiling; under 2 km ' +
+      'nothing is exempt.'),
+    commuting_fare: z.number().optional().describe(
+      'Reasonable fare or toll paid on top of a car or bicycle commute. With ' +
+      'commuting_distance_km the ceiling is the distance band plus this, capped at 150,000.'),
+    workers_comp_type: z.string().optional().describe(
+      '労災保険 事業の種類の番号, e.g. "98" for wholesale/retail/restaurants/hotels. Workers ' +
+      'compensation falls entirely on the employer and is left out unless you pass this, ' +
+      'because rates run from 2.5/1000 to 88/1000 and there is no safe default. ' +
+      'list_workers_compensation_rates has the table.'),
+    as_of: z.string().optional().describe(
+      'ISO date the pay relates to. Drives the age milestones and picks the rate table; a ' +
+      'date outside the published period returns 422 rather than the current table.'),
   },
 }, async (a) => call('/v1/payroll' + qs(a)));
+
+server.registerTool('list_workers_compensation_rates', {
+  title: '労災保険率 — 事業の種類別',
+  description:
+    'Workers compensation (労災保険) rates by business type, and the employer premium on a ' +
+    'given 賃金総額.\n\n' +
+    'The whole premium falls on the employer — nothing is deducted from the employee, unlike ' +
+    'every other statutory premium. Rates run from 2.5/1000 to 88/1000 depending on the ' +
+    'industry, a 35-fold spread, so this cannot be estimated. Pass the 事業の種類の番号 from ' +
+    'the 労働保険関係成立届; omit it to get the whole table.',
+  inputSchema: {
+    business_type: z.string().optional().describe(
+      '事業の種類の番号 (02-99), e.g. "35" for 建築事業 or "98" for wholesale and retail.'),
+    wage_total: z.number().optional().describe(
+      '賃金総額 for the period, in yen — the same wage base employment insurance uses, so a ' +
+      'commuting allowance counts and a reimbursement does not.'),
+    as_of: z.string().optional().describe('ISO date the wages relate to.'),
+  },
+}, async (a) => call('/v1/workers-compensation' + qs(a)));
 
 server.registerTool('calculate_bonus', {
   title: '賞与の社会保険料と源泉所得税',
@@ -265,13 +312,19 @@ server.registerTool('calculate_bonus', {
   if (a.previous_month_pay === undefined)
     return fail('include_tax needs previous_month_pay: the rate comes from the previous ' +
                 'month\'s pay, not from the bonus.');
+  // 賞与の源泉税は、その賞与自身の社会保険料を引いたあとの額にかかる
+  // (所得税法第186条第2項)。その社会保険料は直前の呼び出しで出ているので、
+  // ここで渡す。渡さないと400になり、include_tax がまるごと使えない。
+  // 既定0で通していた頃は、500,000円の賞与で 3,063円 の過大な税額が出ていた。
+  const insuranceBody = JSON.parse(insurance.content[0].text);
   const tax = await call('/v1/bonus-tax' + qs({
-    bonus: a.bonus, previous_month_pay: a.previous_month_pay,
+    bonus: a.bonus, bonus_insurance: insuranceBody.totals?.employee ?? 0,
+    previous_month_pay: a.previous_month_pay,
     previous_month_insurance: a.previous_month_insurance, dependants: a.dependants,
   }));
   if (tax.isError) return tax;
   return ok({
-    insurance: JSON.parse(insurance.content[0].text),
+    insurance: insuranceBody,
     withholding_tax: JSON.parse(tax.content[0].text),
   });
 });
@@ -599,6 +652,80 @@ server.registerTool('get_statute_text', {
 }, async (a) => a.ref
   ? call('/v1/statute' + qs({ ref: a.ref }))
   : call('/v1/statute/index'));
+
+server.registerTool('calculate_overtime_pay', {
+  title: '割増賃金(時間外・深夜・休日)の計算',
+  description:
+    'Works out statutory premium pay under 労働基準法第37条 — overtime, night work and work on ' +
+    'a statutory holiday.\n\n' +
+    'The rates do not simply add up, and getting this wrong under-pays wages. A night premium ' +
+    'stacks on top: overtime at night is 1.25 + 0.25 = 1.5, holiday work at night is ' +
+    '1.35 + 0.25 = 1.6. But a statutory holiday carries no overtime premium at all — a day with ' +
+    'no duty to work has nothing to exceed — so holiday hours are 1.35, never 1.6 by adding ' +
+    'overtime. Overtime beyond sixty hours in a month is 50%, and the deferral that exempted ' +
+    'small employers ended on 1 April 2023, so headcount no longer matters.\n\n' +
+    'Rounding follows 昭和63年基発第150号, which rounds each category separately rather than once ' +
+    'at the end, so the total will not always match a single multiplication. Rounding the hours ' +
+    'themselves down is a breach of 労基法第24条 and this tool will not do it.\n\n' +
+    'base_monthly_pay must exclude the seven allowances that 労基法37条5項 and 施行規則21条 ' +
+    'enumerate exhaustively, and only those. Exclusion turns on substance, not the name: a ' +
+    '「家族手当」 paid at a flat rate regardless of dependants cannot be excluded. The response ' +
+    'lists all seven. Do not guess at whether an allowance qualifies — ask which way it is paid.',
+  inputSchema: {
+    base_monthly_pay: z.number().describe(
+      'Monthly pay forming the premium base, after removing any of the seven excludable allowances.'),
+    monthly_scheduled_hours: z.number().describe(
+      '月平均所定労働時間 — annual scheduled working days times daily hours, divided by twelve.'),
+    overtime_hours: z.number().optional().describe(
+      'Statutory overtime hours, excluding work on a statutory holiday.'),
+    night_hours: z.number().optional().describe(
+      'How many of those hours fell between 22:00 and 05:00.'),
+    holiday_hours: z.number().optional().describe('Hours worked on a statutory holiday.'),
+    holiday_night_hours: z.number().optional().describe(
+      'How many of those fell between 22:00 and 05:00.'),
+  },
+}, async (a) => call('/v1/overtime-pay' + qs({
+  base_monthly_pay: a.base_monthly_pay,
+  monthly_scheduled_hours: a.monthly_scheduled_hours,
+  overtime_hours: a.overtime_hours,
+  night_hours: a.night_hours,
+  holiday_hours: a.holiday_hours,
+  holiday_night_hours: a.holiday_night_hours,
+})));
+
+server.registerTool('commuting_allowance_exemption', {
+  title: '通勤手当の非課税限度額',
+  description:
+    'Works out how much of a commuting allowance escapes income tax, and states the amount ' +
+    'that still counts as remuneration for social insurance.\n\n' +
+    'These are two different bases, and that asymmetry is the part people get wrong. Social ' +
+    'insurance counts a commuting allowance in full — it is 報酬 under 健康保険法第3条第5項 ' +
+    'regardless of the tax treatment — while income tax is charged only on what exceeds the ' +
+    'ceiling. So a 15,000 yen allowance on a 300,000 yen salary makes the standard-remuneration ' +
+    'basis 315,000 and the taxable pay 300,000. Never answer with a single figure that is meant ' +
+    'to serve both.\n\n' +
+    'The ceiling is 150,000 a month for public transport. For a car or bicycle it is set by ' +
+    'one-way distance, with nothing exempt under two kilometres, and up to 5,000 more a month ' +
+    'when the employee pays for parking. Using both adds them together, still capped at 150,000.\n\n' +
+    'Do not answer this from memory. The table moved twice in twelve months: a cabinet order ' +
+    'promulgated 19 November 2025 raised every band over ten kilometres and applied ' +
+    'retroactively to allowances payable from 1 April 2025, and 1 April 2026 added four bands ' +
+    'above 65km along with the parking addition. Figures learnt before those dates are wrong, ' +
+    'and wrong in a direction that under-states the exempt amount. Call with no arguments to ' +
+    'read the current table and both revisions.',
+  inputSchema: {
+    amount: z.number().optional().describe(
+      'The commuting allowance actually paid, yen per month. Omit to get the whole table.'),
+    distance_km: z.number().optional().describe(
+      'One-way distance for a commute by car or bicycle. Under 2km nothing is exempt.'),
+    fare: z.number().optional().describe(
+      'Reasonable fare or toll paid alongside a vehicle commute.'),
+    parking: z.number().optional().describe(
+      'Monthly parking cost the employee bears. Added to the distance band, up to 5,000. Needs distance_km.'),
+  },
+}, async (a) => call('/v1/commuting-allowance' + qs({
+  amount: a.amount, distance_km: a.distance_km, fare: a.fare, parking: a.parking,
+})));
 
 server.registerTool('check_data_freshness', {
   title: 'データ鮮度 — 各データの対象期間と次回改定',
