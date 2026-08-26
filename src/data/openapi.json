@@ -2254,6 +2254,113 @@
     ]
    }
   },
+  "/v1/worker-type": {
+   "get": {
+    "summary": "Is this person insured, and on which day-count?",
+    "description": "健康保険法第3条第1項第9号 insures anyone whose weekly hours and monthly days reach three-quarters of a comparable full-time worker. Below that, cover turns on four further tests: twenty hours a week, 88,000 yen a month, not a student, and a workplace of at least fifty-one insured people. This is the classification Japanese payroll gets wrong most often, and it moves a real number: the annual determination counts months of seventeen payment-basis days for an ordinary employee and eleven for a 短時間労働者, so a misclassification silently changes which months count. Every test comes back with the provision it rests on and whether it passed, and the 88,000 figure excludes overtime, bonuses, commuting and family allowances — folding those in is the usual way people arrive at the wrong answer. The headcount threshold steps down over the coming years, so the schedule is returned rather than left as a number to copy.",
+    "operationId": "getV1WorkerType",
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid or missing query parameter"
+     }
+    },
+    "parameters": [
+     {
+      "name": "weekly_hours",
+      "in": "query",
+      "required": true,
+      "description": "1週間の所定労働時間.",
+      "schema": {
+       "type": "number",
+       "example": 25
+      }
+     },
+     {
+      "name": "normal_weekly_hours",
+      "in": "query",
+      "required": false,
+      "description": "The same figure for a comparable full-time worker. Defaults to 40.",
+      "schema": {
+       "type": "number",
+       "example": 40
+      }
+     },
+     {
+      "name": "monthly_days",
+      "in": "query",
+      "required": false,
+      "description": "1月間の所定労働日数. The article tests days as well as hours.",
+      "schema": {
+       "type": "number",
+       "example": 16
+      }
+     },
+     {
+      "name": "normal_monthly_days",
+      "in": "query",
+      "required": false,
+      "description": "The same figure for a comparable full-time worker.",
+      "schema": {
+       "type": "number",
+       "example": 20
+      }
+     },
+     {
+      "name": "monthly_wage",
+      "in": "query",
+      "required": false,
+      "description": "所定内賃金の月額, excluding overtime, bonuses, commuting and family allowances.",
+      "schema": {
+       "type": "integer",
+       "example": 100000
+      }
+     },
+     {
+      "name": "is_student",
+      "in": "query",
+      "required": false,
+      "description": "学生 under 学校教育法. Night-course and graduating students are exceptions.",
+      "schema": {
+       "type": "boolean",
+       "example": false
+      }
+     },
+     {
+      "name": "workplace_insured_count",
+      "in": "query",
+      "required": false,
+      "description": "Pension-insured headcount at the employer, short-time workers excluded.",
+      "schema": {
+       "type": "integer",
+       "example": 51
+      }
+     },
+     {
+      "name": "employment_months",
+      "in": "query",
+      "required": false,
+      "description": "Expected length of the engagement, in months.",
+      "schema": {
+       "type": "number",
+       "example": 12
+      }
+     }
+    ],
+    "tags": [
+     "Payroll"
+    ]
+   }
+  },
   "/v1/eligibility": {
    "get": {
     "summary": "Is social insurance due in a joining or leaving month?",

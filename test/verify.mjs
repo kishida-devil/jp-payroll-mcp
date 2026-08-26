@@ -2619,6 +2619,100 @@ for (const [p, want, label] of [
      'the default date follows the same rule as an explicit one',
      `today=${today} next=${nextRevision} status=${bare.status}`);
 }
+// ---- 50. 被保険者区分そのものを判定すること (F-18) ----
+// バー: 健康保険法第3条第1項第9号。本文に「四分の三」「通常の労働者」「同一の事業所」
+// 「一月間の所定労働日数」があり、イに「一週間の所定労働時間が二十時間未満であること」、
+// ロが労働基準法第4条第3項各号の賃金を除いた月額(八万八千円未満)、ハが学校教育法の学生。
+// 特定適用事業所の人数要件は同条には無く、日本年金機構の公表(被保険者総数51人以上、
+// 1年のうち6月間以上見込み)による。
+//
+// この分類を利用者に決めさせていたため、間違えると支払基礎日数の閾値が17日と11日で
+// 入れ替わり、定時決定が無警告で誤答になっていた。一番間違えやすい判断を丸投げしていた。
+{
+  const wt = (q) => get(`/v1/worker-type?${q}`);
+
+  // 4分の3を満たす通常の労働者。
+  const full = (await wt('weekly_hours=40&normal_weekly_hours=40')).body;
+  ok(full.insured === true && full.worker_type === 'general',
+     'a full-time worker is an ordinary insured person',
+     `${full.insured} / ${full.worker_type}`);
+  ok(full.payment_basis_threshold === 17,
+     'and 定時決定 counts months of 17 payment-basis days', `${full.payment_basis_threshold}`);
+
+  // ちょうど4分の三。30/40 = 0.75 なので満たす側。
+  const exactly = (await wt('weekly_hours=30&normal_weekly_hours=40')).body;
+  ok(exactly.insured === true && exactly.worker_type === 'part_time_short_hours',
+     'exactly three-quarters still clears the 四分の三 test, as a 短時間就労者',
+     `${exactly.insured} / ${exactly.worker_type}`);
+  ok(exactly.payment_basis_threshold === 17,
+     'a 短時間就労者 is still judged on 17 days', `${exactly.payment_basis_threshold}`);
+
+  // 4分の三未満 + 4要件すべて充足 → 短時間労働者(11日)。
+  const short = (await wt(
+    'weekly_hours=25&normal_weekly_hours=40&monthly_wage=100000&is_student=false&workplace_insured_count=51&employment_months=12')).body;
+  ok(short.insured === true && short.worker_type === 'short_time_insured',
+     'under three-quarters but meeting all four tests is a 短時間労働者',
+     `${short.insured} / ${short.worker_type}`);
+  ok(short.payment_basis_threshold === 11,
+     'and that is the classification judged on 11 days, not 17',
+     `${short.payment_basis_threshold}`);
+
+  // 各要件を1つずつ落とす。落ちた理由が名指しされること。
+  const fails = [
+    ['weekly_hours=15&normal_weekly_hours=40&monthly_wage=100000&workplace_insured_count=51&employment_months=12',
+     'weekly_hours', 'under 20 hours a week'],
+    ['weekly_hours=25&normal_weekly_hours=40&monthly_wage=80000&workplace_insured_count=51&employment_months=12',
+     'monthly_wage', 'under 88,000 a month'],
+    ['weekly_hours=25&normal_weekly_hours=40&monthly_wage=100000&is_student=true&workplace_insured_count=51&employment_months=12',
+     'is_student', 'a student'],
+    ['weekly_hours=25&normal_weekly_hours=40&monthly_wage=100000&workplace_insured_count=40&employment_months=12',
+     'workplace_insured_count', 'a workplace under the headcount'],
+    ['weekly_hours=25&normal_weekly_hours=40&monthly_wage=100000&workplace_insured_count=51&employment_months=2',
+     'employment_months', 'an engagement of two months or less'],
+  ];
+  for (const [q, key, label] of fails) {
+    const r = (await wt(q)).body;
+    ok(r.insured === false, `${label} is not insured`, `${r.insured} / ${r.worker_type}`);
+    const failed = (r.tests ?? []).filter((t) => t.passed === false).map((t) => t.key);
+    ok(failed.includes(key), `and the response names ${key} as the test that failed`,
+       JSON.stringify(failed));
+  }
+
+  // 判定の根拠が条文で示されること。丸投げをやめた以上、根拠は返す必要がある。
+  ok((short.tests ?? []).every((t) => typeof t.basis === 'string' && t.basis.length > 0),
+     'every test carries the provision it rests on',
+     JSON.stringify((short.tests ?? []).map((t) => t.key)));
+  ok(JSON.stringify(short).includes('健康保険法第3条'),
+     'and the article itself is cited');
+
+  // 8.8万円に算入しない賃金。ここを足して判定すると通ってしまう人が出る。
+  ok(/割増賃金|残業|通勤手当|賞与/.test(JSON.stringify(short.notes ?? {})),
+     'the response says which pay is left out of the 88,000',
+     JSON.stringify(short.notes ?? {}).slice(0, 200));
+
+  // 人数要件は段階的に下がる。写した数字が腐る類の値なので、予定を返す。
+  ok(Array.isArray(short.headcount_schedule) && short.headcount_schedule.length >= 2,
+     'the staged reduction of the headcount threshold is reported',
+     JSON.stringify(short.headcount_schedule));
+
+  // 判定結果は定時決定にそのまま渡せること。両者が食い違うと意味がない。
+  const reg = (await get(
+    `/v1/standard-remuneration/regular?months=120000:12,120000:12,120000:12&worker_type=${short.worker_type}`)).body;
+  ok(reg.payment_basis_threshold === short.payment_basis_threshold,
+     'the threshold this endpoint returns is the one the determination uses',
+     `${reg.payment_basis_threshold} vs ${short.payment_basis_threshold}`);
+  ok(reg.months_used === 3,
+     'so a 12-day month counts for a 短時間労働者 where it would not for anyone else',
+     `${reg.months_used}`);
+
+  // 入力の検査。
+  ok((await wt('')).status === 400, 'weekly_hours is required');
+  ok((await wt('weekly_hours=-1')).status === 400, 'a negative weekly_hours is refused');
+  ok((await wt('weekly_hours=25&normal_weekly_hours=0')).status === 400,
+     'a normal_weekly_hours of zero is refused — it would divide by nothing');
+  ok((await wt('weekly_hours=25&bogus=1')).status === 400, 'an unknown parameter is refused');
+}
+
 
 
 

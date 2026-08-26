@@ -894,6 +894,44 @@ RECIPE = {
             ],
         },
         {
+            "path": "/v1/worker-type",
+            "summary": "Is this person insured, and on which day-count?",
+            "description": (
+                "健康保険法第3条第1項第9号 insures anyone whose weekly hours and monthly days "
+                "reach three-quarters of a comparable full-time worker. Below that, cover "
+                "turns on four further tests: twenty hours a week, 88,000 yen a month, not a "
+                "student, and a workplace of at least fifty-one insured people. "
+                "This is the classification Japanese payroll gets wrong most often, and it "
+                "moves a real number: the annual determination counts months of seventeen "
+                "payment-basis days for an ordinary employee and eleven for a 短時間労働者, so "
+                "a misclassification silently changes which months count. "
+                "Every test comes back with the provision it rests on and whether it passed, "
+                "and the 88,000 figure excludes overtime, bonuses, commuting and family "
+                "allowances — folding those in is the usual way people arrive at the wrong "
+                "answer. The headcount threshold steps down over the coming years, so the "
+                "schedule is returned rather than left as a number to copy."
+            ),
+            "tags": ["Payroll"],
+            "params": [
+                {"name": "weekly_hours", "required": True, "type": "number", "example": 25,
+                 "description": "1週間の所定労働時間."},
+                {"name": "normal_weekly_hours", "type": "number", "example": 40,
+                 "description": "The same figure for a comparable full-time worker. Defaults to 40."},
+                {"name": "monthly_days", "type": "number", "example": 16,
+                 "description": "1月間の所定労働日数. The article tests days as well as hours."},
+                {"name": "normal_monthly_days", "type": "number", "example": 20,
+                 "description": "The same figure for a comparable full-time worker."},
+                {"name": "monthly_wage", "type": "integer", "example": 100000,
+                 "description": "所定内賃金の月額, excluding overtime, bonuses, commuting and family allowances."},
+                {"name": "is_student", "type": "boolean", "example": False,
+                 "description": "学生 under 学校教育法. Night-course and graduating students are exceptions."},
+                {"name": "workplace_insured_count", "type": "integer", "example": 51,
+                 "description": "Pension-insured headcount at the employer, short-time workers excluded."},
+                {"name": "employment_months", "type": "number", "example": 12,
+                 "description": "Expected length of the engagement, in months."},
+            ],
+        },
+        {
             "path": "/v1/eligibility",
             "summary": "Is social insurance due in a joining or leaving month?",
             "description": (

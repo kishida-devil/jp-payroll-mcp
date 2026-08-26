@@ -544,6 +544,54 @@ server.registerTool('lookup_standard_remuneration', {
 // Eligibility, leave and age
 // ---------------------------------------------------------------------------
 
+server.registerTool('judge_worker_type', {
+  title: '被保険者区分の判定 — 四分の三基準と20時間・88,000円・学生・51人',
+  description:
+    'Decides whether someone is covered by health and pension insurance, and on which ' +
+    'payment-basis day count their annual determination runs.\n\n' +
+    'Call this before decide_regular_remuneration or judge_monthly_revision whenever the ' +
+    'person is anything other than plainly full-time. Those tools take a worker_type, and ' +
+    'guessing it changes a real number: the determination counts months of seventeen ' +
+    'payment-basis days for an ordinary employee and eleven for a 短時間労働者. Get the ' +
+    'classification wrong and the answer is wrong with no sign of it.\n\n' +
+    '健康保険法第3条第1項第9号 covers anyone whose weekly hours and monthly days reach ' +
+    'three-quarters of a comparable full-time worker. Below that, four further tests decide ' +
+    'it: twenty hours a week, 88,000 yen a month, not a student, and a workplace of at least ' +
+    'fifty-one insured people. The engagement must also be expected to run past two months.\n\n' +
+    'The 88,000 figure leaves out overtime, bonuses, commuting and family allowances. Folding ' +
+    'those in is the usual route to a wrong answer, so ask for 所定内賃金 specifically rather ' +
+    'than total pay.\n\n' +
+    'What counts as a comparable full-time worker, and whether someone is a student for this ' +
+    'purpose, are facts about the workplace and the person. Ask rather than assume; the tool ' +
+    'applies the tests to what you pass and names any it could not evaluate.',
+  inputSchema: {
+    weekly_hours: z.number().describe('1週間の所定労働時間.'),
+    normal_weekly_hours: z.number().optional().describe(
+      'The same figure for a comparable full-time worker at that workplace. Defaults to 40.'),
+    monthly_days: z.number().optional().describe(
+      '1月間の所定労働日数. The article tests days as well as hours, so pass both where known.'),
+    normal_monthly_days: z.number().optional().describe(
+      'The same figure for a comparable full-time worker.'),
+    monthly_wage: z.number().optional().describe(
+      '所定内賃金の月額 — excluding overtime, bonuses, commuting and family allowances.'),
+    is_student: z.boolean().optional().describe(
+      'A student under 学校教育法. Night courses and those with a graduation certificate are exceptions.'),
+    workplace_insured_count: z.number().optional().describe(
+      'Pension-insured headcount at the employer, not counting short-time workers.'),
+    employment_months: z.number().optional().describe(
+      'How long the engagement is expected to run, in months.'),
+  },
+}, async (a) => call('/v1/worker-type' + qs({
+  weekly_hours: a.weekly_hours,
+  normal_weekly_hours: a.normal_weekly_hours,
+  monthly_days: a.monthly_days,
+  normal_monthly_days: a.normal_monthly_days,
+  monthly_wage: a.monthly_wage,
+  is_student: a.is_student,
+  workplace_insured_count: a.workplace_insured_count,
+  employment_months: a.employment_months,
+})));
+
 server.registerTool('check_insurance_eligibility', {
   title: '入社月・退社月の保険料の要否',
   description:

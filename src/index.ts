@@ -33,6 +33,9 @@ import { BONUS_INSURANCE_ATTRIBUTION, bonusInsurance } from './bonus-insurance';
 import { OVERTIME_ATTRIBUTION, overtimePay } from './overtime';
 import { AGE_RULES, ageStatus, parseDate } from './age';
 import { ELIGIBILITY_ATTRIBUTION, eligibilityFor } from './eligibility';
+import {
+  EXCLUDED_FROM_WAGE_TEST, HEADCOUNT_SCHEDULE, WORKER_TYPE_ATTRIBUTION, judgeWorkerType,
+} from './worker-type';
 import { LEAVE_ATTRIBUTION, leaveExemption, type LeaveKind } from './leave-exemption';
 import {
   FIXED_PAY_GUIDANCE, PAYMENT_BASIS_DAYS_GUIDANCE, REGULAR_DECISION_EXCLUSIONS,
@@ -332,6 +335,7 @@ app.get('/', (c) =>
       'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': 'Same tax by the statutory formula method (電算機計算の特例)',
       'POST /v1/payroll/batch': `Up to ${MAX_BATCH} payslips in one call, with run totals (free tier: ${FREE_TIER.batch_rows} per batch)`,
       'GET /v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-03-28': 'Which months of social insurance a maternity or childcare leave exempts',
+      'GET /v1/worker-type?weekly_hours=25&monthly_wage=100000&workplace_insured_count=51&employment_months=12': '被保険者区分の判定 — 四分の三基準と20時間/88,000円/学生/51人。誤ると定時決定の支払基礎日数が17日と11日で入れ替わる',
       'GET /v1/eligibility?month=2026-03&left_on=2026-03-30': 'Whether social insurance is due in a joining or leaving month',
       'GET /v1/age-milestones?birth_date=1986-04-01': 'When 40, 65, 70 and 75 are reached and what each changes',
       'GET /v1/bonus-insurance?prefecture=Tokyo&bonus=800000&age=40': 'Social insurance on a bonus, with the annual and per-payment caps',
@@ -1604,6 +1608,95 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
       recurring_annually: recurring, employee_consent: consent,
     }),
     attribution: REVISION_ATTRIBUTION,
+  });
+});
+
+/**
+ * 被保険者区分そのものを判定する。
+ *
+ * `worker_type` は支払基礎日数の閾値を17日と11日で切り替える。日本の社会保険で
+ * いちばん間違えやすい分類でありながら、このAPIは利用者に決めさせていた。誤れば
+ * 定時決定が無警告で誤答になる。材料は揃っているのに判定を渡していなかった。
+ */
+app.get('/v1/worker-type', (c) => {
+  const unknownQ = rejectUnknownQuery(c, [
+    'weekly_hours', 'normal_weekly_hours', 'monthly_days', 'normal_monthly_days',
+    'monthly_wage', 'is_student', 'workplace_insured_count', 'employment_months',
+  ] as const);
+  if (unknownQ) return unknownQ;
+
+  const num = (key: string, { positive = false } = {}) => {
+    const raw = c.req.query(key);
+    if (raw === undefined) return { given: false, value: null as number | null, bad: false };
+    const value = Number(raw);
+    return { given: true, value, bad: !Number.isFinite(value) || value < 0 || (positive && value === 0) };
+  };
+
+  const weekly = num('weekly_hours');
+  if (!weekly.given)
+    return bad(c, '"weekly_hours" is required.',
+      '1週間の所定労働時間。四分の三基準(健康保険法第3条第1項第9号本文)も20時間の要件も、まずこれで決まります。',
+      'missing_parameter');
+
+  const normalWeekly = num('normal_weekly_hours', { positive: true });
+  const monthlyDays = num('monthly_days');
+  const normalMonthlyDays = num('normal_monthly_days', { positive: true });
+  const wage = num('monthly_wage');
+  const headcount = num('workplace_insured_count');
+  const months = num('employment_months');
+
+  for (const [key, f] of [
+    ['weekly_hours', weekly], ['normal_weekly_hours', normalWeekly],
+    ['monthly_days', monthlyDays], ['normal_monthly_days', normalMonthlyDays],
+    ['monthly_wage', wage], ['workplace_insured_count', headcount],
+    ['employment_months', months],
+  ] as const)
+    if (f.bad)
+      return bad(c, `"${key}" must be a non-negative number` +
+        (key.startsWith('normal_') ? ' greater than zero.' : '.'));
+
+  const studentRaw = c.req.query('is_student');
+  if (studentRaw !== undefined && studentRaw !== 'true' && studentRaw !== 'false')
+    return bad(c, '"is_student" must be true or false.');
+
+  const decision = judgeWorkerType({
+    weekly_hours: weekly.value!,
+    normal_weekly_hours: normalWeekly.value,
+    monthly_days: monthlyDays.value,
+    normal_monthly_days: normalMonthlyDays.value,
+    monthly_wage: wage.value,
+    is_student: studentRaw === 'true',
+    workplace_insured_count: headcount.value,
+    employment_months: months.value,
+  });
+
+  return c.json({
+    input: {
+      weekly_hours: weekly.value,
+      normal_weekly_hours: normalWeekly.value ?? 40,
+      ...(monthlyDays.given ? { monthly_days: monthlyDays.value } : {}),
+      ...(normalMonthlyDays.given ? { normal_monthly_days: normalMonthlyDays.value } : {}),
+      ...(wage.given ? { monthly_wage: wage.value } : {}),
+      is_student: studentRaw === 'true',
+      ...(headcount.given ? { workplace_insured_count: headcount.value } : {}),
+      ...(months.given ? { employment_months: months.value } : {}),
+    },
+    ...decision,
+    notes: {
+      wage_test:
+        '88,000円の判定に算入しない賃金があります: ' + EXCLUDED_FROM_WAGE_TEST.join('、') +
+        '。これらを足して判定すると、本来入らない人が入ります。時間外・休日・深夜の割増賃金も' +
+        '残業代として除きます。',
+      threshold_use:
+        'payment_basis_threshold は GET /v1/standard-remuneration/regular と ' +
+        'POST /v1/standard-remuneration/regular/batch の worker_type にそのまま渡せます。',
+      headcount:
+        '人数要件は段階的に下がります。写した数字は腐るので headcount_schedule を確認してください。',
+      not_decidable:
+        '「通常の労働者」が誰か、学生に当たるか(卒業見込み・夜間部の例外)は事業所ごとの事実で、' +
+        'このAPIでは決められません。渡された値を条文の要件にあてはめた結果を返します。',
+    },
+    attribution: WORKER_TYPE_ATTRIBUTION,
   });
 });
 
