@@ -566,6 +566,38 @@ server.registerTool('lookup_standard_remuneration', {
 // Eligibility, leave and age
 // ---------------------------------------------------------------------------
 
+server.registerTool('national_insurance', {
+  title: '国民年金・国民健康保険 — 被用者保険に入らない人の側',
+  description:
+    'For anyone outside employee cover: the self-employed, freelancers, people between jobs.\n\n' +
+    'Use this instead of calculate_payslip when the person is not an employee. Running a ' +
+    'freelancer through the payslip returns a figure computed under a different scheme ' +
+    'entirely, with nothing in the answer to say so. If you are unsure which side someone is ' +
+    'on, judge_worker_type decides it.\n\n' +
+    'The two schemes differ in how far they can be answered, and the difference matters. ' +
+    '国民年金法第87条 makes the pension contribution a statutory amount times a revision rate ' +
+    'set each year by cabinet order — the same figure everywhere in the country, flat ' +
+    'regardless of income. That comes back as a number.\n\n' +
+    '国民健康保険法第76条 leaves the health contribution to each municipality, collected from ' +
+    'the head of the household, and states no figure at all. Around 1,700 municipalities each ' +
+    'set their own income-based, per-person and per-household components and their own ' +
+    'ceilings. There is no national number to give. Do not estimate one, and do not present a ' +
+    'figure from one city as though it were general — tell the person to ask their own ' +
+    'municipality, which is what the response says.\n\n' +
+    'Exemptions, deferrals and the student special case all change what is actually paid, and ' +
+    'whether they apply turns on income and household. Those are not judged here.',
+  inputSchema: {
+    as_of: z.string().optional().describe(
+      'Date to judge, YYYY-MM-DD. Outside the year carried it refuses rather than quoting a stale figure.'),
+    months: z.number().optional().describe(
+      'Months to total. The contribution is flat, so this multiplies.'),
+    supplementary: z.boolean().optional().describe(
+      'Add the optional 付加保険料 of 400 a month, which raises the basic old-age pension later.'),
+  },
+}, async (a) => call('/v1/national-insurance' + qs({
+  as_of: a.as_of, months: a.months, supplementary: a.supplementary,
+})));
+
 server.registerTool('calculate_annual_cost', {
   title: '年間の労務コスト — 賞与の上限を年度で通した額',
   description:

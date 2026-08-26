@@ -902,6 +902,35 @@ RECIPE = {
             ],
         },
         {
+            "path": "/v1/national-insurance",
+            "summary": "The other side: national pension, and why national health cannot be quoted",
+            "description": (
+                "For anyone outside employee cover — the self-employed, freelancers, people "
+                "between jobs. The two schemes differ in how far they can be answered. "
+                "国民年金法第87条 sets the pension contribution as a statutory amount times a "
+                "revision rate fixed each year by cabinet order, and the result is the same "
+                "figure everywhere in the country, flat regardless of income. That can be "
+                "returned. "
+                "国民健康保険法第76条 leaves the health contribution to each municipality, "
+                "collected from the head of the household, and carries no figure at all. "
+                "There are about 1,700 municipalities, each setting its own income-based, "
+                "per-person and per-household components and its own ceilings, so no single "
+                "national number exists. This endpoint says so rather than offering an "
+                "estimate — a plausible one would only remove the reader's chance of "
+                "noticing it does not match the bill. "
+                "Which side of the line someone falls on is decided by /v1/worker-type."
+            ),
+            "tags": ["Payroll"],
+            "params": [
+                {"name": "as_of", "example": "2026-06-01",
+                 "description": "Date to judge. Outside the year carried, it refuses rather than quoting a stale figure."},
+                {"name": "months", "type": "integer", "example": 12,
+                 "description": "Number of months to total. The rate is flat, so this simply multiplies."},
+                {"name": "supplementary", "type": "boolean", "example": False,
+                 "description": "Add the optional 付加保険料 of 400 a month."},
+            ],
+        },
+        {
             "path": "/v1/annual-cost",
             "summary": "What a hire costs over a year, bonuses included",
             "description": (

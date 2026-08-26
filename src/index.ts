@@ -34,6 +34,9 @@ import { OVERTIME_ATTRIBUTION, overtimePay } from './overtime';
 import { AGE_RULES, ageStatus, parseDate } from './age';
 import { ELIGIBILITY_ATTRIBUTION, eligibilityFor } from './eligibility';
 import {
+  NATIONAL_HEALTH, NATIONAL_INSURANCE_ATTRIBUTION, NATIONAL_PENSION,
+} from './national-insurance';
+import {
   HEALTH_ANNUAL_CAP, PENSION_PER_PAYMENT_CAP,
 } from './bonus-insurance';
 import {
@@ -345,6 +348,7 @@ app.get('/', (c) => {
       'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': 'Same tax by the statutory formula method (電算機計算の特例)',
       'POST /v1/payroll/batch': `Up to ${MAX_BATCH} payslips in one call, with run totals (free tier: ${FREE_TIER.batch_rows} per batch)`,
       'GET /v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-03-28': 'Which months of social insurance a maternity or childcare leave exempts',
+      'GET /v1/national-insurance?months=12': '国民年金は全国一律なので額を返す。国民健康保険は市町村の条例なので全国一律の額が存在せず、返さない理由を返す',
       'GET /v1/annual-cost?prefecture=Tokyo&monthly_salary=400000&age=40&bonuses=800000,800000': '年間の労務コスト — 健保の賞与上限は年度累計573万、厚年は1回150万なので、月次×12では出ない',
       'GET /v1/annual-leave?hired_on=2020-04-01&attendance_rate=0.9': '年次有給休暇の付与日数と年5日の時季指定義務 — 勤続で10→20日、週30時間未満は比例付与 (労基法39条)',
       'GET /v1/worker-type?weekly_hours=25&monthly_wage=100000&workplace_insured_count=51&employment_months=12': '被保険者区分の判定 — 四分の三基準と20時間/88,000円/学生/51人。誤ると定時決定の支払基礎日数が17日と11日で入れ替わる',
@@ -1800,6 +1804,86 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
  *
  * 賞与は渡された順に年度内で処理する。健保の枠は先に来た賞与から埋まる。
  */
+/**
+ * 被用者保険に入らない人の側。
+ *
+ * このAPIに `/v1/payroll` しか無かったころ、フリーランスが呼ぶと会社員として
+ * 計算した答えが返り、エラーにもならなかった。気づく手がかりが無いまま違う制度の
+ * 数字が出るのは、無いより悪い。
+ *
+ * 国民年金は全国一律なので答えられる。国民健康保険は市町村が条例で定めるので、
+ * 全国一律の答えが存在しない。**答えられないほうを、答えられない形で返す。**
+ */
+app.get('/v1/national-insurance', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['as_of', 'months', 'supplementary', 'include'] as const);
+  if (unknownQ) return unknownQ;
+
+  const asOfRaw = c.req.query('as_of');
+  const asOf = asOfRaw === undefined ? new Date().toISOString().slice(0, 10) : asOfRaw;
+  if (asOfRaw !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) || !parseDate(asOfRaw)))
+    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+
+  // 保険料は毎年度4月に変わる。収録している年度の外を、その年度の額で答えない。
+  // 最低賃金と同じ形の防壁で、データが追いつけば自動的に外れる。
+  if (asOf < NATIONAL_PENSION.from || asOf > NATIONAL_PENSION.through)
+    return c.json({
+      error: `The national pension contribution for ${asOf} is not carried here.`,
+      code: 'out_of_coverage',
+      coverage: { from: NATIONAL_PENSION.from, through: NATIONAL_PENSION.through,
+                  fiscal_year: NATIONAL_PENSION.fiscal_year },
+      hint:
+        '国民年金保険料は年度ごとに変わります。国民年金法第87条は法定額に「保険料改定率」を乗じた額とし、' +
+        'その改定率を毎年度「政令で定める」と定めているためです。収録しているのは' +
+        `${NATIONAL_PENSION.era_year}年度(${NATIONAL_PENSION.from}〜${NATIONAL_PENSION.through})分で、` +
+        'それ以外の日付に現年度の額を返せば、もっともらしい誤りになります。',
+      source_url: NATIONAL_PENSION.source_url,
+    }, 422);
+
+  const monthsRaw = c.req.query('months');
+  const months = monthsRaw === undefined ? 1 : Number(monthsRaw);
+  if (monthsRaw !== undefined && (!Number.isInteger(months) || months < 1 || months > 480))
+    return bad(c, '"months" must be a whole number of months from 1 to 480.');
+
+  const suppRaw = c.req.query('supplementary');
+  if (suppRaw !== undefined && suppRaw !== 'true' && suppRaw !== 'false')
+    return bad(c, '"supplementary" must be true or false.',
+      '付加保険料。任意で月400円を納めると老齢基礎年金が増えます (国民年金法第87条の2)。');
+  const supplementary = suppRaw === 'true';
+
+  const perMonth = NATIONAL_PENSION.monthly + (supplementary ? NATIONAL_PENSION.supplementary_monthly : 0);
+
+  return c.json({
+    as_of: asOf,
+    national_pension: {
+      ...NATIONAL_PENSION,
+      supplementary_included: supplementary,
+      monthly_total: perMonth,
+      months,
+      total: perMonth * months,
+      flat_rate: true,
+    },
+    national_health_insurance: NATIONAL_HEALTH,
+    employee_insurance: {
+      note:
+        '被用者保険(健康保険・厚生年金)に入るかどうかは GET /v1/worker-type が判定します。' +
+        '入るなら GET /v1/payroll、入らないならこのエンドポイントの側です。' +
+        '週20時間・月88,000円・学生でないこと・事業所の規模で決まります (健康保険法第3条第1項第9号)。',
+      worker_type: '/v1/worker-type',
+      payroll: '/v1/payroll',
+    },
+    notes: {
+      why_no_health_amount:
+        '国民健康保険の額を返さないのは未実装だからではありません。国民健康保険法第76条が' +
+        '市町村に条例で定めさせているので、全国一律の金額が存在しないためです。',
+      exemptions:
+        '免除・納付猶予・学生納付特例に該当すれば納付額は変わります。該当するかは所得と世帯の' +
+        '事実によるため、ここでは判定していません。',
+      prepayment: 'まとめて前納すると割引があります。割引額はこのAPIでは扱っていません。',
+    },
+    attribution: NATIONAL_INSURANCE_ATTRIBUTION,
+  });
+});
+
 app.get('/v1/annual-cost', (c) => {
   const unknownQ = rejectUnknownQuery(c, [
     'prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',

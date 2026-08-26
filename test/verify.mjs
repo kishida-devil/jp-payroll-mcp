@@ -3123,6 +3123,84 @@ for (const [p, want, label] of [
   ok((await ac(`${BASE_Q}&bonuses=-1`)).status === 400, 'a negative bonus is refused');
   ok((await ac(`${BASE_Q}&bogus=1`)).status === 400, 'an unknown parameter is refused');
 }
+// ---- 55. 被用者保険に入らない人の側 (F-08) ----
+// バー: 国民年金法第87条 — 保険料は法定額に「保険料改定率」を乗じた額で、改定率は
+// 「毎年度」「政令で定める」。条文には法定額が 13,580 から 17,000 まで並ぶ。
+// 国民健康保険法第76条 — 「市町村」が「世帯主」から徴収する(または国民健康保険税)。
+// **円の記載が一つも無い。** (e-Gov 334AC0000000141 / 333AC0000000192 で確認)
+//
+// つまり国民年金は全国一律で答えられ、国民健康保険は全国一律の答えが存在しない。
+// フリーランスが /v1/payroll を呼ぶと会社員として計算した数字が返り、エラーにも
+// ならなかった。気づく手がかりが無いまま違う制度の答えが出るのが最も危険で、
+// 「無い」より「あるけど間違う」ほうが重い。
+{
+  const ni = (q) => get(`/v1/national-insurance${q ? '?' + q : ''}`);
+
+  const one = (await ni('as_of=2026-06-01')).body;
+  const np = one.national_pension;
+  ok(np?.monthly === 17920, 'the national pension contribution is a single national figure',
+     `${np?.monthly}`);
+  ok(np?.flat_rate === true,
+     'and it is flat — it does not move with income the way pension premiums do',
+     `${np?.flat_rate}`);
+  ok(np?.from === '2026-04-01' && np?.through === '2027-03-31',
+     'the year it covers is stated', `${np?.from} - ${np?.through}`);
+  ok(/国民年金法第87条/.test(np?.statute ?? ''), 'with the provision behind it', np?.statute);
+
+  // 定額なので月数倍で足りる。
+  const year = (await ni('as_of=2026-06-01&months=12')).body;
+  ok(year.national_pension?.total === 17920 * 12,
+     'twelve months is twelve times the month, being a flat rate',
+     `${year.national_pension?.total}`);
+
+  // 付加保険料は月400円。任意。
+  const supp = (await ni('as_of=2026-06-01&supplementary=true&months=12')).body;
+  ok(supp.national_pension?.monthly_total === 17920 + 400,
+     'the optional supplementary contribution adds 400 a month',
+     `${supp.national_pension?.monthly_total}`);
+
+  // 国民健康保険は金額を返さない。返さない理由を返す。
+  const nh = one.national_health_insurance;
+  ok(nh?.computable === false,
+     'national health insurance is reported as not computable', `${nh?.computable}`);
+  ok(/国民健康保険法第76条/.test(nh?.statute ?? ''),
+     'citing the article that leaves it to the municipality', nh?.statute);
+  ok(/市町村/.test(nh?.reason ?? '') && /条例|一律/.test(nh?.reason ?? ''),
+     'and saying why there is no single national figure', nh?.reason?.slice(0, 80));
+  ok(Array.isArray(nh?.determined_by) && nh.determined_by.length >= 4,
+     'what actually decides it is listed, so the reader knows where to look',
+     `${nh?.determined_by?.length}`);
+  ok(typeof nh?.where_to_look === 'string' && nh.where_to_look.length > 0,
+     'along with where the actual figure can be got');
+  // 概算を返さないことを明言する。もっともらしい概算は気づく手がかりを消す。
+  ok(/未実装だから|できるふり|もっともらしい/.test(JSON.stringify(nh)),
+     'and it says plainly that no estimate is offered on purpose',
+     JSON.stringify(nh).slice(0, 120));
+
+  // どちらの制度に入るかは worker-type が決める。半分実装にしない。
+  ok(one.employee_insurance?.worker_type === '/v1/worker-type'
+       && one.employee_insurance?.payroll === '/v1/payroll',
+     'the response points at the endpoint that decides which side someone is on',
+     JSON.stringify(one.employee_insurance));
+
+  // 年度が変われば額が変わる。収録外の日付に現年度の額を返さない。
+  for (const asOf of ['2026-03-31', '2027-04-01']) {
+    const r = await ni(`as_of=${asOf}`);
+    ok(r.status === 422 && r.body.code === 'out_of_coverage',
+       `${asOf} is refused rather than answered with this year's figure`,
+       `${r.status} ${r.body.code}`);
+    ok(r.body.coverage?.from === '2026-04-01',
+       'and the refusal names what is actually carried', JSON.stringify(r.body.coverage));
+  }
+
+  // 入力の検査。
+  ok((await ni('as_of=nonsense')).status === 400, 'a malformed date is refused');
+  ok((await ni('as_of=2026-06-01&months=0')).status === 400, 'zero months is refused');
+  ok((await ni('as_of=2026-06-01&supplementary=maybe')).status === 400,
+     'a non-boolean supplementary is refused');
+  ok((await ni('as_of=2026-06-01&bogus=1')).status === 400, 'an unknown parameter is refused');
+}
+
 
 
 
