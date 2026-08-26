@@ -902,6 +902,39 @@ RECIPE = {
             ],
         },
         {
+            "path": "/v1/invoice-number/validate/batch",
+            "method": "post",
+            "summary": "Check many registration numbers at once, and know what that does not tell you",
+            "description": (
+                "A check digit tells you the shape of a number is right. It does not tell you "
+                "the number is registered, and 消費税法第57条の2 provides both for the "
+                "Commissioner to revoke a registration and for one to lapse — so a "
+                "well-formed number can be unregistered, revoked or expired. Reading a "
+                "passing check digit as verification is the mistake this endpoint exists to "
+                "prevent, and every response says which register was not consulted and where "
+                "it is. "
+                "What bulk checking does earn you is the elimination: anything failing on "
+                "shape needs no lookup at all, so the list you take to the NTA site is "
+                "shorter. Duplicates come back as given rather than folded together, so rows "
+                "line up with your own list, and each result carries the index of its input."
+            ),
+            "tags": ["Tax"],
+            "params": [],
+            "body": {
+                "type": "object",
+                "required": ["numbers"],
+                "properties": {
+                    "numbers": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 1000,
+                        "items": {"type": "string", "example": "T8700110005901"},
+                        "description": "Registration numbers as written, including the leading T.",
+                    },
+                },
+            },
+        },
+        {
             "path": "/v1/national-insurance",
             "summary": "The other side: national pension, and why national health cannot be quoted",
             "description": (

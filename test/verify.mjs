@@ -9,6 +9,7 @@ const BASE = process.env.BASE ?? 'http://127.0.0.1:8799';
 // thing you run after updating statutory data, when what you need is a clear
 // answer about whether the figures are right — not a puzzle about your setup.
 try {
+  // ここは再試行しない。到達しないなら待つより指示を出すほうがよい。
   const probe = await fetch(BASE + '/', { signal: AbortSignal.timeout(5000) });
   if (!probe.ok) throw new Error(`HTTP ${probe.status}`);
 } catch (e) {
@@ -70,6 +71,25 @@ const ok = (cond, label, detail) => {
       `${((Date.now() - started) / 1000).toFixed(0)}s
 `);
 };
+/**
+ * 再試行つきの fetch。
+ *
+ * workerd は連続負荷でときどき接続を切る。get() にだけバックオフを入れて POST と
+ * 掃引を生の fetch にしていたため、呼び出し回数がいちばん多い掃引が ECONNRESET で
+ * 落ちた。外に出る口をひとつにして、そこに入れる。
+ */
+const tryFetch = async (url, init, attempt = 0) => {
+  try {
+    return await fetch(url, { signal: AbortSignal.timeout(30000), ...init });
+  } catch (e) {
+    if (attempt < ATTEMPTS - 1) {
+      await sleep(250 * 2 ** attempt);
+      return tryFetch(url, init, attempt + 1);
+    }
+    throw new Error(`${init?.method ?? 'GET'} ${url} failed after ${ATTEMPTS} attempts: ${e?.message ?? e}`);
+  }
+};
+
 const near = (a, b, tol = 0.51) => Math.abs(a - b) <= tol;
 
 // ---- 1. rates match the official table for every fixture row ----
@@ -765,7 +785,7 @@ for (const [p, want, label] of [
 // ---- 32. batch payroll ----
 {
   const post = async (body) => {
-    const r = await fetch(BASE + '/v1/payroll/batch', {
+    const r = await tryFetch(BASE + '/v1/payroll/batch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -875,7 +895,7 @@ for (const [p, want, label] of [
 // ---- 33. batch detail modes ----
 {
   const post = async (q, body) => {
-    const r = await fetch(`${BASE}/v1/payroll/batch${q}`, {
+    const r = await tryFetch(`${BASE}/v1/payroll/batch${q}`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
@@ -1383,7 +1403,7 @@ for (const [p, want, label] of [
   // --- 年間平均による保険者算定 ---
   {
     const post = async (payload) => {
-      const r = await fetch(BASE + '/v1/standard-remuneration/annual-average', {
+      const r = await tryFetch(BASE + '/v1/standard-remuneration/annual-average', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
@@ -1520,7 +1540,7 @@ for (const [p, want, label] of [
   // Without that the caps never engage and the section would silently pass.
   const PROD = 'https://japan-payroll-api.tsumugi.workers.dev';
   const post = async (body, headers = {}) => {
-    const r = await fetch(`${PROD}/v1/payroll/batch`, {
+    const r = await tryFetch(`${PROD}/v1/payroll/batch`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
@@ -1532,7 +1552,7 @@ for (const [p, want, label] of [
     employees: Array.from({ length: n }, (_, i) => ({ id: `e${i}`, monthly_salary: 300000 })),
   });
 
-  const root = await (await fetch(PROD + '/')).json();
+  const root = await (await tryFetch(PROD + '/')).json();
   ok(root.free_tier?.batch_rows === 10, 'the root response states the batch cap',
      JSON.stringify(root.free_tier));
   ok(typeof root.free_tier?.upgrade === 'string' && root.free_tier.upgrade.length > 0,
@@ -1552,7 +1572,7 @@ for (const [p, want, label] of [
   // secret configured this still passes (documented fallback), but once it is
   // set, a bare host header must buy nothing.
   const spoofed = await post(rows(50), { 'X-RapidAPI-Host': 'japan-payroll.p.rapidapi.com' });
-  const secretConfigured = (await (await fetch(`${PROD}/`)).json()).free_tier?.entitlement_verified;
+  const secretConfigured = (await (await tryFetch(`${PROD}/`)).json()).free_tier?.entitlement_verified;
   if (secretConfigured) {
     ok(spoofed.status === 400, 'a bare X-RapidAPI-Host header does not grant the paid cap',
        `${spoofed.status}`);
@@ -2082,7 +2102,7 @@ for (const [p, want, label] of [
 // --- 支給項目を配列で受け、賃金台帳が作れる内訳を返すこと (F-16) ---
 {
   const post = async (body) => {
-    const r = await fetch(BASE + '/v1/payroll/batch', {
+    const r = await tryFetch(BASE + '/v1/payroll/batch', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
     });
@@ -2293,7 +2313,7 @@ for (const [p, want, label] of [
 // ---- 45. 通勤手当の非課税限度額を単独で引けること ----
 {
   const ca = async (qs) => {
-    const r = await fetch(`${BASE}/v1/commuting-allowance${qs ? '?' + qs : ''}`);
+    const r = await tryFetch(`${BASE}/v1/commuting-allowance${qs ? '?' + qs : ''}`);
     return { status: r.status, body: await r.json() };
   };
 
@@ -2346,8 +2366,8 @@ for (const [p, want, label] of [
   // 実装はあるが一覧に無い、あるいは仕様書に無いエンドポイントは、存在しないのと
   // 同じになる。第2反復で /v1/overtime-pay と /v1/workers-compensation が
   // まさにその状態だった。割増賃金は作ったのに RapidAPI の出品面に出ていなかった。
-  const root = await (await fetch(`${BASE}/`)).json();
-  const spec = await (await fetch(`${BASE}/openapi.json`)).json();
+  const root = await (await tryFetch(`${BASE}/`)).json();
+  const spec = await (await tryFetch(`${BASE}/openapi.json`)).json();
 
   const listed = new Set(
     Object.keys(root.endpoints ?? {})
@@ -2371,7 +2391,7 @@ for (const [p, want, label] of [
 
   // 一覧に書いた経路が実際に応答すること(404を出品しない)。
   for (const path of ['/v1/commuting-allowance', '/v1/overtime-pay', '/v1/workers-compensation']) {
-    const r = await fetch(`${BASE}${path}`);
+    const r = await tryFetch(`${BASE}${path}`);
     ok(r.status !== 404, `${path} answers rather than 404`, `${r.status}`);
   }
 }
@@ -2425,7 +2445,7 @@ for (const [p, want, label] of [
      'and answers once the age is given');
 
   // バッチは実際の給与計算が通る経路なので、ここが抜けていると意味がない。
-  const batch = await fetch(BASE + '/v1/payroll/batch', {
+  const batch = await tryFetch(BASE + '/v1/payroll/batch', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       defaults: { prefecture: 'Tokyo' },
@@ -2452,7 +2472,7 @@ for (const [p, want, label] of [
      'and cites the article that makes it required', errById['no-age']?.error);
 
   // defaults に置けば行ごとに書かなくてよい。全員分を1つずつ書かせるのは現実的でない。
-  const viaDefaults = await fetch(BASE + '/v1/payroll/batch', {
+  const viaDefaults = await tryFetch(BASE + '/v1/payroll/batch', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       defaults: { prefecture: 'Tokyo', age: 45 },
@@ -2475,7 +2495,7 @@ for (const [p, want, label] of [
 // 単発の口はあるのに、実務が通る口が無いという同じ形の欠落が3度目になる。
 {
   const post = async (body, q = '') => {
-    const r = await fetch(`${BASE}/v1/standard-remuneration/regular/batch${q}`, {
+    const r = await tryFetch(`${BASE}/v1/standard-remuneration/regular/batch${q}`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
     });
@@ -2785,7 +2805,7 @@ for (const [p, want, label] of [
 
   // バッチでも同じ。6月の作業は誰を出すかを選り分けること。
   const post = async (body) => {
-    const r = await fetch(`${BASE}/v1/standard-remuneration/regular/batch`, {
+    const r = await tryFetch(`${BASE}/v1/standard-remuneration/regular/batch`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
     });
@@ -2838,7 +2858,7 @@ for (const [p, want, label] of [
 // 個別に足すと次に追加したものがまた漏れるので、仕様書に載っている全 GET を
 // 走査して確かめる。ここが緑である限り、新しいエンドポイントも漏れない。
 {
-  const spec = await (await fetch(`${BASE}/openapi.json`)).json();
+  const spec = await (await tryFetch(`${BASE}/openapi.json`)).json();
   const paths = Object.entries(spec.paths ?? {});
 
   // GET だけを対象にする。POST の本文は別の検査経路。
@@ -2866,11 +2886,11 @@ for (const [p, want, label] of [
     for (const p of required) qs.set(p.name, sample(p));
 
     // まず素の呼び出しが通ることを確かめる。通らないなら、この掃引では判定できない。
-    const baseline = await fetch(`${BASE}${path}?${qs}`);
+    const baseline = await tryFetch(`${BASE}${path}?${qs}`);
     if (baseline.status >= 400) { skipped.push(`${path} (baseline ${baseline.status})`); continue; }
 
     qs.set('zzz_definitely_not_a_parameter', '1');
-    const r = await fetch(`${BASE}${path}?${qs}`);
+    const r = await tryFetch(`${BASE}${path}?${qs}`);
     const body = await r.json().catch(() => ({}));
     if (r.status !== 400 || body.code !== 'unknown_parameter')
       leaked.push(`${path} -> ${r.status} ${body.code ?? ''}`);
@@ -2909,7 +2929,7 @@ for (const [p, want, label] of [
       const qs = new URLSearchParams();
       for (const rq of required) qs.set(rq.name, sample(rq));
       qs.set(p.name, sample(p));
-      const r = await fetch(`${BASE}${path}?${qs}`);
+      const r = await tryFetch(`${BASE}${path}?${qs}`);
       if (r.status !== 400) continue;
       const body = await r.json().catch(() => ({}));
       if (body.code === 'unknown_parameter') wronglyRejected.push(`${path} ?${p.name}`);
@@ -2920,7 +2940,7 @@ for (const [p, want, label] of [
      wronglyRejected.join(' | ') || 'none');
 
   // 近い綴りには候補を出す。拒否だけでは直せない。
-  const typo = await (await fetch(
+  const typo = await (await tryFetch(
     `${BASE}/v1/minimum-wage?prefecture=Tokyo&dat=2026-01-01`)).json();
   ok(/Did you mean/.test(typo.hint ?? ''),
      'a near miss suggests the parameter that was meant', typo.hint);
@@ -3200,6 +3220,87 @@ for (const [p, want, label] of [
      'a non-boolean supplementary is refused');
   ok((await ni('as_of=2026-06-01&bogus=1')).status === 400, 'an unknown parameter is refused');
 }
+// ---- 56. 登録番号は形が正しくても有効とは限らない (F-11) ----
+// バー: 消費税法第57条の2。e-Gov (363AC0000000108) から取得して確認した語 —
+// 「登録を受けようとする」「登録簿」「公表しなければならない」「登録番号」「届出書」、
+// そして **「登録を取り消す」** と **「効力を失う」**。
+//
+// 取消しと失効が条文にある以上、チェックディジットが通ることと、いま有効な登録で
+// あることは別の事実になる。前者だけを返して後者を尋ねられた形にしておくと、
+// 「検証した」と読まれる。税理士が知りたいのは失効・取消のほうで、300社を
+// 1件ずつ問うのも現実的でない。
+{
+  const inv = (q) => get(`/v1/invoice-number/validate?${q}`);
+
+  const good = (await inv('number=T8700110005901')).body;
+  ok(good.check_digit_valid === true, 'a well-formed number passes the check digit',
+     `${good.check_digit_valid}`);
+
+  // 形式検査で分かることと分からないことを、返り値の中で分ける。
+  ok(good.registration_status?.checked === false,
+     'and the response says the register was not consulted',
+     JSON.stringify(good.registration_status));
+  ok(/取り消/.test(JSON.stringify(good.registration_status ?? {}))
+       && /失効|効力を失/.test(JSON.stringify(good.registration_status ?? {})),
+     'naming revocation and lapse as the things a check digit cannot see',
+     JSON.stringify(good.registration_status).slice(0, 140));
+  ok(/消費税法第57条の2/.test(JSON.stringify(good.registration_status ?? {})),
+     'with the article that provides for both', JSON.stringify(good.registration_status).slice(0, 100));
+  ok(typeof good.registration_status?.where_to_check === 'string'
+       && good.registration_status.where_to_check.length > 0,
+     'and where the actual status can be got', good.registration_status?.where_to_check);
+
+  // 数字を1つ変えればチェックディジットが落ちる。
+  const bad1 = (await inv('number=T8700110005902')).body;
+  ok(bad1.check_digit_valid === false, 'a transposed digit fails', `${bad1.check_digit_valid}`);
+
+  // 300社を1件ずつ問うのは現実的でない。まとめて通せること。
+  const post = async (body) => {
+    const r = await tryFetch(`${BASE}/v1/invoice-number/validate/batch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+
+  const run = await post({
+    numbers: ['T8700110005901', 'T8700110005902', '8700110005901', 'nonsense', 'T870011000590'],
+  });
+  ok(run.status === 200, 'numbers can be checked in bulk', `${run.status}`);
+  ok(run.body.count === 5, 'every input is accounted for', `${run.body.count}`);
+  const byInput = Object.fromEntries((run.body.results ?? []).map((r) => [r.input, r]));
+  ok(byInput['T8700110005901']?.check_digit_valid === true, 'the good one passes');
+  ok(byInput['T8700110005902']?.check_digit_valid === false, 'the altered one fails');
+  ok(byInput['8700110005901']?.format_valid === false,
+     'a number without the leading T is not a registration number',
+     JSON.stringify(byInput['8700110005901']));
+  ok(byInput['nonsense']?.format_valid === false, 'and neither is nonsense');
+  ok(byInput['T870011000590']?.format_valid === false, 'nor one digit short');
+
+  // まとめても、分かるのは形式だけ。件数で要約して、確認先を出す。
+  ok(run.body.summary?.check_digit_valid === 1 && run.body.summary?.rejected === 4,
+     'the run summarises how many are well-formed', JSON.stringify(run.body.summary));
+  ok(run.body.registration_status?.checked === false,
+     'and repeats that none of them were looked up in the register',
+     JSON.stringify(run.body.registration_status));
+
+  // 重複はそのまま返す。まとめられると突合できない。
+  const dup = await post({ numbers: ['T8700110005901', 'T8700110005901'] });
+  ok(dup.body.count === 2 && dup.body.results.length === 2,
+     'duplicates come back as given, so a caller can line them up with their own list',
+     `${dup.body.results?.length}`);
+
+  // 入力の検査。
+  ok((await post({})).status === 400, 'a missing numbers key is refused');
+  ok((await post({ numbers: [] })).status === 400, 'an empty list is refused');
+  ok((await post({ numbers: 'T8700110005901' })).status === 400, 'a non-array is refused');
+  ok((await post({ numbers: [123] })).status === 400, 'a non-string entry is refused');
+  const tooMany = await post({ numbers: Array.from({ length: 1001 }, () => 'T8700110005901') });
+  ok(tooMany.status === 400 && tooMany.body.code === 'batch_too_large',
+     'and an oversized run is refused with its own code',
+     `${tooMany.status} ${tooMany.body.code}`);
+}
+
 
 
 

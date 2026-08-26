@@ -866,6 +866,27 @@ server.registerTool('business_days', {
   }
 });
 
+server.registerTool('validate_invoice_numbers_batch', {
+  title: 'インボイス登録番号をまとめて形式検査',
+  description:
+    'Checks the National Tax Agency check digit on many qualified-invoice registration numbers ' +
+    'in one call.\n\n' +
+    'Be careful how you report the result. A passing check digit means the shape of the number ' +
+    'is right and nothing more. 消費税法第57条の2 provides both for the Commissioner to revoke a ' +
+    'registration and for one to lapse, so a well-formed number can be unregistered, revoked or ' +
+    'expired. Never tell someone a number is valid, verified or confirmed on the strength of ' +
+    'this — say the format checks out, and that the register itself was not consulted.\n\n' +
+    'What it does earn is elimination. Anything failing on shape needs no lookup at all, so the ' +
+    'list taken to 国税庁「適格請求書発行事業者公表サイト」 gets shorter. That site publishes the ' +
+    'revocation and lapse dates, and offers a bulk download and a Web-API for large lists.\n\n' +
+    'Duplicates come back as given rather than folded together, and each result carries the ' +
+    'index of its input, so rows line up with the caller list they came from.',
+  inputSchema: {
+    numbers: z.array(z.string()).describe(
+      'Registration numbers as written, including the leading T. Up to 1000 per call.'),
+  },
+}, async (a) => call('/v1/invoice-number/validate/batch', { method: 'POST', body: a }));
+
 server.registerTool('validate_corporate_number', {
   title: '法人番号・インボイス登録番号の検証',
   description:

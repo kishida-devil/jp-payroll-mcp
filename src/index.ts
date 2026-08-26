@@ -343,6 +343,7 @@ app.get('/', (c) => {
       'GET /v1/corporate-number/validate?number=8700110005901': 'Validate a 法人番号 check digit (Peppol ICD 0188)',
       'GET /v1/corporate-number/check-digit?base=700110005901': 'Compute the check digit for a 12-digit base number',
       'GET /v1/invoice-number/validate?number=T8700110005901': 'Validate a qualified invoice registration number',
+      'POST /v1/invoice-number/validate/batch': '登録番号をまとめて形式検査 — 分かるのは形式だけで、登録・取消・失効は国税庁の公表サイトでしか分からない',
       'GET /v1/withholding-tax?taxable_amount=300000&dependants=2': 'Monthly withholding income tax (源泉徴収税額表 月額表)',
       'GET /v1/withholding-tax/daily?taxable_amount=12000&column=hei': 'Daily withholding table (日額表), including the 丙 column',
       'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': 'Same tax by the statutory formula method (電算機計算の特例)',
@@ -1060,6 +1061,35 @@ app.get('/v1/corporate-number/check-digit', (c) => {
   });
 });
 
+/**
+ * 登録番号について、チェックディジットが通ることと、いま有効な登録であることは別。
+ *
+ * 消費税法第57条の2は、税務署長が登録簿に登載して**公表しなければならない**とし、
+ * 一方で登録を**取り消す**ことができ、登録が**効力を失う**場合も定める。つまり
+ * 形式が正しい番号が、未登録・取消済み・失効済みのいずれでもありうる。
+ *
+ * このAPIは登録簿を引かない。引かずに「検証した」と読める答えを返すのが、
+ * この項目でいちばん危ないところだった。何を見ていないかを返り値に書く。
+ */
+/** 一括検査の上限。形式検査だけなので給与のバッチより多く通せる。 */
+const MAX_INVOICE_BATCH = 1000;
+
+const REGISTRATION_STATUS_CAVEAT = {
+  checked: false,
+  meaning:
+    'チェックディジットが通ったことは、番号の形が正しいことしか意味しません。' +
+    'その番号が実際に登録されているか、いま有効かは、この結果からは分かりません。',
+  not_visible_here: [
+    '未登録 — 形式を満たすだけの番号は誰でも作れます。',
+    '取消済み — 消費税法第57条の2は税務署長が登録を取り消すことができると定めています。',
+    '失効済み — 同条は登録が効力を失う場合も定めています。',
+  ],
+  statute: '消費税法第57条の2(適格請求書発行事業者の登録。登録簿への登載と公表、登録の取消し、登録の失効)',
+  where_to_check: '国税庁「適格請求書発行事業者公表サイト」で番号を照会してください。取消年月日・失効年月日もそこに公表されます。',
+  where_to_check_url: 'https://www.invoice-kohyo.nta.go.jp/',
+  bulk: '同サイトは全件データのダウンロードとWeb-APIを提供しています。件数が多いならそちらが確実です。',
+} as const;
+
 app.get('/v1/invoice-number/validate', (c) => {
   const unknownQ = rejectUnknownQuery(c, ['include', 'number'] as const);
   if (unknownQ) return unknownQ;
@@ -1068,7 +1098,58 @@ app.get('/v1/invoice-number/validate', (c) => {
   if (!raw)
     return bad(c, 'Query parameter "number" is required.',
       'A registration number such as T8700110005901.');
-  return c.json({ ...validateInvoiceNumber(raw), attribution: INVOICE_NUMBER_ATTRIBUTION });
+  return c.json({
+    ...validateInvoiceNumber(raw),
+    registration_status: REGISTRATION_STATUS_CAVEAT,
+    attribution: INVOICE_NUMBER_ATTRIBUTION,
+  });
+});
+
+/**
+ * 登録番号をまとめて検査する。
+ *
+ * 顧問先300社を1件ずつ問うのは現実的でない。分かるのは形式だけだが、形式で落ちる
+ * ものを先に外せれば、登録簿を引く手間はその分だけ減る。
+ *
+ * 重複は畳まずそのまま返す。呼ぶ側の一覧と行が揃わなくなるほうが困る。
+ */
+app.post('/v1/invoice-number/validate/batch', async (c) => {
+  let payload: { numbers?: unknown };
+  try {
+    payload = await c.req.json();
+  } catch {
+    return bad(c, 'Request body must be JSON.', 'POST {"numbers": ["T8700110005901", ...]}');
+  }
+
+  const list = payload?.numbers;
+  if (!Array.isArray(list))
+    return bad(c, '"numbers" must be an array of registration numbers.');
+  if (list.length === 0) return bad(c, '"numbers" must not be empty.');
+  if (list.length > MAX_INVOICE_BATCH)
+    return bad(c, `A batch is limited to ${MAX_INVOICE_BATCH} numbers; got ${list.length}.`,
+      'Split the run, or use the bulk dataset the NTA publishes.',
+      'batch_too_large');
+  if (list.some((n) => typeof n !== 'string'))
+    return bad(c, 'Every element of "numbers" must be a string.');
+
+  const results = (list as string[]).map((n, index) => ({ index, ...validateInvoiceNumber(n) }));
+  const passed = results.filter((r) => r.check_digit_valid).length;
+
+  return c.json({
+    count: results.length,
+    summary: {
+      check_digit_valid: passed,
+      rejected: results.length - passed,
+      note: '形式で落ちたものは登録簿を引くまでもありません。通ったものは、そこから先が未確認です。',
+    },
+    results,
+    registration_status: REGISTRATION_STATUS_CAVEAT,
+    notes: {
+      duplicates: '重複は畳まずそのまま返します。呼ぶ側の一覧と行を揃えられるようにするためです。',
+      order: '各結果は入力の index を持ちます。',
+    },
+    attribution: INVOICE_NUMBER_ATTRIBUTION,
+  });
 });
 
 app.get('/v1/withholding-tax', (c) => {
