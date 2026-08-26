@@ -25,6 +25,7 @@ import { MAX_BATCH, runBatch, type BatchDefaults, type BatchRow, type Detail } f
 import { computePayslip } from './payslip';
 import { BONUS_ATTRIBUTION, BONUS_EXCEPTIONS, bonusWithholding } from './bonus';
 import { BONUS_INSURANCE_ATTRIBUTION, bonusInsurance } from './bonus-insurance';
+import { OVERTIME_ATTRIBUTION, overtimePay } from './overtime';
 import { AGE_RULES, ageStatus, parseDate } from './age';
 import { ELIGIBILITY_ATTRIBUTION, eligibilityFor } from './eligibility';
 import { LEAVE_ATTRIBUTION, leaveExemption, type LeaveKind } from './leave-exemption';
@@ -200,6 +201,35 @@ app.use('*', async (c, next) => {
 });
 
 /**
+ * 未知のクエリパラメータを拒否する。
+ *
+ * 金額を扱うAPIで綴り間違いを黙って無視するのは事故製造機になる。独立した批評で
+ * 指摘された不具合のうち、`standard_remuneration` `commuting_allowance`
+ * `employment_type` `as_of`(料率) が効かない件は、どれも「渡したのに無視された」
+ * であって、400を返していれば全部その場で分かった。
+ *
+ * 拒否ではなく警告に留めない理由は、警告はレスポンスの奥に埋もれて読まれないため。
+ * 給与計算で「気づかないまま間違った額が出る」ことのほうが、400で止まることより
+ * はるかに高くつく。
+ */
+function rejectUnknownQuery(c: any, allowed: readonly string[]) {
+  const seen = Object.keys(c.req.query());
+  const unknown = seen.filter((k) => !allowed.includes(k));
+  if (!unknown.length) return null;
+  const near = (k: string) =>
+    allowed.find((a) => a.startsWith(k.slice(0, 4)) || k.startsWith(a.slice(0, 4)));
+  return bad(c,
+    `Unknown query parameter${unknown.length > 1 ? 's' : ''}: ${unknown.map((u) => `"${u}"`).join(', ')}`,
+    unknown.map((u) => {
+      const s = near(u);
+      return s ? `Did you mean "${s}"?` : null;
+    }).filter(Boolean).join(' ') ||
+      `Accepted here: ${allowed.join(', ')}. Parameters are rejected rather than ignored, ` +
+      'because a silently dropped one produces a plausible wrong figure.',
+    'unknown_parameter');
+}
+
+/**
  * Errors carry a stable `code` alongside the prose. Integrators need to branch on
  * "the caller sent something wrong" versus "the date is outside what we publish",
  * and matching on English sentences breaks the moment the wording improves.
@@ -254,6 +284,7 @@ app.get('/', (c) =>
       'GET /v1/age-milestones?birth_date=1986-04-01': 'When 40, 65, 70 and 75 are reached and what each changes',
       'GET /v1/bonus-insurance?prefecture=Tokyo&bonus=800000&age=40': 'Social insurance on a bonus, with the annual and per-payment caps',
       'GET /v1/bonus-tax?bonus=500000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2': 'Withholding tax on a bonus (賞与の算出率表)',
+      'GET /v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=20&night_hours=5': '割増賃金 — overtime 25%, over 60h 50%, statutory holiday 35%, night 25% on top (労基法37条)',
       'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': 'Is a 随時改定 (月額変更) due? Judges health and pension separately',
       'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': 'Annual 定時決定 (算定基礎) from April-June pay',
       'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': 'Revision on returning from maternity or childcare leave (one grade is enough)',
@@ -419,7 +450,16 @@ app.get('/v1/minimum-wage/history', (c) => {
   });
 });
 
+const PAYROLL_PARAMS = [
+  'prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',
+  'as_of', 'business_type', 'employment_type', 'column', 'dependants', 'income_tax',
+  'resident_tax', 'include',
+] as const;
+
 app.get('/v1/payroll', (c) => {
+  const unknown = rejectUnknownQuery(c, PAYROLL_PARAMS);
+  if (unknown) return unknown;
+
   const r = needPref(c); if ('err' in r) return r.err;
 
   const salaryRaw = c.req.query('monthly_salary');
@@ -473,9 +513,27 @@ app.get('/v1/payroll', (c) => {
     return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
 
   const pref = insurance.prefectures[r.pref];
+  // 標準報酬月額は算定基礎届で決まり、翌年8月まで固定される。渡されなければ
+  // 支給額から引き直すが、残業のある月はそれで等級が上がり過大控除になる。
+  const smrRaw = c.req.query('standard_remuneration');
+  const smr = smrRaw === undefined ? null : Number(smrRaw);
+  if (smrRaw !== undefined && (!Number.isFinite(smr!) || smr! <= 0))
+    return bad(c, '"standard_remuneration" must be a positive number.',
+      'The 標準報酬月額 fixed by 算定基礎届 or 月額変更届. Pass it whenever you know it: without ' +
+      'it the grade is re-derived from the pay you send, which is wrong in any month with overtime. ' +
+      'GET /v1/standard-remuneration/regular decides it.');
+
+  const empRaw = c.req.query('employment_type');
+  const EMPLOYMENT_TYPES = ['employee', 'director', 'director_employee'] as const;
+  if (empRaw !== undefined && !(EMPLOYMENT_TYPES as readonly string[]).includes(empRaw))
+    return bad(c, `Unknown employment_type: "${empRaw}"`,
+      'Use "employee", "director" (役員 — not covered by employment insurance, 雇用保険法第4条), ' +
+      'or "director_employee" (兼務役員 — covered when the employee side is genuine). Defaults to employee.');
+  const empType = (empRaw ?? 'employee') as 'employee' | 'director' | 'director_employee';
+
   const slip = computePayslip({
     prefecture: r.pref, monthly_salary: salary, age, birth_date: birth, as_of: asOf!,
-    business_type: btKey,
+    business_type: btKey, employment_type: empType, standard_remuneration: smr,
     column: colRaw as Column, dependants, income_tax: withTax, resident_tax: residentTax,
   });
 
@@ -1168,7 +1226,74 @@ app.get('/v1/eligibility', (c) => {
   });
 });
 
+/**
+ * 割増賃金。毎月使う計算なのに無かったため、月次給与をこのAPIだけで回すことが
+ * できなかった。
+ */
+const OVERTIME_PARAMS = [
+  'base_monthly_pay', 'monthly_scheduled_hours', 'overtime_hours', 'night_hours',
+  'holiday_hours', 'holiday_night_hours', 'round', 'include',
+] as const;
+
+app.get('/v1/overtime-pay', (c) => {
+  const unknown = rejectUnknownQuery(c, OVERTIME_PARAMS);
+  if (unknown) return unknown;
+
+  const num = (name: string, required = false) => {
+    const raw = c.req.query(name);
+    if (raw === undefined) return required ? NaN : 0;
+    const v = Number(raw);
+    return Number.isFinite(v) && v >= 0 ? v : NaN;
+  };
+
+  const base = num('base_monthly_pay', true);
+  if (!Number.isFinite(base) || base <= 0)
+    return bad(c, '"base_monthly_pay" is required and must be a positive number.',
+      'The part of monthly pay that counts toward the premium base. 労働基準法施行規則第21条 lists ' +
+      'the seven allowances that may be excluded, and only those — see excludable_allowances in the response.');
+
+  const scheduled = num('monthly_scheduled_hours', true);
+  if (!Number.isFinite(scheduled) || scheduled <= 0)
+    return bad(c, '"monthly_scheduled_hours" is required and must be a positive number.',
+      'Average scheduled hours per month: annual working days × daily hours ÷ 12. ' +
+      'It varies by employer, so it cannot be assumed.');
+
+  const hours = {
+    overtime_hours: num('overtime_hours'),
+    night_hours: num('night_hours'),
+    holiday_hours: num('holiday_hours'),
+    holiday_night_hours: num('holiday_night_hours'),
+  };
+  for (const [k, v] of Object.entries(hours))
+    if (!Number.isFinite(v)) return bad(c, `"${k}" must be a non-negative number of hours.`);
+
+  if (hours.night_hours > hours.overtime_hours + hours.holiday_hours + 744)
+    return bad(c, '"night_hours" exceeds any plausible total.',
+      'Night hours are hours that also fall between 22:00 and 05:00, not a separate block of work.');
+
+  const roundRaw = c.req.query('round');
+  if (roundRaw !== undefined && !['true', 'false'].includes(roundRaw))
+    return bad(c, '"round" must be "true" or "false".');
+
+  return c.json({
+    ...overtimePay({
+      base_monthly_pay: base,
+      monthly_scheduled_hours: scheduled,
+      ...hours,
+      round: roundRaw !== 'false',
+    }),
+    attribution: OVERTIME_ATTRIBUTION,
+  });
+});
+
+const BONUS_INSURANCE_PARAMS = [
+  'prefecture', 'pref', 'bonus', 'fiscal_year_to_date', 'age', 'birth_date', 'as_of',
+  'paid_on', 'left_on', 'leave_exempt', 'include',
+] as const;
+
 app.get('/v1/bonus-insurance', (c) => {
+  const unknown = rejectUnknownQuery(c, BONUS_INSURANCE_PARAMS);
+  if (unknown) return unknown;
   const r = needPref(c); if ('err' in r) return r.err;
 
   const bonusRaw = c.req.query('bonus');
@@ -1197,12 +1322,36 @@ app.get('/v1/bonus-insurance', (c) => {
   if (asOfRaw !== undefined && !asOf)
     return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
 
+  // 資格喪失月の賞与、および休業中の賞与には保険料がかからない。以前はこれらを
+  // 受け取っておらず、退職日を渡しても無視して満額を返していた。
+  const paidRaw = c.req.query('paid_on');
+  const paidOn = paidRaw === undefined ? null : parseDate(paidRaw);
+  if (paidRaw !== undefined && !paidOn)
+    return bad(c, '"paid_on" must be a valid ISO date (YYYY-MM-DD).',
+      'The date the bonus was paid. Needed to tell whether it falls in the month eligibility was lost.');
+
+  const leftRaw = c.req.query('left_on');
+  const leftOn = leftRaw === undefined ? null : parseDate(leftRaw);
+  if (leftRaw !== undefined && !leftOn)
+    return bad(c, '"left_on" must be a valid ISO date (YYYY-MM-DD).',
+      'The last day worked. Eligibility is lost the day after, so 30 and 31 March give opposite answers.');
+  if (leftOn && !paidOn)
+    return bad(c, '"left_on" needs "paid_on" as well.',
+      'Whether the bonus is exempt depends on which month it was paid in, not only on when employment ended.');
+
+  const leaveRaw = c.req.query('leave_exempt');
+  if (leaveRaw !== undefined && !['true', 'false'].includes(leaveRaw))
+    return bad(c, '"leave_exempt" must be "true" or "false".',
+      'True when the bonus falls inside a 産前産後休業 or a 育児休業 exceeding one month. ' +
+      'GET /v1/leave-exemption decides this from the leave dates.');
+
   const pref = insurance.prefectures[r.pref];
   return c.json({
     prefecture: r.pref, prefecture_ja: pref.prefecture_ja,
     ...bonusInsurance({
       prefecture: r.pref, bonus, fiscal_year_to_date: ytd,
       age, birth_date: birth, as_of: asOf!,
+      paid_on: paidOn, left_on: leftOn, leave_exempt: leaveRaw === 'true',
     }),
     notes: {
       base: '標準賞与額 is the bonus truncated to the thousand yen.',
@@ -1238,7 +1387,15 @@ app.get('/v1/age-milestones', (c) => {
   });
 });
 
+const BONUS_TAX_PARAMS = [
+  'bonus', 'bonus_insurance', 'previous_month_pay', 'previous_month_insurance',
+  'column', 'dependants', 'include',
+] as const;
+
 app.get('/v1/bonus-tax', (c) => {
+  const unknown = rejectUnknownQuery(c, BONUS_TAX_PARAMS);
+  if (unknown) return unknown;
+
   const n = (k: string) => {
     const raw = c.req.query(k);
     if (raw === undefined) return undefined;
@@ -1258,6 +1415,20 @@ app.get('/v1/bonus-tax', (c) => {
   const prevIns = n('previous_month_insurance') ?? 0;
   if (Number.isNaN(prevIns) || prevIns < 0)
     return bad(c, '"previous_month_insurance" must be a non-negative number.');
+  // 賞与の源泉税は「賞与から社会保険料を控除した額」に率を乗じる。既定を0にすると
+  // 課税標準が膨らんで税額が過大になる。独立した批評で、賞与50万・東京・40歳の例で
+  // 3,063円の差が実測された。しかもこのパラメータはOpenAPIに載っていなかったので、
+  // ドキュメントを読んだ人には存在すら分からなかった。
+  //
+  // 既定値を捨てて必須にする。金額を返すAPIで「渡さなければ黙って0」は、
+  // 渡し忘れた人に間違った額を返し続けることを意味する。
+  const bonusInsRaw = c.req.query('bonus_insurance');
+  if (bonusInsRaw === undefined)
+    return bad(c, '"bonus_insurance" is required.',
+      'Withholding on a bonus is charged on the bonus *after* its own social insurance ' +
+      '(所得税法第186条第2項). Defaulting it to zero inflates the tax — around 3,000 yen on a ' +
+      '500,000 yen bonus. GET /v1/bonus-insurance computes the figure; pass 0 only if the ' +
+      'employee genuinely pays no social insurance on it.');
   const bonusIns = n('bonus_insurance') ?? 0;
   if (Number.isNaN(bonusIns) || bonusIns < 0)
     return bad(c, '"bonus_insurance" must be a non-negative number.');
@@ -1354,6 +1525,7 @@ app.get('/v1/enums', (c) =>
       { value: 'invalid_request', description: 'A parameter was missing, malformed or out of range.' },
       { value: 'missing_parameter', description: 'A required parameter was absent.' },
       { value: 'unknown_prefecture', description: 'The prefecture could not be resolved.' },
+      { value: 'unknown_parameter', description: 'A query parameter this endpoint does not accept. Rejected rather than ignored, because a silently dropped parameter produces a plausible wrong figure.' },
       { value: 'out_of_coverage', description: 'Valid input, but outside the range this API publishes.' },
       { value: 'not_found', description: 'No such endpoint.' },
       { value: 'internal_error', description: 'Unexpected failure.' },

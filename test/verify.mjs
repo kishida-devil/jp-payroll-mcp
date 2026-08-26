@@ -893,7 +893,7 @@ for (const [p, want, label] of [
   const b = (q) => get(`/v1/bonus-tax?${q}`);
 
   // Rate comes from LAST month's pay after insurance, applied to the bonus.
-  const r = (await b('bonus=700000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2')).body;
+  const r = (await b('bonus=700000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2&bonus_insurance=0')).body;
   ok(r.applicable === true, 'the ordinary case uses the table');
   ok(r.previous_month_after_insurance === 294250, 'the lookup key is last month after insurance',
      `${r.previous_month_after_insurance}`);
@@ -901,6 +901,17 @@ for (const [p, want, label] of [
      JSON.stringify(r.rate_band));
   ok(r.tax === Math.floor(700000 * r.rate), 'tax is bonus x rate, truncated',
      `${r.tax} vs ${Math.floor(700000 * r.rate)}`);
+
+  // 賞与の社会保険料は必須。既定0にすると課税標準が膨らみ、税額が過大になる。
+  // 賞与50万・東京・40歳の例で3,063円の差が出た。渡し忘れた人に黙って
+  // 間違った額を返し続けるより、400で止めるほうが安い。
+  ok((await b('bonus=700000&previous_month_pay=350000&previous_month_insurance=55750')).status === 400,
+     'bonus_insurance is required rather than defaulting to zero');
+  {
+    const missing = (await b('bonus=700000&previous_month_pay=350000&previous_month_insurance=55750'));
+    ok(/186条|after its own social insurance/.test(missing.body.hint ?? ''),
+       'and the refusal says why it matters', missing.body.hint);
+  }
 
   // The bonus's own social insurance comes off before the rate is applied.
   const withIns = (await b('bonus=700000&bonus_insurance=100000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2')).body;
@@ -911,31 +922,31 @@ for (const [p, want, label] of [
   // More dependants means a lower rate at the same previous pay.
   let prevRate = Infinity;
   for (let d = 0; d <= 7; d++) {
-    const x = (await b(`bonus=500000&previous_month_pay=400000&previous_month_insurance=60000&dependants=${d}`)).body;
+    const x = (await b(`bonus=500000&previous_month_pay=400000&previous_month_insurance=60000&dependants=${d}&bonus_insurance=0`)).body;
     ok(x.rate <= prevRate, `bonus rate is non-increasing in dependants at d=${d}`, `${prevRate} -> ${x.rate}`);
     prevRate = x.rate;
   }
-  const otsu = (await b('bonus=500000&previous_month_pay=400000&previous_month_insurance=60000&column=otsu')).body;
+  const otsu = (await b('bonus=500000&previous_month_pay=400000&previous_month_insurance=60000&column=otsu&bonus_insurance=0')).body;
   ok(otsu.dependants === null, '乙 ignores dependants');
   ok(otsu.rate > 0, '乙 has a rate');
 
   // The three cases where the table must NOT be used.
-  const noPrev = (await b('bonus=500000&previous_month_pay=0')).body;
+  const noPrev = (await b('bonus=500000&previous_month_pay=0&bonus_insurance=0')).body;
   ok(noPrev.applicable === false && noPrev.reason_code === 'no_previous_month_pay',
      'no pay last month falls outside the table', noPrev.reason_code);
-  const swallowed = (await b('bonus=500000&previous_month_pay=50000&previous_month_insurance=50000')).body;
+  const swallowed = (await b('bonus=500000&previous_month_pay=50000&previous_month_insurance=50000&bonus_insurance=0')).body;
   ok(swallowed.applicable === false && swallowed.reason_code === 'previous_pay_at_or_below_insurance',
      'pay at or below insurance falls outside the table', swallowed.reason_code);
-  const huge = (await b('bonus=5000000&previous_month_pay=350000&previous_month_insurance=55750')).body;
+  const huge = (await b('bonus=5000000&previous_month_pay=350000&previous_month_insurance=55750&bonus_insurance=0')).body;
   ok(huge.applicable === false && huge.reason_code === 'bonus_exceeds_ten_times',
      'a bonus over ten times last month falls outside the table', huge.reason_code);
   ok(huge.ten_times_limit === 294250 * 10, 'the ten-times limit is reported', `${huge.ten_times_limit}`);
   ok(!!huge.instead, 'the response says what to use instead');
 
   // Exactly ten times is still inside the table; a yen more is not.
-  const atLimit = (await b('bonus=2942500&previous_month_pay=350000&previous_month_insurance=55750')).body;
+  const atLimit = (await b('bonus=2942500&previous_month_pay=350000&previous_month_insurance=55750&bonus_insurance=0')).body;
   ok(atLimit.applicable === true, 'exactly ten times is still in the table');
-  const overLimit = (await b('bonus=2942501&previous_month_pay=350000&previous_month_insurance=55750')).body;
+  const overLimit = (await b('bonus=2942501&previous_month_pay=350000&previous_month_insurance=55750&bonus_insurance=0')).body;
   ok(overLimit.applicable === false, 'one yen over ten times is out');
 
   for (const [q, want] of [
@@ -1654,6 +1665,249 @@ for (const [p, want, label] of [
 
   ok(/e-Gov/i.test(JSON.stringify(index.attribution)), 'the source is attributed');
   ok(/CC BY/i.test(JSON.stringify(index.attribution)), 'with its licence stated');
+}
+
+
+
+// ---- 43. 第1反復: 月次給与の臨界経路 ----
+//
+// 「課金の理由を強くする」ループの第1反復。信頼を壊すもの(間違った数字)を先に、
+// 臨界経路の穴をその後に。
+
+// --- F-01 資格喪失月の賞与 ---
+{
+  const b = (q) => get(`/v1/bonus-insurance?prefecture=Tokyo&bonus=500000&age=40&fiscal_year_to_date=0&${q}`);
+
+  // 3月30日退職なら喪失日は3月31日で3月が喪失月 → 保険料なし。
+  // 3月31日退職なら喪失日は4月1日で4月が喪失月 → 3月分は徴収される。
+  // 1日違いで結論が逆になるのが要点で、以前はどちらも満額を返していた。
+  const on30 = (await b('paid_on=2026-03-25&left_on=2026-03-30')).body;
+  ok(on30.exempt === true, '30 March leaver: the bonus month is the loss month', `${on30.exempt}`);
+  ok(on30.totals.employee === 0, 'so nothing is deducted', `${on30.totals.employee}`);
+  ok(on30.totals.employer === 0, 'and the employer pays nothing either');
+  ok(/156条/.test(on30.exempt_reason ?? ''), 'citing the provision it rests on', on30.exempt_reason);
+
+  const on31 = (await b('paid_on=2026-03-25&left_on=2026-03-31')).body;
+  ok(on31.exempt === false, '31 March leaver: the loss month is April', `${on31.exempt}`);
+  ok(on31.totals.employee > 0, 'so the March bonus is charged', `${on31.totals.employee}`);
+
+  // この差が実際に金額として現れること。真偽値だけ合っていても意味がない。
+  ok(on31.totals.employee !== on30.totals.employee,
+     'one day apart gives different money', `${on30.totals.employee} vs ${on31.totals.employee}`);
+
+  // 支給月が喪失月より前なら通常どおり課される。
+  const earlier = (await b('paid_on=2026-02-25&left_on=2026-03-30')).body;
+  ok(earlier.exempt === false, 'a bonus paid before the loss month is charged normally');
+
+  // 退職日を渡さなければ従来どおり。既存の呼び出しを壊さないこと。
+  const plain = (await b('')).body;
+  ok(plain.exempt === false && plain.totals.employee > 0,
+     'omitting the dates keeps the previous behaviour');
+
+  // 退職日だけ渡しても判定できない。どの月に払ったかが要る。
+  ok((await b('left_on=2026-03-30')).status === 400,
+     'left_on without paid_on is refused rather than guessed at');
+}
+
+// --- F-25 休業中の賞与 ---
+{
+  const l = (await get('/v1/bonus-insurance?prefecture=Tokyo&bonus=400000&age=32&fiscal_year_to_date=0&leave_exempt=true')).body;
+  ok(l.exempt === true && l.totals.employee === 0, 'a bonus during leave is exempt',
+     `${l.totals.employee}`);
+  ok(/159条/.test(l.exempt_reason ?? ''), 'citing the leave provisions', l.exempt_reason);
+
+  const notLeave = (await get('/v1/bonus-insurance?prefecture=Tokyo&bonus=400000&age=32&fiscal_year_to_date=0&leave_exempt=false')).body;
+  ok(notLeave.totals.employee > 0, 'and false means charged');
+  ok((await get('/v1/bonus-insurance?prefecture=Tokyo&bonus=400000&leave_exempt=maybe')).status === 400,
+     'a non-boolean leave_exempt is refused');
+}
+
+// --- F-27 役員は雇用保険の被保険者にならない ---
+{
+  const p = (t) => get(`/v1/payroll?prefecture=Tokyo&monthly_salary=800000&age=55&employment_type=${t}`);
+  const emp = (await p('employee')).body;
+  const dir = (await p('director')).body;
+  const both = (await p('director_employee')).body;
+
+  ok(emp.deductions.employment_insurance.employee > 0, 'an employee pays employment insurance');
+  ok(dir.deductions.employment_insurance.employee === 0,
+     'a director does not (雇用保険法第4条)', `${dir.deductions.employment_insurance.employee}`);
+  ok(dir.deductions.employment_insurance.employer === 0, 'nor does the employer for them');
+  ok(dir.coverage.employment_insurance === false, 'and coverage says so rather than staying silent');
+  ok(dir.totals.net_pay > emp.totals.net_pay, 'so the director takes home more',
+     `${dir.totals.net_pay} vs ${emp.totals.net_pay}`);
+
+  // 兼務役員は労働者性が認められれば被保険者になる。役員と同じ扱いにしてはいけない。
+  ok(both.deductions.employment_insurance.employee > 0,
+     'a 兼務役員 is covered on the employee side');
+
+  // 社会保険は役員でも被保険者。雇用保険だけを外すこと。
+  ok(dir.deductions.health_insurance.employee > 0, 'a director still pays health insurance');
+  ok(dir.deductions.pension.employee > 0, 'and pension');
+
+  ok((await p('boss')).status === 400, 'an unknown employment_type is refused');
+}
+
+// --- F-06 割増賃金 ---
+{
+  const o = (q) => get(`/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&${q}`);
+
+  // 300,000 ÷ 160 = 1,875円/時。以下すべてこの時給から手計算で検算できる。
+  const base = (await o('overtime_hours=20')).body;
+  ok(base.hourly_rate.value === 1875, 'the hourly rate divides out', `${base.hourly_rate.value}`);
+  ok(base.lines.overtime.amount === 1875 * 20 * 1.25, 'overtime is 1.25 (労基法37条1項)',
+     `${base.lines.overtime.amount}`);
+
+  // 60時間を境に率が変わる。70時間なら60時間分が1.25、10時間分が1.5。
+  const long = (await o('overtime_hours=70')).body;
+  ok(long.lines.overtime.hours === 60 && long.lines.overtime_over_60h.hours === 10,
+     'hours split at the 60-hour threshold',
+     `${long.lines.overtime.hours}/${long.lines.overtime_over_60h.hours}`);
+  ok(long.lines.overtime_over_60h.amount === 1875 * 10 * 1.5,
+     'and the excess is 1.5 (37条1項ただし書)', `${long.lines.overtime_over_60h.amount}`);
+
+  // 法定休日は1.35。時間外の割増は付かない。
+  const hol = (await o('holiday_hours=8')).body;
+  ok(hol.lines.holiday.amount === 1875 * 8 * 1.35, 'statutory holiday work is 1.35',
+     `${hol.lines.holiday.amount}`);
+  ok(hol.lines.overtime.amount === 0, 'and does not also attract the overtime premium');
+
+  // 深夜は加算。別枠で全額払うのではなく 0.25 を足す。
+  const night = (await o('overtime_hours=10&night_hours=10')).body;
+  ok(night.lines.night_premium.rate === 0.25, 'the night premium is additive, not a full rate',
+     `${night.lines.night_premium.rate}`);
+  ok(night.total === night.lines.overtime.amount + night.lines.night_premium.amount,
+     'so overtime at night comes to 1.25 + 0.25 in total');
+
+  // 端数は区分ごとに処理する。昭和63年基発第150号は「時間外労働、休日労働、
+  // 深夜労働の**それぞれの**割増賃金の総額」に対する処理を認めており、
+  // 合算してから丸めるのは通達に反する。
+  //   時間外 1875 × 10 × 1.25 = 23,437.5 → 23,438
+  //   深夜   1875 × 10 × 0.25 =  4,687.5 →  4,688
+  // 合計 28,126 であって、1875 × 10 × 1.5 = 28,125 ではない。
+  ok(night.lines.overtime.amount === 23438, 'each category rounds on its own subtotal',
+     `${night.lines.overtime.amount}`);
+  ok(night.lines.night_premium.amount === 4688, 'including the night premium',
+     `${night.lines.night_premium.amount}`);
+  ok(night.total === 28126, 'so the total is not the same as rounding a combined 1.5 rate',
+     `${night.total}`);
+
+  // 端数処理を切れば、combined rate と一致する。
+  const exact = (await o('overtime_hours=10&night_hours=10&round=false')).body;
+  ok(exact.total === 1875 * 10 * 1.5, 'without rounding it is exactly 1.5',
+     `${exact.total}`);
+
+  // 端数は50銭以上切上げ (昭和63年基発第150号)。1875 × 5 × 0.25 = 2343.75 → 2344。
+  const frac = (await o('overtime_hours=5&night_hours=5')).body;
+  ok(frac.lines.night_premium.amount === 2344, 'half a yen and over rounds up',
+     `${frac.lines.night_premium.amount}`);
+  const unrounded = (await o('overtime_hours=5&night_hours=5&round=false')).body;
+  ok(unrounded.lines.night_premium.amount === 2343.75, 'and rounding can be turned off',
+     `${unrounded.lines.night_premium.amount}`);
+
+  // 算定基礎から除外できる手当は限定列挙で、名称ではなく実質で決まる。
+  ok(base.excludable_allowances.length === 7, 'the seven excludable allowances are listed',
+     `${base.excludable_allowances.length}`);
+  ok(base.excludable_allowances.some((a) => /一律支給は除外できない/.test(a.note ?? '')),
+     'saying that a flat allowance cannot be excluded despite its name');
+
+  // 所定労働時間は事業所ごとに違うので、推測してはいけない。
+  ok((await get('/v1/overtime-pay?base_monthly_pay=300000')).status === 400,
+     'scheduled hours are required rather than assumed');
+  ok((await get('/v1/overtime-pay?monthly_scheduled_hours=160')).status === 400,
+     'and so is the base pay');
+  ok((await get('/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=0')).status === 400,
+     'zero scheduled hours is refused rather than dividing by zero');
+}
+
+
+
+// ---- 44. 独立した批評で見つかった誤り ----
+//
+// 3,638件のテストが見逃していたもの。私が想定した使い方の外にあった。
+
+// --- 同月得喪 ---
+{
+  // 健保法156条3項は「前月から引き続き被保険者である者」に限って喪失月を免除する。
+  // 同じ月に入って同じ月に出た人はそれに当たらないので、1か月分が徴収される。
+  // ここを false で返していた。条文本文はこのAPI自身が返していたのに、
+  // 限定句を読み落としていた。
+  const same = (await get('/v1/eligibility?month=2026-04&joined_on=2026-04-10&left_on=2026-04-25')).body;
+  ok(same.social_insurance_due === true, '同月得喪 is charged, not exempt',
+     `${same.social_insurance_due}`);
+  ok(same.same_month_acquisition_and_loss === true, 'and is flagged as the special case');
+  ok(/前月から引き続き/.test(same.reason), 'citing the clause that decides it', same.reason);
+  ok(same.statutes.some((x) => /第19条/.test(x)), 'and the pension-side provision');
+
+  // 前月から在籍していれば、同じ25日退職でも免除になる。差は「前月から引き続くか」だけ。
+  const carried = (await get('/v1/eligibility?month=2026-04&joined_on=2026-03-01&left_on=2026-04-25')).body;
+  ok(carried.social_insurance_due === false,
+     'someone insured from the previous month is exempt in the loss month');
+  ok(!carried.same_month_acquisition_and_loss, 'and is not the same-month case');
+
+  // 入社だけの月、退社だけの月は従来どおり。
+  const joinedOnly = (await get('/v1/eligibility?month=2026-04&joined_on=2026-04-10')).body;
+  ok(joinedOnly.social_insurance_due === true, 'joining alone is still a chargeable month');
+}
+
+// --- 標準報酬月額を外から渡せること ---
+{
+  const p = (q) => get(`/v1/payroll?prefecture=Tokyo&age=42&${q}`);
+
+  // 標準報酬月額は算定基礎届で決まり翌年8月まで固定。残業で支給額が動いた月に
+  // 等級を引き直すのは誤りで、月給30万(等級22)の人が369,469円になった月に
+  // 引き直すと等級25になり、8,445円多く引くことになる。
+  const fixed = (await p('monthly_salary=369469&standard_remuneration=300000')).body;
+  const rederived = (await p('monthly_salary=369469')).body;
+
+  ok(fixed.standard_remuneration.health === 300000,
+     'the grade comes from the standard remuneration when given',
+     `${fixed.standard_remuneration.health}`);
+  ok(rederived.standard_remuneration.health === 360000,
+     'and from the pay when not', `${rederived.standard_remuneration.health}`);
+
+  const social = (b) => b.deductions.health_insurance.employee + b.deductions.pension.employee;
+  ok(social(fixed) < social(rederived), 'which changes the money',
+     `${social(fixed)} vs ${social(rederived)}`);
+  ok(social(rederived) - social(fixed) === 8445, 'by 8,445 yen in this case',
+     `${social(rederived) - social(fixed)}`);
+
+  // 通常月と残業月で、標準報酬を渡していれば控除は同じでなければならない。
+  const quiet = (await p('monthly_salary=300000&standard_remuneration=300000')).body;
+  ok(social(quiet) === social(fixed),
+     'a busy month and a quiet month deduct the same when the grade is fixed',
+     `${social(quiet)} vs ${social(fixed)}`);
+
+  // 雇用保険は実際の支給額にかかるので、こちらは変わってよい。
+  ok(fixed.deductions.employment_insurance.employee > quiet.deductions.employment_insurance.employee,
+     'while employment insurance still follows actual pay');
+
+  ok((await p('monthly_salary=300000&standard_remuneration=0')).status === 400,
+     'a zero standard remuneration is refused');
+}
+
+// --- 未知のクエリパラメータを拒否すること ---
+{
+  // 金額を扱うAPIで綴り間違いを黙って無視するのは事故製造機になる。
+  // 批評で挙がった不具合の複数が「渡したのに無視された」だった。
+  for (const [path, param] of [
+    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000', 'commuting_allowance=15000'],
+    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000', 'zzz_bogus=999'],
+    ['/v1/bonus-insurance?prefecture=Tokyo&bonus=500000', 'left_date=2026-03-30'],
+    ['/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160', 'overtime=20'],
+  ]) {
+    const r = await get(`${path}&${param}`);
+    ok(r.status === 400, `"${param}" is rejected rather than ignored`, `${r.status}`);
+    ok(r.body.code === 'unknown_parameter', 'with a code a client can branch on', r.body.code);
+  }
+
+  // 綴りが近ければ候補を出す。
+  const typo = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&standard_remuneration_=300000')).body;
+  ok(/Did you mean/.test(typo.hint ?? ''), 'a near miss suggests the right name', typo.hint);
+
+  // 正しいパラメータは当然通る。
+  ok((await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&standard_remuneration=300000&employment_type=director&income_tax=false')).status === 200,
+     'every accepted parameter still works together');
 }
 
 

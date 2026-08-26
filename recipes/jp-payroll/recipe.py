@@ -403,6 +403,11 @@ RECIPE = {
                  "description": "Gross pay in the month before the bonus."},
                 {"name": "previous_month_insurance", "type": "integer", "example": 55750,
                  "description": "Social insurance deducted from that pay."},
+                {"name": "bonus_insurance", "required": True, "type": "integer", "example": 75000,
+                 "description": "Social insurance deducted from THIS bonus. The tax is charged on "
+                                "the bonus after it (所得税法第186条第2項), so leaving it out "
+                                "overstates the tax by roughly 3,000 yen on a 500,000 yen bonus. "
+                                "GET /v1/bonus-insurance computes the figure."},
                 {"name": "dependants", "type": "integer", "example": 2,
                  "description": "源泉控除対象親族の数."},
                 {"name": "column", "example": "kou", "enum": ["kou", "otsu"],
@@ -794,7 +799,7 @@ SMOKE_QUERIES = {
     "/v1/statute": "?ref=%E5%81%A5%E5%BA%B7%E4%BF%9D%E9%99%BA%E6%B3%95%E7%AC%AC43%E6%9D%A1",
     "/v1/statute/index": "",
     "/v1/withholding-tax/daily": "?taxable_amount=12000&column=hei",
-    "/v1/bonus-tax": "?bonus=500000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2",
+    "/v1/bonus-tax": "?bonus=500000&bonus_insurance=75000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2",
     "/v1/bonus-insurance": "?prefecture=Tokyo&bonus=800000&age=40",
     "/v1/standard-remuneration/revision":
         "?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase",

@@ -23,6 +23,26 @@ export type PayslipInput = {
   birth_date?: Date | null;
   as_of?: Date;
   business_type: string;
+  /**
+   * 役員は雇用保険の被保険者にならない (雇用保険法第4条、行政手引20005)。
+   * 兼務役員は労働者性が認められれば被保険者になるが、その判断は実態によるので
+   * ここでは決められない。既定を employee にしているのは、渡さない利用者が
+   * 圧倒的に労働者を計算しているため。
+   */
+  employment_type?: 'employee' | 'director' | 'director_employee';
+  /**
+   * 算定基礎届・月額変更届で決まっている標準報酬月額。
+   *
+   * 渡されなければ monthly_salary から引き直すが、**それは本来の姿ではない。**
+   * 標準報酬月額は定時決定で決めたら翌年8月まで固定で、毎月の支給額では動かない。
+   * 残業の多い月に引き直すと等級が上がり、その月だけ過大に控除される。
+   * 月給30万(等級22)の人が残業で369,469円になった月に引き直すと、等級25として
+   * 8,445円多く引くことになる。
+   *
+   * /v1/standard-remuneration/regular が正しい等級を返せるのに、それを渡す口が
+   * 無かった。左手が出した答えを右手が受け取れない状態だった。
+   */
+  standard_remuneration?: number | null;
   column: Column;
   dependants: number;
   income_tax: boolean;
@@ -36,8 +56,11 @@ export function computePayslip(input: PayslipInput) {
   const bt = (empins.business_types as any)[input.business_type];
   const salary = input.monthly_salary;
 
-  const grade = findGrade(salary);
+  // 標準報酬月額が渡されていればそれを使う。渡されていなければ支給額から引く。
+  const smrBasis = input.standard_remuneration ?? salary;
+  const grade = findGrade(smrBasis);
   const pen = pensionStandardRemuneration(grade);
+  const smrWasGiven = input.standard_remuneration != null;
   const smr = grade.standard_monthly_remuneration;
 
   // With a birth date the milestones can be applied exactly; with only an age we
@@ -67,8 +90,11 @@ export function computePayslip(input: PayslipInput) {
   const pension = item(pensionTotal);
   const childSupport = item(childSupportTotal);
 
-  const eiEmployee = roundEmployeeShare(salary * bt.employee_rate);
-  const eiEmployer = round2(salary * bt.employer_rate);
+  // 役員は雇用保険の被保険者にならない。以前は employment_type を受け取らず、
+  // 中小企業の社長が自分の分を計算すると必ず過大になっていた。
+  const eiInsured = (input.employment_type ?? 'employee') !== 'director';
+  const eiEmployee = eiInsured ? roundEmployeeShare(salary * bt.employee_rate) : 0;
+  const eiEmployer = eiInsured ? round2(salary * bt.employer_rate) : 0;
 
   const employeeTotal =
     health.employee + longTermCare.employee + pension.employee + childSupport.employee + eiEmployee;
@@ -89,7 +115,7 @@ export function computePayslip(input: PayslipInput) {
       health_insurance: healthApplies,
       long_term_care: ltc,
       pension: pensionApplies,
-      employment_insurance: true,
+      employment_insurance: eiInsured,
       basis: status
         ? 'Determined from the birth date using the statutory milestones.'
         : 'Only the 40-64 long-term care band could be applied; pass birth_date for the 65, 70 and 75 milestones.',

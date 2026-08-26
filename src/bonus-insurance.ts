@@ -34,11 +34,47 @@ export type BonusInsuranceInput = {
   age: number | null;
   birth_date?: Date | null;
   as_of?: Date;
+  /** 賞与の支給日。資格喪失や休業と突き合わせるために要る。 */
+  paid_on?: Date | null;
+  /** 最終出社日。資格喪失日はその翌日 (健保法36条)。 */
+  left_on?: Date | null;
+  /** 産休・育休で保険料が免除される期間に当たるか。 */
+  leave_exempt?: boolean;
 };
+
+const monthKey = (d: Date) => d.getUTCFullYear() * 12 + d.getUTCMonth();
+
+/**
+ * 賞与に保険料がかからない場合を判定する。
+ *
+ * 資格喪失月に支払われた賞与は対象外になる (健保法156条3項)。喪失日は退職日の
+ * 翌日なので、**3月30日退職と3月31日退職で結論が逆になる** — 前者は喪失日が
+ * 3月31日で3月が喪失月、後者は4月1日で4月が喪失月。1日の差で数万円動く。
+ *
+ * 以前はこの判定が無く、退職日を渡しても無視して満額を返していた。月次給与側の
+ * /v1/eligibility は同じ判定を正しく行っていたので、同じ法理を片方だけ実装して
+ * いたことになる。
+ */
+function exemptReason(input: BonusInsuranceInput): string | null {
+  if (input.leave_exempt)
+    return '産前産後休業・育児休業等の期間中に支払われた賞与のため、保険料は免除されます ' +
+           '(健康保険法第159条・第159条の3、厚生年金保険法第81条の2・第81条の2の2)。' +
+           '育児休業については1か月を超える休業の場合に限ります。';
+
+  if (input.paid_on && input.left_on) {
+    const lostOn = new Date(input.left_on.getTime() + 86_400_000);
+    if (monthKey(lostOn) === monthKey(input.paid_on))
+      return `資格喪失日 (${lostOn.toISOString().slice(0, 10)}) が賞与支給月に属するため、` +
+             'この賞与に保険料はかかりません (健康保険法第156条第3項)。' +
+             '退職日が1日違えば結論は逆になります。';
+  }
+  return null;
+}
 
 export function bonusInsurance(input: BonusInsuranceInput) {
   const pref = insurance.prefectures[input.prefecture];
   const standard = standardBonus(input.bonus);
+  const exempt = exemptReason(input);
 
   const status = input.birth_date ? ageStatus(input.birth_date, input.as_of ?? new Date()) : null;
   const ltc = status ? status.long_term_care : isLtcInsured(input.age);
@@ -47,8 +83,8 @@ export function bonusInsurance(input: BonusInsuranceInput) {
 
   // Annual cap: only the headroom left in the fiscal year is chargeable.
   const headroom = Math.max(0, HEALTH_ANNUAL_CAP - input.fiscal_year_to_date);
-  const healthBase = healthApplies ? Math.min(standard, headroom) : 0;
-  const pensionBase = pensionApplies ? Math.min(standard, PENSION_PER_PAYMENT_CAP) : 0;
+  const healthBase = exempt ? 0 : healthApplies ? Math.min(standard, headroom) : 0;
+  const pensionBase = exempt ? 0 : pensionApplies ? Math.min(standard, PENSION_PER_PAYMENT_CAP) : 0;
 
   const item = (total: number) => {
     const employee = roundEmployeeShare(total / 2);
@@ -68,6 +104,10 @@ export function bonusInsurance(input: BonusInsuranceInput) {
   return {
     bonus: input.bonus,
     standard_bonus: standard,
+    exempt: exempt !== null,
+    exempt_reason: exempt,
+    paid_on: input.paid_on ? input.paid_on.toISOString().slice(0, 10) : null,
+    left_on: input.left_on ? input.left_on.toISOString().slice(0, 10) : null,
     bases: {
       health: healthBase,
       pension: pensionBase,
@@ -103,5 +143,6 @@ export const BONUS_INSURANCE_ATTRIBUTION = {
   licence: insurance.meta.license,
   attribution_ja: '出典：全国健康保険協会（協会けんぽ）保険料額表',
   note:
-    '標準賞与額は1,000円未満切り捨て。健康保険・介護保険・子ども子育て支援金は年間573万円(4月1日〜翌3月31日の累計)、厚生年金と拠出金は1回あたり150万円が上限。年間上限は過去の支給実績に依存するため、fiscal_year_to_date を渡さないと適用できない。',
+    '標準賞与額は1,000円未満切り捨て。健康保険・介護保険・子ども子育て支援金は年間573万円(4月1日〜翌3月31日の累計)、厚生年金と拠出金は1回あたり150万円が上限。年間上限は過去の支給実績に依存するため、fiscal_year_to_date を渡さないと適用できない。' +
+    ' 資格喪失月に支払われた賞与、および産休・育休期間中の賞与には保険料がかからないため、paid_on と left_on、または leave_exempt を渡さないとその判定ができない。',
 };

@@ -32,6 +32,8 @@ export type Eligibility = {
   eligibility_lost_on: string | null;
   social_insurance_due: boolean;
   employment_insurance_due: boolean;
+  /** 同月得喪。156条3項の例外が使えない唯一の場合なので、明示して返す。 */
+  same_month_acquisition_and_loss?: boolean;
   reason: string;
   statutes: string[];
 };
@@ -50,6 +52,7 @@ export function eligibilityFor(args: {
     '健康保険法第36条 (資格喪失は退職日の翌日)',
     '健康保険法第156条第3項 (資格喪失月の保険料は算定しない)',
     '健康保険法第167条 (事業主は前月分の保険料を控除)',
+    '厚生年金保険法第19条第2項 (資格取得月に喪失した場合も1箇月として算入)',
   ];
 
   const base = {
@@ -73,6 +76,34 @@ export function eligibilityFor(args: {
       ...base, social_insurance_due: false,
       employment_insurance_due: false,
       reason: 'Eligibility was lost before this month.',
+    };
+
+  // 同月得喪 — joined and left inside the same month.
+  //
+  // The exemption below does NOT apply here, and the reason is a clause that is
+  // easy to read past: 健保法156条3項 exempts the loss month only for someone
+  // 「前月から引き続き被保険者である者」— insured continuously *from the previous
+  // month*. Somebody who joined and left within the same month was never that, so
+  // the exemption is not available to them and a full month is charged.
+  //
+  // 厚年法19条2項 says the same from the other side: a month in which the
+  // qualification is both acquired and lost still counts as one month of
+  // insured period.
+  //
+  // This was returning false until an independent review pointed at the clause,
+  // using the statute text this API itself serves.
+  if (joined && lostOn && monthKey(joined) === m && monthKey(lostOn) === m)
+    return {
+      ...base,
+      social_insurance_due: true,
+      same_month_acquisition_and_loss: true,
+      employment_insurance_due: true,
+      reason:
+        `Joined on ${iso(joined)} and lost eligibility on ${iso(lostOn)}, both in this month. ` +
+        '健康保険法第156条第3項 exempts the loss month only for someone insured continuously ' +
+        'from the previous month (「前月から引き続き被保険者である者」), which does not describe ' +
+        'someone who joined the same month. A full month is charged, and 厚生年金保険法第19条第2項 ' +
+        'counts it as one month of insured period.',
     };
 
   // The month eligibility is lost: no premium (156条3項).

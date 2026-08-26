@@ -1087,6 +1087,16 @@
       }
      },
      {
+      "name": "bonus_insurance",
+      "in": "query",
+      "required": true,
+      "description": "Social insurance deducted from THIS bonus. The tax is charged on the bonus after it (所得税法第186条第2項), so leaving it out overstates the tax by roughly 3,000 yen on a 500,000 yen bonus. GET /v1/bonus-insurance computes the figure.",
+      "schema": {
+       "type": "integer",
+       "example": 75000
+      }
+     },
+     {
       "name": "dependants",
       "in": "query",
       "required": false,
