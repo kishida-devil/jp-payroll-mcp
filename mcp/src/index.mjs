@@ -461,6 +461,41 @@ server.registerTool('judge_leave_end_revision', {
   },
 }, async (a) => call('/v1/standard-remuneration/leave-end' + qs(a)));
 
+server.registerTool('decide_regular_remuneration_batch', {
+  title: '定時決定(算定基礎届)をまとめて — 事業所全員分',
+  description:
+    'Runs the annual 定時決定 for a whole payroll in one call, and reports which employees moved ' +
+    'grade.\n\n' +
+    '健康保険法第41条 puts every insured employee on the same schedule — the average of April, ' +
+    'May and June pay, over the months with at least seventeen payment-basis days, applied from ' +
+    'September to the following August. So June is the one month of the year when an office ' +
+    'decides its entire payroll at once, and asking about one employee at a time is the wrong ' +
+    'shape for the task.\n\n' +
+    'Reach for this the moment more than a couple of employees are in play. Each row returns the ' +
+    'same judgement as decide_regular_remuneration, plus whether that person changed grade, ' +
+    'which is what decides how much filing there is. Pass previous_remuneration to get that ' +
+    'comparison; without it the answer is null rather than false, because "no grade to compare" ' +
+    'and "did not move" are different facts.\n\n' +
+    'A row that cannot be decided is returned in errors with its index and id, and the rest of ' +
+    'the run still completes — do not discard a whole run over one bad row.',
+  inputSchema: {
+    employees: z.array(z.object({
+      id: z.string().optional().describe('Echoed back on the result and on any error.'),
+      months: z.array(z.object({
+        remuneration: z.number().describe('Total pay for that month, in yen.'),
+        payment_basis_days: z.number().describe('支払基礎日数 for that month.'),
+      })).describe('Exactly three entries: April, May and June, in that order.'),
+      worker_type: z.enum(['general', 'part_time_short_hours', 'short_time_insured']).optional(),
+      previous_remuneration: z.number().optional().describe(
+        'The 標準報酬月額 in force before this determination, so the result can say whether it moved.'),
+    })).describe('One entry per employee.'),
+    defaults: z.object({
+      worker_type: z.enum(['general', 'part_time_short_hours', 'short_time_insured']).optional(),
+      previous_remuneration: z.number().optional(),
+    }).optional().describe('Applied to any row that omits the field.'),
+  },
+}, async (a) => call('/v1/standard-remuneration/regular/batch', { method: 'POST', body: a }));
+
 server.registerTool('judge_annual_average', {
   title: '年間平均による保険者算定(季節変動がある場合)',
   description:

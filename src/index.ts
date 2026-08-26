@@ -37,6 +37,7 @@ import {
   FIXED_PAY_GUIDANCE, PAYMENT_BASIS_DAYS_GUIDANCE, REGULAR_DECISION_EXCLUSIONS,
   REVISION_ATTRIBUTION, acquisitionDecisionPeriod, annualAverageRegular,
   annualAverageRevision, judgeLeaveEndRevision, judgeRegularDecision, judgeRevision,
+  realGrade,
   type AnnualMonth, type PayMonth, type WorkerType,
 } from './remuneration-revision';
 import {
@@ -340,6 +341,7 @@ app.get('/', (c) =>
       'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': 'Is a 随時改定 (月額変更) due? Judges health and pension separately',
       'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': 'Annual 定時決定 (算定基礎) from April-June pay',
       'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': 'Revision on returning from maternity or childcare leave (one grade is enough)',
+      'POST /v1/standard-remuneration/regular/batch': '算定基礎届 for a whole payroll in one call — June is the one month everybody is decided at once (健保法41条)',
       'POST /v1/standard-remuneration/annual-average': 'Seasonal work: 年間平均による保険者算定 for either determination',
       'GET /v1/statute?ref=健康保険法第43条': 'Full text of a provision this API cites — 健保法43条 and 厚年法81条の2 resolve too',
       'GET /v1/statute/index': 'Every provision available, with its law',
@@ -1305,6 +1307,146 @@ app.get('/v1/standard-remuneration/regular', (c) => {
       ? { acquisition_decision: acquisitionDecisionPeriod(acquired) }
       : {}),
     guidance: { payment_basis_days: PAYMENT_BASIS_DAYS_GUIDANCE },
+    attribution: REVISION_ATTRIBUTION,
+  });
+});
+
+/**
+ * 定時決定をまとめて。
+ *
+ * 算定基礎届は6月に**全社員分を一度に**出すもので、1人ずつ問う場面がそもそも無い。
+ * 健康保険法第41条は「その年の四月、五月及び六月に受けた報酬の総額をその月数で
+ * 除して得た額」を報酬月額とし、決まった標準報酬月額をその年の九月から翌年八月まで
+ * 適用すると定める。年に一度、全員分、同じ月に。
+ *
+ * 給与には POST /v1/payroll/batch があるのに判定系には無かった。200人の事業所なら
+ * 200回呼ぶことになる。単発の口はあるのに実務が通る口が無い、という同じ形の欠落は
+ * これで3度目で、標準報酬月額を batch に渡せなかったのと、batch が生年月日を
+ * 受け取れなかったのが前の2つ。
+ */
+app.post('/v1/standard-remuneration/regular/batch', async (c) => {
+  let payload: { employees?: unknown; defaults?: unknown };
+  try {
+    payload = await c.req.json();
+  } catch {
+    return bad(c, 'Request body must be JSON.',
+      'POST {"defaults": {...}, "employees": [{"id": "e1", "months": [{"remuneration": 350000, "payment_basis_days": 30}, ...]}]}');
+  }
+
+  const rows = payload?.employees;
+  if (!Array.isArray(rows))
+    return bad(c, '"employees" must be an array.', 'Each element is one employee to decide.');
+  if (rows.length === 0) return bad(c, '"employees" must not be empty.');
+
+  const { paid } = entitlement(c);
+  const cap = paid ? MAX_BATCH : FREE_TIER.batch_rows;
+  if (rows.length > cap)
+    return bad(c,
+      paid
+        ? `A batch is limited to ${MAX_BATCH} employees; got ${rows.length}.`
+        : `The free tier allows ${FREE_TIER.batch_rows} employees per batch; got ${rows.length}.`,
+      paid
+        ? 'Split the run into several requests.'
+        : `Batches of up to ${MAX_BATCH} are available through ${UPGRADE.where}. ` +
+          'A 算定基礎届 covers everyone at once, so this is the cap most likely to bind in June.',
+      'batch_too_large');
+  if (rows.some((r) => typeof r !== 'object' || r === null || Array.isArray(r)))
+    return bad(c, 'Every element of "employees" must be an object.');
+
+  const defaults = (payload?.defaults ?? {}) as Record<string, unknown>;
+  if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults))
+    return bad(c, '"defaults" must be an object.');
+
+  const results: any[] = [];
+  const errors: any[] = [];
+
+  rows.forEach((raw, index) => {
+    const row = raw as Record<string, unknown>;
+    const id = row.id === undefined ? undefined : String(row.id);
+    const at = (code: string, error: string) =>
+      errors.push({ index, ...(id !== undefined ? { id } : {}), code, error });
+
+    const monthsRaw = row.months ?? (defaults as any).months;
+    if (!Array.isArray(monthsRaw) || monthsRaw.length !== 3)
+      return at('invalid_request',
+        'months must be an array of exactly three entries — April, May and June (健康保険法第41条).');
+
+    const months: PayMonth[] = [];
+    for (const [i, mRaw] of monthsRaw.entries()) {
+      if (typeof mRaw !== 'object' || mRaw === null || Array.isArray(mRaw))
+        return at('invalid_request', `months[${i}] must be an object.`);
+      const mo = mRaw as Record<string, unknown>;
+      const remuneration = Number(mo.remuneration);
+      const days = Number(mo.payment_basis_days);
+      if (!Number.isFinite(remuneration) || remuneration < 0)
+        return at('invalid_request', `months[${i}].remuneration must be a non-negative number.`);
+      if (!Number.isInteger(days) || days < 0 || days > 31)
+        return at('invalid_request', `months[${i}].payment_basis_days must be a whole number of days from 0 to 31.`);
+      months.push({ remuneration, payment_basis_days: days });
+    }
+
+    const wtRaw = row.worker_type ?? (defaults as any).worker_type;
+    const workerType = parseWorkerType(wtRaw === undefined ? undefined : String(wtRaw));
+    if (workerType === null)
+      return at('unknown_worker_type',
+        `Unknown worker_type: "${String(wtRaw)}". Use one of ${WORKER_TYPES.join(', ')}.`);
+
+    const prevRaw = row.previous_remuneration ?? (defaults as any).previous_remuneration;
+    const previous = prevRaw === undefined || prevRaw === null ? undefined : Number(prevRaw);
+    if (previous !== undefined && (!Number.isFinite(previous) || previous < 0))
+      return at('invalid_request', 'previous_remuneration must be a non-negative number.');
+
+    let decision;
+    try {
+      decision = judgeRegularDecision({
+        months: months as [PayMonth, PayMonth, PayMonth],
+        worker_type: workerType,
+        previous_remuneration: previous,
+      });
+    } catch (e: any) {
+      return at('invalid_request', String(e?.message ?? e));
+    }
+
+    // 6月に知りたいのは「誰の等級が動くか」。等級そのものより、動いた事実のほうが
+    // 提出物の量を決める。previous_remuneration を渡していない行は判定できないので
+    // null にする — false にすると「動かなかった」と読めてしまう。
+    const changed = previous === undefined || !('schemes' in decision)
+      ? null
+      : realGrade('health', previous) !== decision.schemes.health.grade
+        || realGrade('pension', previous) !== decision.schemes.pension.grade;
+
+    results.push({ index, ...(id !== undefined ? { id } : {}), ...decision, changed });
+  });
+
+  const decidedRows = results.filter((r) => r.changed !== null);
+  return c.json({
+    count: rows.length,
+    succeeded: results.length,
+    failed: errors.length,
+    defaults,
+    applies: {
+      from_month: 9,
+      through_month: 8,
+      basis: '健康保険法第41条。決まった標準報酬月額はその年の9月から翌年8月まで適用されます。',
+    },
+    summary: {
+      employees: results.length,
+      changed: decidedRows.filter((r) => r.changed === true).length,
+      unchanged: decidedRows.filter((r) => r.changed === false).length,
+      undetermined: results.length - decidedRows.length,
+      insurer_determination: results.filter((r) => r.insurer_determination).length,
+    },
+    results,
+    errors,
+    notes: {
+      partial: 'A row that fails is reported in "errors" and skipped; the rest still run.',
+      changed:
+        'changed is null unless previous_remuneration was given — with no grade from last year there is ' +
+        'nothing to compare, and reporting false there would read as "did not move".',
+      months: 'The three entries are April, May and June in that order. A month under 17 payment-basis ' +
+        'days is left out of the average (健康保険法第41条).',
+      submission: 'Which employees are exempt from filing is listed by GET /v1/standard-remuneration/regular.',
+    },
     attribution: REVISION_ATTRIBUTION,
   });
 });

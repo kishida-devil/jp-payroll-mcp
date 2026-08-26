@@ -2465,6 +2465,101 @@ for (const [p, want, label] of [
      'a birth_date in defaults is inherited by every row, and batch now accepts one at all',
      JSON.stringify(inheritedBody.errors));
 }
+// ---- 48. 定時決定をまとめて回せること (F-10) ----
+// バー: 健康保険法第41条。保険者は7月1日現に使用される事業所において、その年の
+// 4月・5月・6月に受けた報酬の総額を「その月数で除して」報酬月額とし、決まった
+// 標準報酬月額をその年の9月から翌年8月まで適用する。支払基礎日数17日も同条にある。
+//
+// つまり算定基礎届は「6月に全社員分を一度に」出すもので、1人ずつ問う場面が無い。
+// 給与には POST /v1/payroll/batch があるのに判定系には無く、200人なら200回。
+// 単発の口はあるのに、実務が通る口が無いという同じ形の欠落が3度目になる。
+{
+  const post = async (body, q = '') => {
+    const r = await fetch(`${BASE}/v1/standard-remuneration/regular/batch${q}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+
+  const m = (r, d = 30) => ({ remuneration: r, payment_basis_days: d });
+
+  const run = await post({
+    employees: [
+      // 昇給して等級が上がる人。
+      { id: 'up', months: [m(350000), m(352000), m(349000)], previous_remuneration: 300000 },
+      // 変わらない人。
+      { id: 'same', months: [m(300000), m(300000), m(300000)], previous_remuneration: 300000 },
+      // 17日未満の月がある人。その月は除いて平均する。
+      { id: 'short', months: [m(300000), m(300000, 10), m(300000)], previous_remuneration: 300000 },
+    ],
+  });
+
+  ok(run.status === 200, 'the regular determination runs as a batch', `${run.status}`);
+  ok(run.body.succeeded === 3 && run.body.failed === 0, 'all three employees are decided',
+     `${run.body.succeeded}/${run.body.failed}`);
+
+  const by = Object.fromEntries((run.body.results ?? []).map((r) => [r.id, r]));
+
+  // 単発と完全に一致すること。別経路で別の答えが出るなら意味がない。
+  const single = (await get('/v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30')).body;
+  ok(by.up?.schemes?.health?.grade === single.schemes.health.grade
+       && by.up?.schemes?.pension?.grade === single.schemes.pension.grade,
+     'a batch row agrees with the single-employee endpoint exactly',
+     `${JSON.stringify(by.up?.schemes)} vs ${JSON.stringify(single.schemes)}`);
+
+  // 17日未満は算定から外れる (健保法41条)。3月とも30万なら平均は30万のまま。
+  ok(by.short?.months_used === 2,
+     'a month under 17 payment-basis days drops out of the average',
+     `${by.short?.months_used}`);
+  ok(by.short?.average_remuneration === 300000,
+     'and the average is taken over the months that remain', `${by.short?.average_remuneration}`);
+
+  // 6月の実務は「誰の等級が動くか」を知ること。それが一覧で出ること。
+  ok(run.body.summary?.employees === 3, 'the summary counts the decided employees',
+     `${run.body.summary?.employees}`);
+  ok(run.body.summary?.changed === 1 && run.body.summary?.unchanged === 2,
+     'and separates who moves grade from who does not',
+     JSON.stringify(run.body.summary));
+  ok(by.up?.changed === true && by.same?.changed === false,
+     'each row says whether that employee moved', `${by.up?.changed} / ${by.same?.changed}`);
+
+  // 適用期間は条文どおり その年の9月から翌年8月まで。
+  ok(/9月/.test(JSON.stringify(run.body.applies ?? '')) || run.body.applies?.from_month === 9,
+     'the run states the September start the article fixes',
+     JSON.stringify(run.body.applies));
+
+  // 壊れた行は、その行だけ落ちて残りは通る。
+  const mixed = await post({
+    employees: [
+      { id: 'ok', months: [m(300000), m(300000), m(300000)] },
+      { id: 'twomonths', months: [m(300000), m(300000)] },
+      { id: 'notarray', months: 'nonsense' },
+      { id: 'badtype', months: [m(300000), m(300000), m(300000)], worker_type: 'nonsense' },
+    ],
+  });
+  ok(mixed.status === 200, 'a partial failure is still a 200', `${mixed.status}`);
+  ok(mixed.body.succeeded === 1 && mixed.body.failed === 3, 'one row survives',
+     `${mixed.body.succeeded}/${mixed.body.failed}`);
+  ok(mixed.body.errors.every((e) => Number.isInteger(e.index)), 'errors carry the input index');
+  ok(mixed.body.errors.find((e) => e.id === 'badtype') !== undefined,
+     'an unusable worker_type fails its own row', JSON.stringify(mixed.body.errors));
+
+  // defaults は行ごとの記述を省くためのもの。
+  const viaDefaults = await post({
+    defaults: { worker_type: 'part_time_short_hours' },
+    employees: [{ id: 'p', months: [m(120000, 15), m(120000, 15), m(120000, 15)] }],
+  });
+  ok(viaDefaults.body.results?.[0]?.worker_type === 'part_time_short_hours',
+     'a worker_type in defaults is inherited by every row',
+     JSON.stringify(viaDefaults.body.errors ?? viaDefaults.body.results?.[0]?.worker_type));
+
+  // 入力の検査。
+  ok((await post({ employees: [] })).status === 400, 'an empty run is refused');
+  ok((await post({ employees: {} })).status === 400, 'a non-array is refused');
+  ok((await post({})).status === 400, 'a missing employees key is refused');
+}
+
 
 
 

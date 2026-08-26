@@ -659,6 +659,75 @@ RECIPE = {
             ],
         },
         {
+            "path": "/v1/standard-remuneration/regular/batch",
+            "method": "post",
+            "summary": "The annual 算定基礎届 for a whole payroll at once",
+            "description": (
+                "健康保険法第41条 decides every insured employee on the same schedule: the "
+                "average of April, May and June pay, taken over the months with at least "
+                "seventeen payment-basis days, applied from September to the following "
+                "August. That makes June the one month where an office decides its entire "
+                "payroll at once, and deciding two hundred employees one call at a time is "
+                "the wrong shape for it. "
+                "Each row returns the same judgement as the single-employee endpoint, plus "
+                "whether that employee moved grade — which is what determines how much "
+                "filing there is. A row that cannot be decided is reported in errors and "
+                "the rest still run."
+            ),
+            "tags": ["Payroll"],
+            "params": [],
+            "body": {
+                "type": "object",
+                "required": ["employees"],
+                "properties": {
+                    "defaults": {
+                        "type": "object",
+                        "description": "Applied to any row that omits the field.",
+                        "properties": {
+                            "worker_type": {
+                                "type": "string",
+                                "enum": ["general", "part_time_short_hours", "short_time_insured"],
+                                "description": "Decides the payment-basis-day threshold: 17 days "
+                                               "normally, 11 for a 短時間労働者 at a 特定適用事業所.",
+                            },
+                            "previous_remuneration": {
+                                "type": "integer", "example": 300000,
+                                "description": "Last year 標準報酬月額, so the response can say "
+                                               "whether the employee moved grade.",
+                            },
+                        },
+                    },
+                    "employees": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "items": {
+                            "type": "object",
+                            "required": ["months"],
+                            "properties": {
+                                "id": {"type": "string", "example": "E-0001",
+                                       "description": "Echoed back on the result and on any error."},
+                                "months": {
+                                    "type": "array", "minItems": 3, "maxItems": 3,
+                                    "description": "April, May and June, in that order.",
+                                    "items": {
+                                        "type": "object",
+                                        "required": ["remuneration", "payment_basis_days"],
+                                        "properties": {
+                                            "remuneration": {"type": "integer", "example": 350000},
+                                            "payment_basis_days": {"type": "integer", "example": 30},
+                                        },
+                                    },
+                                },
+                                "worker_type": {"type": "string", "example": "general"},
+                                "previous_remuneration": {"type": "integer", "example": 300000},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        {
             "path": "/v1/standard-remuneration/annual-average",
             "method": "post",
             "summary": "年間平均による保険者算定 for seasonal work",
