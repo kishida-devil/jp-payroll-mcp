@@ -1,0 +1,70 @@
+{
+  "name": "jp-payroll-mcp",
+  "version": "0.2.0",
+  "description": "MCP server for Japanese payroll, social insurance and labour law (社労士・労務): premiums for all 47 prefectures, withholding tax, standard remuneration decisions and revisions (定時決定・随時改定), leave premium exemptions, minimum wage, plus the full text of every statute it cites from e-Gov. Verified cell by cell against the official 協会けんぽ and 国税庁 tables.",
+  "type": "module",
+  "bin": {
+    "jp-payroll-mcp": "src/index.mjs"
+  },
+  "main": "src/index.mjs",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "README.ja.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node test/smoke.mjs && node test/failure.mjs",
+    "test:smoke": "node test/smoke.mjs",
+    "test:failure": "node test/failure.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "claude",
+    "japan",
+    "japanese",
+    "payroll",
+    "hr",
+    "social-insurance",
+    "labor-law",
+    "law",
+    "e-gov",
+    "sharoushi",
+    "nenkin",
+    "shakai-hoken",
+    "withholding-tax",
+    "minimum-wage",
+    "kyuyo",
+    "roumu",
+    "社会保険",
+    "給与計算",
+    "標準報酬月額",
+    "源泉徴収",
+    "社労士",
+    "労務",
+    "年金",
+    "法令"
+  ],
+  "author": "tsumugi",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  },
+  "homepage": "https://github.com/kishida-devil/jp-payroll-mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kishida-devil/jp-payroll-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kishida-devil/jp-payroll-mcp/issues"
+  },
+  "mcpName": "io.github.kishida-devil/jp-payroll-mcp"
+}

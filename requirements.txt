@@ -1,0 +1,4 @@
+playwright>=1.44
+requests>=2.31
+python-dotenv>=1.0
+openpyxl>=3.1

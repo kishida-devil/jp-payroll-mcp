@@ -1,0 +1,57 @@
+{
+ "meta": {
+  "label": "月額表の甲欄を適用する給与等に対する税額の電算機計算の特例",
+  "year": "令和8年分以降 (from 2026)",
+  "source": "国税庁 令和8年分 源泉徴収税額表 電算機計算の特例",
+  "source_url": "https://www.nta.go.jp/publication/pamph/gensen/zeigakuhyo2026/data/denshi_01.pdf",
+  "statute": "財務省告示 (平成24年3月31日第116号、令和7年4月30日第123号改正)",
+  "licence": "公共データ利用規約(第1.0版)",
+  "attribution_ja": "出典：国税庁ホームページを加工して作成",
+  "warning_ja": "令和7年分以前の給与等には使用できません。",
+  "applies_to": [
+   "支給期が毎月、毎半月、毎旬又は月の整数倍の期間ごとと定められている給与",
+   "前月中に通常の給与を受けていない人に支払う賞与",
+   "前月中の通常の給与の10倍を超える賞与"
+  ],
+  "kou_only": true
+ },
+ "table1_employment_income_deduction": {
+  "note": "第1表. Aはその月の社会保険料等控除後の給与等の金額。1円未満の端数は切り上げ。",
+  "rounding": "ceil",
+  "tiers": [
+   {"to": 158333, "fixed": 54167},
+   {"to": 299999, "rate": 0.30, "add": 6667},
+   {"to": 549999, "rate": 0.20, "add": 36667},
+   {"to": 708330, "rate": 0.10, "add": 91667},
+   {"to": null, "fixed": 162500}
+  ]
+ },
+ "table2_spouse_and_dependants": {
+  "note": "第2表",
+  "spouse_deduction": 31667,
+  "dependant_deduction_per_person": 31667
+ },
+ "table3_basic_deduction": {
+  "note": "第3表. Aはその月の社会保険料等控除後の給与等の金額。",
+  "tiers": [
+   {"to": 2120833, "fixed": 48334},
+   {"to": 2162499, "fixed": 40000},
+   {"to": 2204166, "fixed": 26667},
+   {"to": 2245833, "fixed": 13334},
+   {"to": null, "fixed": 0}
+  ]
+ },
+ "table4_tax": {
+  "note": "第4表. Bはその月の課税給与所得金額。税額は10円未満四捨五入。",
+  "rounding": "round_to_10",
+  "tiers": [
+   {"to": 162500, "rate": 0.05105, "subtract": 0},
+   {"to": 275000, "rate": 0.10210, "subtract": 8296},
+   {"to": 579166, "rate": 0.20420, "subtract": 36374},
+   {"to": 750000, "rate": 0.23483, "subtract": 54113},
+   {"to": 1500000, "rate": 0.33693, "subtract": 130688},
+   {"to": 3333333, "rate": 0.40840, "subtract": 237893},
+   {"to": null, "rate": 0.45945, "subtract": 408061}
+  ]
+ }
+}

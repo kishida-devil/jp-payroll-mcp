@@ -1,0 +1,41 @@
+{
+ "meta": {
+  "source": "国税庁 No.6303 消費税及び地方消費税の税率 / No.6102 消費税の軽減税率制度",
+  "source_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
+  "license": "公共データ利用規約(第1.0版)",
+  "note": "Rates are split into the national consumption tax and the local consumption tax; the headline rate is their sum."
+ },
+ "reduced_rate_scope": {
+  "since": "2019-10-01",
+  "applies_to": [
+   "Food and drink, excluding alcoholic drinks and dining out (酒類・外食を除く飲食料品)",
+   "Newspapers published at least twice a week under a subscription contract (定期購読契約の新聞)"
+  ]
+ },
+ "history": [
+  {
+   "effective_from": "1989-04-01",
+   "effective_to": "1997-03-31",
+   "standard": {"total": 0.03, "national": 0.03, "local": 0.0},
+   "reduced": null
+  },
+  {
+   "effective_from": "1997-04-01",
+   "effective_to": "2014-03-31",
+   "standard": {"total": 0.05, "national": 0.04, "local": 0.01},
+   "reduced": null
+  },
+  {
+   "effective_from": "2014-04-01",
+   "effective_to": "2019-09-30",
+   "standard": {"total": 0.08, "national": 0.063, "local": 0.017},
+   "reduced": null
+  },
+  {
+   "effective_from": "2019-10-01",
+   "effective_to": null,
+   "standard": {"total": 0.10, "national": 0.078, "local": 0.022},
+   "reduced": {"total": 0.08, "national": 0.0624, "local": 0.0176}
+  }
+ ]
+}

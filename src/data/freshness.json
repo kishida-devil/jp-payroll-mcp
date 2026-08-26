@@ -1,0 +1,77 @@
+{
+ "_comment": "Every dataset declares where it came from, what it currently covers, and when it is next expected to change. The API reports this so callers can see staleness even if our monitoring misses a revision. Dates are the first day the new figures take effect.",
+ "datasets": {
+  "social_insurance": {
+   "label": "協会けんぽ 都道府県別保険料率・標準報酬月額表",
+   "covers": "令和8年度 (FY2026)",
+   "effective_from": "2026-03-01",
+   "next_revision_expected": "2027-03-01",
+   "revision_cadence": "annual, effective with the March salary month",
+   "source_url": "https://www.kyoukaikenpo.or.jp/g7/cat330/sb3150/",
+   "watch_url": "https://www.kyoukaikenpo.or.jp/assets/r8ippan3.xlsx",
+   "extractor": "scripts/extract-insurance.py"
+  },
+  "employment_insurance": {
+   "label": "雇用保険料率",
+   "covers": "令和8年度 (FY2026)",
+   "effective_from": "2026-04-01",
+   "next_revision_expected": "2027-04-01",
+   "revision_cadence": "annual, effective from the first wage closing date on or after 1 April",
+   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
+   "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
+   "extractor": "hand-entered from the ministry PDF"
+  },
+  "minimum_wage": {
+   "label": "地域別最低賃金",
+   "covers": "令和7年度 (FY2025), 47 prefectures x 24 years",
+   "effective_from": "2025-10-01",
+   "next_revision_expected": "2026-10-01",
+   "revision_cadence": "annual; answers published from late August, effective prefecture by prefecture from October",
+   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
+   "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
+   "extractor": "scripts/extract-minimum-wage.py",
+   "note": "FY2026 revisions were still being issued prefecture by prefecture as of 2026-08. This dataset must be refreshed before October 2026."
+  },
+  "holidays": {
+   "label": "国民の祝日",
+   "covers": "1955-2027",
+   "effective_from": "1955-01-01",
+   "next_revision_expected": "2027-02-01",
+   "revision_cadence": "the Cabinet Office publishes the following year each February",
+   "source_url": "https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html",
+   "watch_url": "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv",
+   "extractor": "scripts/extract-holidays.py"
+  },
+  "consumption_tax": {
+   "label": "消費税率",
+   "covers": "1989-04-01 onwards, all four rate periods",
+   "effective_from": "2019-10-01",
+   "next_revision_expected": null,
+   "revision_cadence": "only when the statutory rate changes; none scheduled",
+   "source_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
+   "watch_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
+   "extractor": "hand-entered from the NTA tax answer"
+  },
+  "corporate_number": {
+   "label": "法人番号チェックディジット",
+   "covers": "algorithm only, no dataset",
+   "effective_from": null,
+   "next_revision_expected": null,
+   "revision_cadence": "statutory algorithm; changes only if the ministerial ordinance changes",
+   "source_url": "https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf",
+   "watch_url": null,
+   "extractor": null
+  },
+  "pension_grade_table": {
+   "label": "厚生年金保険 標準報酬月額の等級区分",
+   "covers": "32 grades, up to 650,000 yen (令和2年政令第246号による第32級)",
+   "effective_from": "2020-09-01",
+   "next_revision_expected": "2027-09-01",
+   "revision_cadence": "legislated: 令和7年法律第74号 raises the ceiling in three steps",
+   "source_url": "https://laws.e-gov.go.jp/law/329AC0000000115",
+   "watch_url": null,
+   "extractor": "scripts/extract-insurance.py (grades come from the 協会けんぽ workbook)",
+   "note": "Already legislated and visible in e-Gov's unenforced revisions: 第33級 680,000 from 2027-09-01, 第34級 710,000 from 2028-09-01, 第35級 750,000 from 2029-09-01. The 随時改定 exception thresholds in 昭和36年保発第4号 hard-code 第31級/第32級 and 665,000 yen, so those will need revising too."
+  }
+ }
+}

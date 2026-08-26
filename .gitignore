@@ -1,0 +1,19 @@
+node_modules/
+.wrangler/
+.build/
+build/
+
+# 認証情報。中身は .env.example にキー名だけ置いてある。
+.env
+.dev.vars
+
+# python / 出品パイプラインの作業領域
+__pycache__/
+state/
+rapidapi_profile/
+build/raw/
+*.tgz
+
+# OS
+.DS_Store
+Thumbs.db

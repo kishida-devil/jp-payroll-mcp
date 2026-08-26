@@ -1,0 +1,35 @@
+{
+  "name": "japan-payroll-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Japanese payroll, social insurance and labour law as an MCP server and HTTP API",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test/verify.mjs",
+    "rapidapi:login": "python pipeline/rapidapi/login.py",
+    "rapidapi:prepare": "python pipeline/rapidapi/prepare.py --all",
+    "watch": "python pipeline/watch_sources.py",
+    "watch:dry": "python pipeline/watch_sources.py --dry-run",
+    "mcp": "node mcp/src/index.mjs",
+    "mcp:test": "node mcp/test/smoke.mjs",
+    "stats": "node scripts/stats.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260825.1",
+    "typescript": "^5.7.2",
+    "wrangler": "^4.125.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kishida-devil/jp-payroll-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kishida-devil/jp-payroll-mcp/issues"
+  },
+  "homepage": "https://github.com/kishida-devil/jp-payroll-mcp",
+  "license": "MIT"
+}

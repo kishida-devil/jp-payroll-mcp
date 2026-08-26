@@ -1,0 +1,165 @@
+/**
+ * 法人番号 (Japanese Corporate Number) check digit.
+ *
+ * Source: 国税庁「チェックデジットの計算」
+ * https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf
+ *
+ *   A = sum of digits at ODD positions counting from the rightmost (1,3,5,...)
+ *   B = sum of digits at EVEN positions counting from the rightmost (2,4,6,...)
+ *   check digit = 9 - ((A + B*2) mod 9)
+ *
+ * Worked example from the PDF: base 700110005901
+ *   A = 1+9+0+0+1+0 = 11, B = 0+5+0+1+0+7 = 13
+ *   13*2 + 11 = 37, 37 mod 9 = 1, 9 - 1 = 8  ->  8700110005901
+ *
+ * Note the check digit is 9 - r where r is in [0,8], so it is always 1-9.
+ * A leading zero is therefore never valid.
+ *
+ * This is also the value validated by Peppol participant scheme ICD 0188,
+ * which is defined as the Corporate Number issued by the National Tax Agency.
+ */
+
+const DIGITS = /^[0-9]+$/;
+
+export function checkDigitFor(base12: string): number {
+  let odd = 0;
+  let even = 0;
+  // position 1 is the rightmost digit
+  for (let i = 0; i < 12; i++) {
+    const digit = base12.charCodeAt(11 - i) - 48;
+    if (i % 2 === 0) odd += digit;  // i=0 -> position 1 (odd)
+    else even += digit;             // i=1 -> position 2 (even)
+  }
+  return 9 - ((odd + even * 2) % 9);
+}
+
+export type CorporateNumberResult =
+  | { valid: true; corporate_number: string; base_number: string; check_digit: number }
+  | { valid: false; reason: string; expected_check_digit?: number; corporate_number?: string };
+
+/** Accepts 13 digits, tolerating hyphens and spaces. */
+export function validateCorporateNumber(input: string): CorporateNumberResult {
+  const cleaned = input.replace(/[-\s　]/g, '');
+  if (!DIGITS.test(cleaned))
+    return { valid: false, reason: 'Corporate numbers contain digits only (hyphens and spaces are ignored).' };
+  if (cleaned.length !== 13)
+    return { valid: false, reason: `A corporate number is 13 digits; got ${cleaned.length}.` };
+
+  const base = cleaned.slice(1);
+  const given = cleaned.charCodeAt(0) - 48;
+  const expected = checkDigitFor(base);
+
+  if (given !== expected)
+    return {
+      valid: false,
+      reason: 'Check digit does not match the base number.',
+      expected_check_digit: expected,
+      corporate_number: cleaned,
+    };
+
+  return { valid: true, corporate_number: cleaned, base_number: base, check_digit: expected };
+}
+
+/** Build the full 13-digit number from a 12-digit 会社法人等番号. */
+export function fromBaseNumber(input: string):
+  | { ok: true; corporate_number: string; base_number: string; check_digit: number }
+  | { ok: false; reason: string } {
+  const cleaned = input.replace(/[-\s　]/g, '');
+  if (!DIGITS.test(cleaned))
+    return { ok: false, reason: 'Base numbers contain digits only (hyphens and spaces are ignored).' };
+  if (cleaned.length !== 12)
+    return { ok: false, reason: `A base number (会社法人等番号) is 12 digits; got ${cleaned.length}.` };
+  const cd = checkDigitFor(cleaned);
+  return { ok: true, corporate_number: `${cd}${cleaned}`, base_number: cleaned, check_digit: cd };
+}
+
+/**
+ * 適格請求書発行事業者の登録番号 (qualified invoice issuer registration number).
+ *
+ * Format is "T" + 13 digits.
+ *   - For corporations, those 13 digits ARE the corporate number, so the check
+ *     digit applies and can be verified.
+ *   - For sole proprietors and unincorporated associations, the NTA assigns a
+ *     13-digit number that does not collide with any corporate number. It does
+ *     not use the individual (My Number) identifier.
+ *
+ * The NTA does not document a check-digit rule for the non-corporate case. It was
+ * therefore established empirically against the official bulk dataset: every one
+ * of 614,413 registration numbers belonging to sole proprietors (606,507) and
+ * unincorporated associations (7,906) satisfies the corporate check digit, with
+ * zero counterexamples. So a mismatch is strong evidence of a typo, whoever the
+ * holder is — but because the rule is inductive rather than published, the
+ * response says so instead of asserting the number is invalid outright.
+ *
+ * https://www.invoice-kohyo.nta.go.jp/about-toroku/index.html
+ */
+export type InvoiceNumberResult = {
+  input: string;
+  registration_number: string | null;
+  format_valid: boolean;
+  check_digit_valid: boolean | null;
+  digits: string | null;
+  check_digit: number | null;
+  expected_check_digit: number | null;
+  /**
+   * Whether the number could be a corporation's. Corporations use their 法人番号
+   * directly, but sole-proprietor numbers satisfy the same check digit, so a
+   * passing number cannot be attributed to either without the NTA register.
+   */
+  could_be_corporate_number: boolean | null;
+  reason: string;
+};
+
+const EMPIRICAL_NOTE =
+  'The NTA publishes no check-digit rule for sole proprietors and unincorporated associations. It was confirmed empirically: all 614,413 non-corporate registrations in the official bulk dataset satisfy the corporate check digit, with no counterexamples.';
+
+export function validateInvoiceNumber(input: string): InvoiceNumberResult {
+  const cleaned = input.replace(/[-\s　]/g, '').toUpperCase();
+  const base = {
+    input,
+    registration_number: null,
+    format_valid: false,
+    check_digit_valid: null,
+    digits: null,
+    check_digit: null,
+    expected_check_digit: null,
+    could_be_corporate_number: null,
+  } as const;
+
+  if (!cleaned.startsWith('T'))
+    return { ...base, reason: 'A registration number starts with "T".' };
+  const digits = cleaned.slice(1);
+  if (!DIGITS.test(digits) || digits.length !== 13)
+    return { ...base, reason: `"T" must be followed by exactly 13 digits; got ${digits.length}.` };
+
+  const given = digits.charCodeAt(0) - 48;
+  const expected = checkDigitFor(digits.slice(1));
+  const cdValid = given === expected;
+
+  return {
+    input,
+    registration_number: cleaned,
+    format_valid: true,
+    check_digit_valid: cdValid,
+    digits,
+    check_digit: given,
+    expected_check_digit: expected,
+    could_be_corporate_number: cdValid,
+    reason: cdValid
+      ? `Well-formed. The holder may be a corporation — in which case the digits are its 法人番号 — or a sole proprietor or unincorporated association, whose numbers satisfy the same check digit. Telling them apart requires the NTA register. ${EMPIRICAL_NOTE}`
+      : `Check digit ${given} does not match the expected ${expected}, so this is almost certainly a typo. ${EMPIRICAL_NOTE}`,
+  };
+}
+
+export const INVOICE_NUMBER_ATTRIBUTION = {
+  source: '国税庁 適格請求書発行事業者公表サイト「登録番号とは」',
+  source_url: 'https://www.invoice-kohyo.nta.go.jp/about-toroku/index.html',
+  note: 'Structural check only. Whether a business is currently registered can change at any time and must be confirmed against the NTA publication site.',
+};
+
+export const CORPORATE_NUMBER_ATTRIBUTION = {
+  source: '国税庁 法人番号公表サイト「チェックデジットの計算」',
+  source_url: 'https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf',
+  peppol_scheme: '0188 (Corporate Number of Japan, ISO 6523 ICD)',
+  note: 'This validates the structure of the number only. It does not confirm that the corporation exists or is currently registered.',
+};
