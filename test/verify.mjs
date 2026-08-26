@@ -195,7 +195,7 @@ for (const q of ['Tokyo', 'tokyo', '%E6%9D%B1%E4%BA%AC', '%E6%9D%B1%E4%BA%AC%E9%
 // ---- 11. error handling ----
 for (const [p, want] of [['/v1/insurance-rates', 400], ['/v1/insurance-rates?prefecture=Atlantis', 400],
                          ['/v1/payroll?prefecture=Tokyo', 400],
-                         ['/v1/payroll?prefecture=Tokyo&monthly_salary=abc', 400],
+                         ['/v1/payroll?prefecture=Tokyo&monthly_salary=abc&age=40', 400],
                          ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=999', 400],
                          ['/v1/employment-insurance?business_type=nope', 400],
                          ['/v1/minimum-wage?prefecture=Tokyo&date=13/05/2020', 400],
@@ -833,7 +833,7 @@ for (const [p, want, label] of [
       { id: 'neg', monthly_salary: -5 },
       { id: 'nowhere', monthly_salary: 300000, prefecture: 'Atlantis' },
       { id: 'nosalary' },
-      { id: 'baddep', monthly_salary: 300000, dependants: 1.5 },
+      { id: 'baddep', monthly_salary: 300000, age: 30, dependants: 1.5 },
     ],
   });
   ok(mixed.status === 200, 'a partial failure is still a 200', `got ${mixed.status}`);
@@ -853,10 +853,10 @@ for (const [p, want, label] of [
      'a row without an id is still returned with its index');
 
   // Guardrails.
-  const tooMany = await post({ defaults, employees: Array.from({ length: 501 }, () => ({ monthly_salary: 300000 })) });
+  const tooMany = await post({ defaults, employees: Array.from({ length: 501 }, () => ({ monthly_salary: 300000, age: 30 })) });
   ok(tooMany.status === 400 && tooMany.body.code === 'batch_too_large',
      'over 500 employees is rejected with its own code', `${tooMany.status} ${tooMany.body.code}`);
-  const atLimit = await post({ defaults, employees: Array.from({ length: 500 }, () => ({ monthly_salary: 300000 })) });
+  const atLimit = await post({ defaults, employees: Array.from({ length: 500 }, () => ({ monthly_salary: 300000, age: 30 })) });
   ok(atLimit.status === 200 && atLimit.body.succeeded === 500, 'exactly 500 is accepted',
      `${atLimit.status} ${atLimit.body.succeeded}`);
 
@@ -1915,9 +1915,9 @@ for (const [p, want, label] of [
   // 金額を扱うAPIで綴り間違いを黙って無視するのは事故製造機になる。
   // 批評で挙がった不具合の複数が「渡したのに無視された」だった。
   for (const [path, param] of [
-    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000', 'commute_allowance=15000'],
-    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000', 'zzz_bogus=999'],
-    ['/v1/bonus-insurance?prefecture=Tokyo&bonus=500000', 'left_date=2026-03-30'],
+    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40', 'commute_allowance=15000'],
+    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40', 'zzz_bogus=999'],
+    ['/v1/bonus-insurance?prefecture=Tokyo&bonus=500000&age=40', 'left_date=2026-03-30'],
     ['/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160', 'overtime=20'],
   ]) {
     const r = await get(`${path}&${param}`);
@@ -1926,11 +1926,11 @@ for (const [p, want, label] of [
   }
 
   // 綴りが近ければ候補を出す。
-  const typo = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&standard_remuneration_=300000')).body;
+  const typo = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&standard_remuneration_=300000')).body;
   ok(/Did you mean/.test(typo.hint ?? ''), 'a near miss suggests the right name', typo.hint);
 
   // 正しいパラメータは当然通る。
-  ok((await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&standard_remuneration=300000&employment_type=director&income_tax=false')).status === 200,
+  ok((await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&standard_remuneration=300000&employment_type=director&income_tax=false')).status === 200,
      'every accepted parameter still works together');
 }
 
@@ -2375,6 +2375,97 @@ for (const [p, want, label] of [
     ok(r.status !== 404, `${path} answers rather than 404`, `${r.status}`);
   }
 }
+// ---- 47. 介護保険は年齢が要件なので、年齢なしで払える答えは無い (F-05) ----
+// バー: 介護保険法第9条。第1号被保険者は「六十五歳以上の者」、第2号被保険者は
+// 「四十歳以上六十五歳未満の医療保険加入者」。年齢が徴収義務そのものを決める。
+//
+// 年齢を渡さないと介護保険なしで計算し、200を返していた。45歳・月給30万・東京なら
+// 介護保険の本人負担は 300,000 * 0.0162 / 2 = 2,430円。これがそのまま毎月の
+// 過少徴収になり、しかも返り値のどこにも警告が出ない。非専門の利用者は
+// 「年齢が要る」ことを知らないので、間違いに気づく手がかりが無い。
+{
+  const noAge = await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000');
+  ok(noAge.status === 400,
+     'a payslip with neither age nor birth_date is refused, not answered', `${noAge.status}`);
+  ok(noAge.body.code === 'missing_parameter',
+     'and it is reported as a missing parameter', noAge.body.code);
+  ok(/介護保険法第9条/.test(noAge.body.hint ?? ''),
+     'the refusal cites the article that makes age the test', noAge.body.hint);
+  ok(/40/.test(noAge.body.hint ?? ''),
+     'and names the threshold the caller has to answer for', noAge.body.hint);
+
+  // どちらか一方があれば通る。
+  ok((await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=45')).status === 200,
+     'age alone is enough');
+  ok((await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&birth_date=1981-05-01')).status === 200,
+     'and birth_date alone is enough');
+
+  // 過少徴収の実額。40歳未満と40-64歳の差は、まるまる介護保険の本人負担。
+  const at45 = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=45')).body;
+  const at30 = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=30')).body;
+  ok(at45.coverage.long_term_care === true && at30.coverage.long_term_care === false,
+     '45 is a 第2号被保険者 and 30 is not',
+     `${at45.coverage.long_term_care} / ${at30.coverage.long_term_care}`);
+  ok(at45.totals.social_insurance_employee - at30.totals.social_insurance_employee
+       === 300000 * 0.0162 / 2,
+     'the gap is exactly the long-term care half: 300,000 * 0.0162 / 2 = 2,430',
+     `${at45.totals.social_insurance_employee - at30.totals.social_insurance_employee}`);
+
+  // 65歳以上は第1号被保険者になり、給与からの徴収は止まる。
+  const at66 = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=66')).body;
+  ok(at66.coverage.long_term_care === false,
+     'at 65 the person becomes a 第1号被保険者 and payroll stops collecting it',
+     `${at66.coverage.long_term_care}`);
+
+  // 賞与も同じ法理。ここだけ通してしまうと片肺になる。
+  const bonusNoAge = await get('/v1/bonus-insurance?prefecture=Tokyo&bonus=500000');
+  ok(bonusNoAge.status === 400,
+     'a bonus with neither age nor birth_date is refused too', `${bonusNoAge.status}`);
+  ok((await get('/v1/bonus-insurance?prefecture=Tokyo&bonus=500000&age=45')).status === 200,
+     'and answers once the age is given');
+
+  // バッチは実際の給与計算が通る経路なので、ここが抜けていると意味がない。
+  const batch = await fetch(BASE + '/v1/payroll/batch', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      defaults: { prefecture: 'Tokyo' },
+      employees: [
+        { id: 'has-age', monthly_salary: 300000, age: 45 },
+        { id: 'no-age', monthly_salary: 300000 },
+      ],
+    }),
+  });
+  const batchBody = await batch.json();
+  const okIds = new Set((batchBody.results ?? []).map((r) => r.id));
+  const errById = Object.fromEntries((batchBody.errors ?? []).map((e) => [e.id, e]));
+  ok(okIds.has('has-age'), 'a batch row carrying an age still computes',
+     JSON.stringify(batchBody.errors));
+  ok(!okIds.has('no-age') && errById['no-age'] !== undefined,
+     'while a row without one fails that row instead of guessing',
+     JSON.stringify(batchBody.errors));
+  ok(errById['no-age']?.code === 'missing_parameter',
+     'and the whole run does not fail with it — one bad row is one error',
+     `failed=${batchBody.failed} succeeded=${batchBody.succeeded}`);
+  ok(/age|birth_date/.test(errById['no-age']?.error ?? ''),
+     'the error says which parameter was missing', errById['no-age']?.error);
+  ok(/介護保険法第9条/.test(errById['no-age']?.error ?? ''),
+     'and cites the article that makes it required', errById['no-age']?.error);
+
+  // defaults に置けば行ごとに書かなくてよい。全員分を1つずつ書かせるのは現実的でない。
+  const viaDefaults = await fetch(BASE + '/v1/payroll/batch', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      defaults: { prefecture: 'Tokyo', age: 45 },
+      employees: [{ id: 'inherits', monthly_salary: 300000 }],
+    }),
+  });
+  const inheritedBody = await viaDefaults.json();
+  const inherited = inheritedBody.results?.[0];
+  ok(inherited !== undefined && inherited.coverage?.long_term_care === true,
+     'a birth_date in defaults is inherited by every row, and batch now accepts one at all',
+     JSON.stringify(inheritedBody.errors));
+}
+
 
 
 

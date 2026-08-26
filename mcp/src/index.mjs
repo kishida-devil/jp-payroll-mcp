@@ -215,7 +215,9 @@ server.registerTool('calculate_payslip', {
   inputSchema: {
     prefecture,
     monthly_salary: z.number().describe('Gross monthly pay in yen, before any deduction.'),
-    age: z.number().optional().describe('Age in years. Use birth_date instead where possible.'),
+    age: z.number().optional().describe(
+      'Age in years. Either this or birth_date is required — long-term care is charged only ' +
+      'from 40 to 64, so the premium cannot be settled without it. Prefer birth_date.'),
     birth_date: birthDate,
     dependants: z.number().optional().describe('源泉控除対象親族の数. Defaults to 0.'),
     column: z.enum(['kou', 'otsu']).optional().describe(
@@ -255,7 +257,19 @@ server.registerTool('calculate_payslip', {
       'ISO date the pay relates to. Drives the age milestones and picks the rate table; a ' +
       'date outside the published period returns 422 rather than the current table.'),
   },
-}, async (a) => call('/v1/payroll' + qs(a)));
+}, async (a) => {
+  // 介護保険法第9条は40歳以上65歳未満を第2号被保険者と定める。年齢が無いと
+  // 徴収するかどうかが決まらないので、APIは400を返す。ここで先に止めるのは、
+  // HTTPエラーより「何を聞けばよいか」が伝わるため。
+  if (a.age === undefined && a.birth_date === undefined)
+    return fail('This needs the age of the employee. Long-term care insurance is charged only from ' +
+                '40 to 64 (介護保険法第9条), so without it the premium would be understated by ' +
+                'about 2,430 yen a month on a 300,000 yen salary in Tokyo. Ask for the date of ' +
+                'birth and pass birth_date — 年齢計算ニ関スル法律 puts the attainment of an age on ' +
+                'the day before the birthday, so a 1st-of-the-month birth changes the premium a ' +
+                'month earlier than age alone would suggest.');
+  return call('/v1/payroll' + qs(a));
+});
 
 server.registerTool('list_workers_compensation_rates', {
   title: '労災保険率 — 事業の種類別',
@@ -293,7 +307,8 @@ server.registerTool('calculate_bonus', {
     bonus: z.number().describe('Gross bonus in yen.'),
     fiscal_year_to_date: z.number().optional().describe(
       '標準賞与額 already paid since 1 April this fiscal year. Needed for the annual health cap.'),
-    age: z.number().optional(),
+    age: z.number().optional().describe(
+      'Age in years. Either this or birth_date is required. Prefer birth_date.'),
     birth_date: birthDate,
     include_tax: z.boolean().optional().describe(
       'Also compute withholding tax. Requires previous_month_pay.'),
@@ -304,6 +319,16 @@ server.registerTool('calculate_bonus', {
     dependants: z.number().optional(),
   },
 }, async (a) => {
+  // 介護保険法第9条は40歳以上65歳未満を第2号被保険者と定める。年齢が無いと
+  // 徴収するかどうかが決まらないので、APIは400を返す。ここで先に止めるのは、
+  // HTTPエラーより「何を聞けばよいか」が伝わるため。
+  if (a.age === undefined && a.birth_date === undefined)
+    return fail('This needs the age of the employee. Long-term care insurance is charged only from ' +
+                '40 to 64 (介護保険法第9条), so without it the premium would be understated by ' +
+                'about 2,430 yen a month on a 300,000 yen salary in Tokyo. Ask for the date of ' +
+                'birth and pass birth_date — 年齢計算ニ関スル法律 puts the attainment of an age on ' +
+                'the day before the birthday, so a 1st-of-the-month birth changes the premium a ' +
+                'month earlier than age alone would suggest.');
   const insurance = await call('/v1/bonus-insurance' + qs({
     prefecture: a.prefecture, bonus: a.bonus, fiscal_year_to_date: a.fiscal_year_to_date,
     age: a.age, birth_date: a.birth_date,

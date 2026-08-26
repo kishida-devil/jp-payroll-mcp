@@ -336,7 +336,7 @@
       "name": "age",
       "in": "query",
       "required": false,
-      "description": "Age. Long-term care insurance applies from 40 to 64.",
+      "description": "Age. Either this or birth_date is required: long-term care is charged only from 40 to 64 (介護保険法第9条), so without it the premium cannot be settled. Prefer birth_date.",
       "schema": {
        "type": "integer",
        "example": 40
@@ -1313,7 +1313,7 @@
       "name": "age",
       "in": "query",
       "required": false,
-      "description": "Age, for long-term care. Prefer birth_date.",
+      "description": "Age. Either this or birth_date is required, for the same reason as on the monthly payslip. Prefer birth_date.",
       "schema": {
        "type": "integer",
        "example": 40

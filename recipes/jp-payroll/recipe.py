@@ -173,7 +173,9 @@ RECIPE = {
                 {"name": "monthly_salary", "required": True, "type": "integer", "example": 350000,
                  "description": "Actual monthly salary in yen."},
                 {"name": "age", "type": "integer", "example": 40,
-                 "description": "Age. Long-term care insurance applies from 40 to 64."},
+                 "description": "Age. Either this or birth_date is required: long-term care "
+                                "is charged only from 40 to 64 (介護保険法第9条), so without it "
+                                "the premium cannot be settled. Prefer birth_date."},
                 {"name": "business_type", "example": "general",
                  "enum": ["general", "agriculture_forestry_fishery_sake", "construction"],
                  "description": "Business category for employment insurance."},
@@ -498,7 +500,8 @@ RECIPE = {
                 {"name": "fiscal_year_to_date", "type": "integer", "example": 0,
                  "description": "標準賞与額 already counted since 1 April, for the annual cap."},
                 {"name": "age", "type": "integer", "example": 40,
-                 "description": "Age, for long-term care. Prefer birth_date."},
+                 "description": "Age. Either this or birth_date is required, for the same "
+                                "reason as on the monthly payslip. Prefer birth_date."},
                 {"name": "birth_date", "example": "1986-04-01",
                  "description": "Birth date. More accurate than age: coverage turns on the "
                                 "day before a birthday (年齢計算ニ関スル法律)."},

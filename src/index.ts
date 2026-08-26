@@ -582,6 +582,14 @@ app.get('/v1/payroll', (c) => {
     return bad(c, '"birth_date" must be a valid ISO date (YYYY-MM-DD).',
       'With a birth date the 40, 65, 70 and 75 milestones are applied exactly.');
 
+  // 年齢は「あると精度が上がる」ものではなく、徴収するかどうかを決める要件そのもの。
+  // 渡さなければ介護保険なしで計算して200を返していたが、それは「40歳未満」という
+  // 仮定を黙って置くことで、40〜64歳なら必ず過少になる。非専門の利用者ほど
+  // 年齢が要ることを知らないので、いちばん間違えやすい人が黙って間違える。
+  if (ageRaw === undefined && birthRaw === undefined)
+    return bad(c, 'Either "age" or "birth_date" is required.', '介護保険法第9条 makes age the test itself: a 第2号被保険者 is someone 40 or over and under 65. Without it this endpoint would have to assume "under 40", which silently under-collects — 2,430 yen a month on a 300,000 yen salary in Tokyo. Pass age, or birth_date to have the 40, 65, 70 and 75 milestones applied to the exact day.',
+      'missing_parameter');
+
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
@@ -1641,6 +1649,11 @@ app.get('/v1/bonus-insurance', (c) => {
   const birth = birthRaw === undefined ? null : parseDate(birthRaw);
   if (birthRaw !== undefined && !birth)
     return bad(c, '"birth_date" must be a valid ISO date (YYYY-MM-DD).');
+
+  // 賞与にも同じ法理が働く。月次だけ直して賞与を残すと、片方だけ正しい状態になる。
+  if (ageRaw === undefined && birthRaw === undefined)
+    return bad(c, 'Either "age" or "birth_date" is required.', '介護保険法第9条 makes age the test itself: a 第2号被保険者 is someone 40 or over and under 65. Without it this endpoint would have to assume "under 40", which silently under-collects — 2,430 yen a month on a 300,000 yen salary in Tokyo. Pass age, or birth_date to have the 40, 65, 70 and 75 milestones applied to the exact day.',
+      'missing_parameter');
 
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);

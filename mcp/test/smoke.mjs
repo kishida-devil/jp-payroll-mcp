@@ -462,6 +462,33 @@ for (const [name, args, check] of [
   ok(stale.length === 0, 'and no exclusion points at an endpoint that no longer exists',
      stale.join(', ') || 'none');
 }
+{
+  // 年齢は「あると精度が上がる」ものではなく徴収の要件そのもの(介護保険法第9条)。
+  // 省略されたらHTTP 400を素通しするのではなく、何を聞けばよいかを返す。
+  const noAge = await callTool('calculate_payslip', { prefecture: 'Tokyo', monthly_salary: 300000 });
+  ok(noAge.isError, 'calculate_payslip refuses a payslip with no age', noAge.text.slice(0, 120));
+  ok(/介護保険法第9条/.test(noAge.text ?? ''),
+     'and cites the article that makes age the test', noAge.text.slice(0, 200));
+  ok(/birth_date/.test(noAge.text ?? ''),
+     'and tells the agent to ask for a date of birth rather than an age',
+     noAge.text.slice(0, 200));
+
+  const withAge = await callTool('calculate_payslip',
+    { prefecture: 'Tokyo', monthly_salary: 300000, age: 45 });
+  ok(!withAge.isError && withAge.json?.coverage?.long_term_care === true,
+     'and answers once the age is there', withAge.text.slice(0, 120));
+
+  const bonusNoAge = await callTool('calculate_bonus', { prefecture: 'Tokyo', bonus: 500000 });
+  ok(bonusNoAge.isError, 'calculate_bonus refuses one too', bonusNoAge.text.slice(0, 120));
+
+  // 生年月日で通ることも確かめる。1日生まれは誕生日の前日に年齢に達するので、
+  // age だけでは1か月ずれる (年齢計算ニ関スル法律)。
+  const byBirth = await callTool('calculate_payslip',
+    { prefecture: 'Tokyo', monthly_salary: 300000, birth_date: '1981-05-01' });
+  ok(!byBirth.isError && byBirth.json?.coverage?.long_term_care === true,
+     'birth_date alone is accepted', byBirth.text.slice(0, 120));
+}
+
 
 
 

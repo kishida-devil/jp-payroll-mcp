@@ -1,4 +1,5 @@
 import { empins, resolvePrefecture, type PrefKey } from './lib';
+import { parseDate } from './age';
 import { computePayslip, summarise, type Payslip, type PayslipInput } from './payslip';
 import type { Column } from './withholding';
 import { allowanceError, readAllowance, type AllowanceInput } from './allowances';
@@ -24,6 +25,12 @@ export type BatchRow = {
   prefecture?: string;
   monthly_salary?: number;
   age?: number | null;
+  /**
+   * 生年月日。単発の /v1/payroll では渡せるのに batch では受け取れなかった。
+   * 年齢計算ニ関スル法律により、1日生まれの人は誕生日の前日に年齢に達するので
+   * 前月から料率が変わる。age だけではその1か月がずれる。
+   */
+  birth_date?: string | null;
   business_type?: string;
   column?: string;
   dependants?: number;
@@ -85,6 +92,19 @@ export function readRow(
   if (age !== null && (!Number.isFinite(age) || age < 0 || age > 120))
     return fail('invalid_request', 'age must be a number between 0 and 120.');
 
+  const birthRaw = row.birth_date ?? defaults.birth_date;
+  const birth = birthRaw === undefined || birthRaw === null ? null : parseDate(String(birthRaw));
+  if (birthRaw !== undefined && birthRaw !== null && !birth)
+    return fail('invalid_request', 'birth_date must be a valid ISO date (YYYY-MM-DD).');
+
+  // 介護保険法第9条は40歳以上65歳未満を第2号被保険者と定める。年齢が無ければ
+  // 徴収するかどうかが決まらず、黙って「40歳未満」と置けば40〜64歳は必ず過少になる。
+  // 行ごとに書かせるのは現実的でないので、defaults に置けば全行が継承する。
+  if (age === null && birth === null)
+    return fail('missing_parameter',
+      'Either age or birth_date is required (介護保険法第9条: a 第2号被保険者 is 40 or over and under 65). ' +
+      'Put it in defaults to apply it to every row.');
+
   const btKey = String(row.business_type ?? defaults.business_type ?? 'general').toLowerCase();
   if (!(empins.business_types as any)[btKey])
     return fail('invalid_request', `Unknown business_type: "${btKey}"`);
@@ -142,6 +162,7 @@ export function readRow(
       prefecture: prefecture as PrefKey,
       monthly_salary: salary,
       age,
+      birth_date: birth,
       business_type: btKey,
       column: colRaw as Column,
       dependants,
