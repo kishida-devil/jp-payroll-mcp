@@ -303,7 +303,11 @@ function rejectBadQuery(c: any, allowed: readonly string[]) {
       const s = near(u);
       return s ? `「${s}」の間違いではありませんか。` : null;
     }).filter(Boolean).join(' ') ||
-      `ここで受け付けるのは ${allowed.join('、')} です。黙って無視せず拒否しています。` +
+      (allowed.length
+        // POST は本文で受けるのでクエリを取らない。空の一覧をそのまま並べると
+        // 「ここで受け付けるのは  です」という壊れた案内になる。
+        ? `ここで受け付けるのは ${allowed.join('、')} です。黙って無視せず拒否しています。`
+        : 'このエンドポイントがクエリで受けるのは detail だけです。ほかは本文(JSON)で渡してください。') +
       '黙って捨てられたパラメータは、もっともらしい誤った数字を生むためです。',
     'unknown_parameter');
 }

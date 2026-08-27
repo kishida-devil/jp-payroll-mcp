@@ -479,6 +479,60 @@ server.registerTool('judge_leave_end_revision', {
   },
 }, async (a) => call('/v1/standard-remuneration/leave-end' + qs(a)));
 
+server.registerTool('calculate_payroll_batch', {
+  title: '給与計算をまとめて — 事業所全員分と合計',
+  description:
+    'Runs calculate_payslip for many employees in one call and returns the run totals: gross, '
+    + 'employee deductions, net, and employer cost.\n\n'
+    + 'Reach for this the moment more than two or three people are in play. A monthly payroll is '
+    + 'not a sequence of unrelated questions — the employer share, the totals and the run id only '
+    + 'mean anything across the whole run. Asking one employee at a time gives no total and no '
+    + 'way to tell a retry from a second run.\n\n'
+    + 'Put anything shared in defaults (prefecture, business_type, column) and let each row carry '
+    + 'only what differs, which is usually pay and age. A row that cannot be computed comes back '
+    + 'in errors with its index and id while the rest of the run completes — do not discard a '
+    + 'whole payroll over one bad row.\n\n'
+    + 'The reply carries a run_id derived from the route and the exact input, so sending the same '
+    + 'payroll twice gives the same id. Nothing is stored, so a retry cannot double-count.',
+  inputSchema: {
+    employees: z.array(z.object({
+    id: z.string().optional().describe('Echoed back on the result and on any error.'),
+    monthly_salary: z.number().describe('Gross monthly pay in yen, before any deduction.'),
+    prefecture: z.string().optional().describe('Overrides defaults.prefecture for this row.'),
+    age: z.number().optional(),
+    birth_date: z.string().optional().describe('YYYY-MM-DD. Preferred over age.'),
+    business_type: z.string().optional(),
+    column: z.enum(['kou', 'otsu']).optional(),
+    dependants: z.number().optional(),
+    income_tax: z.boolean().optional(),
+    resident_tax: z.number().optional(),
+    workers_comp_type: z.string().optional(),
+    employment_type: z.enum(['employee', 'director', 'director_employee']).optional(),
+    standard_remuneration: z.number().optional().describe(
+      'The 標準報酬月額 already fixed for this person. Pass it whenever it is known — without '
+      + 'it the grade is re-derived from the pay you send, which is wrong in any month with '
+      + 'overtime.'),
+    })).describe('One entry per employee. Up to 500 on a paid plan, 10 on the free tier.'),
+    defaults: z.object({
+      prefecture: z.string().optional(),
+      age: z.number().optional(),
+      business_type: z.string().optional(),
+      column: z.enum(['kou', 'otsu']).optional(),
+      dependants: z.number().optional(),
+      income_tax: z.boolean().optional(),
+      resident_tax: z.number().optional(),
+      workers_comp_type: z.string().optional(),
+    }).optional().describe('Applied to any row that leaves the field out.'),
+    compact: z.boolean().optional().describe(
+      'Drop the per-employee breakdown and keep the payout figures — about a tenth the size on '
+      + 'a large run. Use it when the question is "what do we pay", not "why".'),
+  },
+}, async (a) => {
+  const { compact, ...body } = a;
+  return call('/v1/payroll/batch' + (compact ? '?detail=compact' : ''),
+              { method: 'POST', body });
+});
+
 server.registerTool('decide_regular_remuneration_batch', {
   title: '定時決定(算定基礎届)をまとめて — 事業所全員分',
   description:
@@ -565,9 +619,14 @@ server.registerTool('lookup_standard_remuneration', {
     'standard remuneration each resolves to and whether the pension grade was clamped. Use it ' +
     'to check a grade, not to compute premiums — calculate_payslip does that.',
   inputSchema: {
-    remuneration: z.number().describe('Monthly remuneration in yen.'),
+    remuneration: z.number().optional().describe(
+      'Monthly remuneration in yen. Omit to get the whole grade table instead of one lookup.'),
   },
-}, async (a) => call('/v1/standard-remuneration' + qs(a)));
+}, async (a) => call(a.remuneration === undefined
+  // 等級表そのものを見たい場面がある(「50等級の表を見せて」)。別ツールを足さず、
+  // 引数を省いたときの答えにする。ツール枠は30が上限で、いま27本。
+  ? '/v1/standard-remuneration/table'
+  : '/v1/standard-remuneration' + qs(a)));
 
 // ---------------------------------------------------------------------------
 // Eligibility, leave and age
@@ -903,12 +962,47 @@ server.registerTool('validate_corporate_number', {
     'the same rule, so a passing check digit must not be reported as evidence of a corporation. ' +
     'To confirm registration, use the National Tax Agency\'s own lookup.',
   inputSchema: {
-    number: z.string().describe('13 digits, or T followed by 13 digits.'),
+    number: z.string().optional().describe('13 digits, or T followed by 13 digits.'),
+    base: z.string().optional().describe(
+      'The 12-digit 会社法人等番号 instead, to compute its check digit and get the '
+      + '13-digit 法人番号. Use this when registering, not when checking.'),
   },
 }, async (a) => {
+  // 登記の12桁から13桁を作る場面がある。番号を検証する話と地続きなので同じツールに置く。
+  if (a.base !== undefined && a.number === undefined)
+    return call('/v1/corporate-number/check-digit' + qs({ base: a.base.trim() }));
+  if (a.number === undefined)
+    return fail('number か base のどちらかが要ります。'
+      + '手元の番号を確かめるなら number、12桁から13桁を作るなら base です。',
+      'missing_parameter');
   const n = a.number.trim();
   return call((/^[Tt]/.test(n) ? '/v1/invoice-number/validate' : '/v1/corporate-number/validate')
     + qs({ number: n }));
+});
+
+server.registerTool('consumption_tax', {
+  title: '消費税率(日付指定・軽減税率・改定履歴)',
+  description:
+    'The consumption tax rate in force on a date, with the national and local parts, and the '
+    + 'reduced 8% rate for food and newspapers. Pass amount to have the tax worked out.\n\n'
+    + 'Japan changed the rate four times since 1989 (3% → 5% → 8% → 10%), and the reduced rate '
+    + 'has existed only since 2019-10-01. A back-dated invoice or a credit note against an old '
+    + 'sale is charged at the rate of the original transaction, not today\'s, so the date '
+    + 'matters more often than people expect. Set history to see every change with its statute.',
+  inputSchema: {
+    date: z.string().optional().describe(
+      'YYYY-MM-DD. The rate in force on that day. Defaults to today.'),
+    amount: z.number().optional().describe('Tax-exclusive amount in yen, to compute the tax.'),
+    reduced: z.boolean().optional().describe(
+      'True for the 8% reduced rate — food and drink excluding alcohol and eating out, and '
+      + 'subscribed newspapers issued twice a week or more (平成28年法律第15号).'),
+    history: z.boolean().optional().describe(
+      'Return every rate change since 1989 instead of one date.'),
+  },
+}, async (a) => {
+  if (a.history) return call('/v1/consumption-tax/history');
+  const { history, ...q } = a;
+  return call('/v1/consumption-tax' + qs(q));
 });
 
 server.registerTool('get_statute_text', {

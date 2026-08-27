@@ -579,6 +579,78 @@ for (const [name, args, check] of [
   ok(!empty.isError, '0 は明示された値なので通る(空文字とは別)',
      empty.content.map((x) => x.text).join('').slice(0, 60));
 }
+{
+  // MCPから届かないエンドポイントを、意図した3本だけに固定する。
+  //
+  // 44本のAPIに対し、MCPが叩いていたのは36本だった。届かない7本は誰も気づかない —
+  // ツール一覧を見ても「無いもの」は見えないため。ここで数える。
+  //
+  // 足さないと決めたものには理由がある。enums と prefectures は列挙をスキーマが
+  // 持っているので、MCP経由では意味がない。残る5本は塞いだ。うち2本は既存ツールの
+  // 引数で塞いでおり、ツール枠(上限30)を使っていない。
+  const src = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
+  const reached = new Set([...src.matchAll(/['"`](\/v1\/[\w/-]+)/g)].map((m) => m[1]));
+  const DELIBERATELY_OUT = {
+    '/v1/enums': '受け付ける値の集合。MCPではスキーマが同じことを伝えている',
+    '/v1/prefectures': '都道府県の一覧。prefecture の説明に書いてある',
+  };
+  // サーバ本体と同じ決め方で向き先を出す。ここを固定値にすると、本番を見に行く。
+  const base = process.env.JP_PAYROLL_API_URL
+    ?? /\?\?\s*'([^']+)'/.exec(src.slice(src.indexOf('const BASE')))?.[1];
+  const spec = JSON.parse(await (await fetch(`${base}/openapi.json`)).text());
+  const api = Object.keys(spec.paths).filter((p) => p.startsWith('/v1/'));
+  const unreached = api.filter((p) => !reached.has(p));
+  const unexplained = unreached.filter((p) => !(p in DELIBERATELY_OUT));
+  ok(api.length >= 40, 'the API has that many endpoints to cover', `${api.length}`);
+  ok(unexplained.length === 0,
+     'and every one of them is reachable from a tool, or listed here with a reason',
+     unexplained.join(', ') || 'none');
+  ok(Object.keys(DELIBERATELY_OUT).every((p) => api.includes(p)),
+     'while the reasons still refer to endpoints that exist');
+
+  // 引数で塞いだ2本 — ツールを増やさずに届くこと。
+  const table = await client.callTool({ name: 'lookup_standard_remuneration', arguments: {} });
+  const tableText = table.content.map((x) => x.text).join('');
+  ok(!table.isError && /"health_grades":\s*50/.test(tableText),
+     'omitting the amount returns the whole grade table rather than an error',
+     tableText.slice(0, 60));
+  const one = await client.callTool({
+    name: 'lookup_standard_remuneration', arguments: { remuneration: 305000 } });
+  ok(/"grade":\s*22/.test(one.content.map((x) => x.text).join('')),
+     'while passing one still looks that one up');
+
+  const cd = await client.callTool({
+    name: 'validate_corporate_number', arguments: { base: '700110005901' } });
+  ok(/"corporate_number":\s*"8700110005901"/.test(cd.content.map((x) => x.text).join('')),
+     'the 12-digit base yields its 13-digit number through the same tool');
+  const neither = await client.callTool({ name: 'validate_corporate_number', arguments: {} });
+  ok(neither.isError && /number か base/.test(neither.content.map((x) => x.text).join('')),
+     'and asking for neither says which one to send');
+
+  // 消費税。過去の日付でその時点の率が返ること — ここを黙って現行率にすると、
+  // 遡って発行する請求書の税額が静かに間違う。
+  const ct = await client.callTool({
+    name: 'consumption_tax', arguments: { date: '2015-06-01', amount: 10000 } });
+  const ctText = ct.content.map((x) => x.text).join('');
+  ok(/"rate":\s*0\.08/.test(ctText), 'a 2015 date is charged at 8%, not at today’s rate',
+     ctText.slice(0, 80));
+  const hist = await client.callTool({ name: 'consumption_tax', arguments: { history: true } });
+  ok(/"count":\s*4/.test(hist.content.map((x) => x.text).join('')),
+     'and the history carries all four changes since 1989');
+
+  // 給与バッチ。1人ずつ呼ぶと合計も run_id も得られない。
+  const batch = await client.callTool({
+    name: 'calculate_payroll_batch',
+    arguments: {
+      employees: [{ monthly_salary: 300000 }, { monthly_salary: 420000, age: 45 }],
+      defaults: { prefecture: 'Tokyo', age: 30 }, compact: true,
+    },
+  });
+  const bText = batch.content.map((x) => x.text).join('');
+  ok(!batch.isError && /"succeeded":\s*2/.test(bText), 'the batch runs both rows', bText.slice(0, 70));
+  ok(/"run_id"/.test(bText), 'and carries the run id a retry can be checked against');
+}
+
 
 
 
