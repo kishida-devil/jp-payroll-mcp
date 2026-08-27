@@ -47,7 +47,7 @@ const listen = (handler) => new Promise((resolve) => {
     const text = r.content?.[0]?.text ?? '';
     ok(r.isError === true, 'unreachable origin is reported as an error');
     ok(text.includes('127.0.0.1:1'), 'and names the address it tried', text.slice(0, 160));
-    ok(/could not reach/i.test(text), 'in words the model can act on', text.slice(0, 160));
+    ok(/到達できませんでした/.test(text), 'in words the model can act on', text.slice(0, 160));
   });
 }
 
@@ -151,7 +151,8 @@ const listen = (handler) => new Promise((resolve) => {
         threw = !!r.isError;
       } catch (e) { threw = true; text = String(e?.message ?? e); }
       ok(threw, `${label} is rejected`);
-      ok(!/could not reach/i.test(text),
+      // 文言を和文にしたので、英語で照合すると常に真になり検査が空振りする。
+      ok(!/到達できませんでした/.test(text),
          `${label} is caught before a request is sent`, text.slice(0, 140));
     }
   });

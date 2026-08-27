@@ -530,6 +530,56 @@ for (const [name, args, check] of [
      'and short enough that it is not paying for itself in tokens alone',
      `${instructions.length} chars`);
 }
+{
+  // 断るときの言葉が、どちらの層で捕まえたかで変わらないこと。
+  //
+  // API は F-35 で和文に揃えたが、MCP が手前で弾く分は英語のままだった。
+  // 「年齢が無い」という同じ条件で、MCP が先に気づけば英語、API まで届けば和文。
+  // 一つの製品の中で、捕まえた場所によって言語が変わっていた。
+  //
+  // ソースを走査するのではなく、実際にツールを呼んで失敗させて確かめる。
+  // 走査は今周回だけで四度すり抜けたので、出てきた文そのものを見る。
+  const JA = /[ぁ-んァ-ヶ一-龥]/;
+  const refusals = [];
+  for (const [name, args] of [
+    ['calculate_payslip', { prefecture: 'Tokyo', monthly_salary: 300000 }],
+    ['calculate_bonus', { prefecture: 'Tokyo', bonus: 500000 }],
+    ['calculate_annual_cost', { prefecture: 'Tokyo', monthly_salary: 300000 }],
+    ['calculate_withholding_tax', { taxable_amount: 300000, period: 'daily', method: 'computer' }],
+    ['calculate_withholding_tax', { taxable_amount: 300000, period: 'monthly', column: 'hei' }],
+    ['business_days', { operation: 'nonsense' }],
+    ['business_days', { operation: 'count' }],
+    ['business_days', { operation: 'shift' }],
+    ['business_days', { operation: 'check' }],
+    ['business_days', { operation: 'list' }],
+    ['calculate_payslip', { prefecture: '大阪県', monthly_salary: 300000, age: 40 }],
+    ['calculate_payslip', { prefecture: 'Tokyo', monthly_salary: 300000, age: 40, dependants: -1 }],
+    ['get_minimum_wage', { prefecture: 'Tokyo', date: '2026-10-01' }],
+    ['get_statute_text', { ref: '宇宙法第1条' }],
+  ]) {
+    const r = await client.callTool({ name, arguments: args });
+    if (!r.isError) continue;
+    const text = r.content.map((x) => x.text).join('');
+    refusals.push([name, text]);
+  }
+  ok(refusals.length >= 10, 'the probes actually produced refusals to read', `${refusals.length}`);
+  const english = refusals.filter(([, t]) => !JA.test(t)).map(([n, t]) => `${n}: ${t.slice(0, 40)}`);
+  ok(english.length === 0,
+     'and every one of them speaks Japanese, whichever layer caught it',
+     english.slice(0, 4).join(' | ') || 'none');
+
+  // 機械可読な code は英字のまま。第18反復の線引きを MCP でも守る。
+  const withCode = refusals.filter(([, t]) => /\[[a-z_]+\]$/.test(t.trim())
+    || /"code":\s*"[a-z_]+"/.test(t));
+  ok(withCode.length >= 5, 'while the code stays machine-readable', `${withCode.length} carry one`);
+
+  // 空の値は API 側で拒否される。MCP がそれを握り潰さず伝えること。
+  const empty = await client.callTool({
+    name: 'judge_worker_type', arguments: { weekly_hours: 0, normal_weekly_hours: 40 } });
+  ok(!empty.isError, '0 は明示された値なので通る(空文字とは別)',
+     empty.content.map((x) => x.text).join('').slice(0, 60));
+}
+
 
 
 

@@ -27,6 +27,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { ja } from 'zod/locales';
+
+// スキーマ検証の文言も日本語にする。
+//
+// 引数の型や enum が違うときに断るのは SDK の側で、私のコードは通らない。
+// そこだけ英語のままだと、**どの層で捕まえたかで言語が変わる。**利用者から見れば
+// 一つのツールなので、区別する理由がない。Zod が言語パックを持っているので、
+// 自前で訳さずそれを使う。訳の抜けや型名の混入が起きない。
+z.config(ja());
 
 // Trailing slashes are stripped because every path below starts with one, and a
 // pasted "https://host/" would otherwise produce "//v1/..." — which this origin
@@ -66,7 +75,7 @@ async function call(path, { method = 'GET', body } = {}) {
     try {
       json = JSON.parse(text);
     } catch {
-      return fail(`The API returned a non-JSON response (HTTP ${res.status}): ${text.slice(0, 300)}`);
+      return fail(`APIがJSONでない応答を返しました (HTTP ${res.status}): ${text.slice(0, 300)}`);
     }
     // A 400 from this API carries a specific reason and often a hint. Passing it
     // through unchanged lets the model correct its own arguments and retry, which
@@ -75,8 +84,8 @@ async function call(path, { method = 'GET', body } = {}) {
     return ok(json);
   } catch (e) {
     if (e?.name === 'AbortError')
-      return fail(`The API did not respond within ${TIMEOUT_MS}ms. Set JP_PAYROLL_TIMEOUT_MS to raise the limit.`);
-    return fail(`Could not reach the API at ${BASE}: ${e?.message ?? e}`);
+      return fail(`APIが ${TIMEOUT_MS}ms 以内に応答しませんでした。JP_PAYROLL_TIMEOUT_MS で上限を延ばせます。`);
+    return fail(`APIに到達できませんでした (${BASE}): ${e?.message ?? e}`);
   } finally {
     clearTimeout(timer);
   }
@@ -265,12 +274,11 @@ server.registerTool('calculate_payslip', {
   // 徴収するかどうかが決まらないので、APIは400を返す。ここで先に止めるのは、
   // HTTPエラーより「何を聞けばよいか」が伝わるため。
   if (a.age === undefined && a.birth_date === undefined)
-    return fail('This needs the age of the employee. Long-term care insurance is charged only from ' +
-                '40 to 64 (介護保険法第9条), so without it the premium would be understated by ' +
-                'about 2,430 yen a month on a 300,000 yen salary in Tokyo. Ask for the date of ' +
-                'birth and pass birth_date — 年齢計算ニ関スル法律 puts the attainment of an age on ' +
-                'the day before the birthday, so a 1st-of-the-month birth changes the premium a ' +
-                'month earlier than age alone would suggest.', 'missing_parameter');
+    return fail('年齢が要ります。介護保険料がかかるのは40歳以上65歳未満だけで(介護保険法第9条)、' +
+                '年齢が無いと、東京・月給30万円ならおよそ月2,430円を徴収し損ねます。' +
+                '生年月日を尋ねて birth_date で渡してください。年齢計算ニ関スル法律により' +
+                '年齢は誕生日の前日に達するので、1日生まれの人は保険料が1か月早く変わります。',
+                'missing_parameter');
   return call('/v1/payroll' + qs(a));
 });
 
@@ -326,20 +334,19 @@ server.registerTool('calculate_bonus', {
   // 徴収するかどうかが決まらないので、APIは400を返す。ここで先に止めるのは、
   // HTTPエラーより「何を聞けばよいか」が伝わるため。
   if (a.age === undefined && a.birth_date === undefined)
-    return fail('This needs the age of the employee. Long-term care insurance is charged only from ' +
-                '40 to 64 (介護保険法第9条), so without it the premium would be understated by ' +
-                'about 2,430 yen a month on a 300,000 yen salary in Tokyo. Ask for the date of ' +
-                'birth and pass birth_date — 年齢計算ニ関スル法律 puts the attainment of an age on ' +
-                'the day before the birthday, so a 1st-of-the-month birth changes the premium a ' +
-                'month earlier than age alone would suggest.', 'missing_parameter');
+    return fail('年齢が要ります。介護保険料がかかるのは40歳以上65歳未満だけで(介護保険法第9条)、' +
+                '年齢が無いと、東京・月給30万円ならおよそ月2,430円を徴収し損ねます。' +
+                '生年月日を尋ねて birth_date で渡してください。年齢計算ニ関スル法律により' +
+                '年齢は誕生日の前日に達するので、1日生まれの人は保険料が1か月早く変わります。',
+                'missing_parameter');
   const insurance = await call('/v1/bonus-insurance' + qs({
     prefecture: a.prefecture, bonus: a.bonus, fiscal_year_to_date: a.fiscal_year_to_date,
     age: a.age, birth_date: a.birth_date,
   }));
   if (insurance.isError || !a.include_tax) return insurance;
   if (a.previous_month_pay === undefined)
-    return fail('include_tax needs previous_month_pay: the rate comes from the previous ' +
-                'month\'s pay, not from the bonus.');
+    return fail('include_tax には previous_month_pay が要ります。税率は賞与の額ではなく、' +
+                '前月の給与から引くためです。');
   // 賞与の源泉税は、その賞与自身の社会保険料を引いたあとの額にかかる
   // (所得税法第186条第2項)。その社会保険料は直前の呼び出しで出ているので、
   // ここで渡す。渡さないと400になり、include_tax がまるごと使えない。
@@ -377,9 +384,9 @@ server.registerTool('calculate_withholding_tax', {
   },
 }, async (a) => {
   if (a.method === 'computer' && a.period === 'daily')
-    return fail('電算機計算の特例 applies to monthly pay only; there is no daily formula method.');
+    return fail('電算機計算の特例は月額にだけ適用されます。日額表に特例はありません。');
   if (a.column === 'hei' && a.period !== 'daily')
-    return fail('The 丙 column exists only in the daily table. Set period to "daily".');
+    return fail('丙欄は日額表にしかありません。period を「daily」にしてください。');
   const path = a.method === 'computer' ? '/v1/withholding-tax/computer'
     : a.period === 'daily' ? '/v1/withholding-tax/daily'
     : '/v1/withholding-tax';
@@ -634,10 +641,9 @@ server.registerTool('calculate_annual_cost', {
   },
 }, async (a) => {
   if (a.age === undefined && a.birth_date === undefined)
-    return fail('This needs the age of the employee. Long-term care insurance is charged only ' +
-                'from 40 to 64 (介護保険法第9条), so an annual figure without it would be ' +
-                'understated for anyone in that band. Ask for the date of birth and pass ' +
-                'birth_date.', 'missing_parameter');
+    return fail('年齢が要ります。介護保険料がかかるのは40歳以上65歳未満だけなので(介護保険法第9条)、' +
+                '年齢が無いと、その範囲の人について年額が過小になります。生年月日を尋ねて' +
+                'birth_date で渡してください。', 'missing_parameter');
   return call('/v1/annual-cost' + qs({
     prefecture: a.prefecture, monthly_salary: a.monthly_salary,
     age: a.age, birth_date: a.birth_date,
@@ -852,16 +858,16 @@ server.registerTool('business_days', {
   const cal = { calendar: a.calendar };
   switch (a.operation) {
     case 'count':
-      if (!a.from || !a.to) return fail('count needs both from and to.');
+      if (!a.from || !a.to) return fail('count には from と to の両方が要ります。');
       return call('/v1/business-days' + qs({ from: a.from, to: a.to, ...cal }));
     case 'shift':
-      if (!a.date || a.days === undefined) return fail('shift needs both date and days.');
+      if (!a.date || a.days === undefined) return fail('shift には date と days の両方が要ります。');
       return call('/v1/business-days/shift' + qs({ date: a.date, days: a.days, ...cal }));
     case 'check':
-      if (!a.date) return fail('check needs a date.');
+      if (!a.date) return fail('check には date が要ります。');
       return call('/v1/holidays/check' + qs({ date: a.date, ...cal }));
     case 'list':
-      if (!a.year && !(a.from && a.to)) return fail('list needs either year, or both from and to.');
+      if (!a.year && !(a.from && a.to)) return fail('list には year か、from と to の両方が要ります。');
       return call('/v1/holidays' + qs({ year: a.year, from: a.from, to: a.to }));
   }
 });

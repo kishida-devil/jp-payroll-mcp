@@ -277,10 +277,22 @@ app.use('*', async (c, next) => {
  * 給与計算で「気づかないまま間違った額が出る」ことのほうが、400で止まることより
  * はるかに高くつく。
  */
-function rejectUnknownQuery(c: any, allowed: readonly string[]) {
+function rejectBadQuery(c: any, allowed: readonly string[]) {
   // detail はどのエンドポイントでも受ける。個別の許可リストに足していく形にすると、
   // 定数で持っている4本を取りこぼしたように、次に足す人がまた漏らす。
   const seen = Object.keys(c.req.query());
+
+  // 値が空のパラメータは、渡さなかったのとは違う。`?weekly_hours=` はテンプレートが
+  // 空を吐いた跡で、`Number('')` は 0 になる。0時間として判定すれば「被保険者でない」
+  // という**もっともらしい誤答**が返る。渡さないなら、パラメータごと外してもらう。
+  const empty = seen.filter((k) => c.req.query(k) === '');
+  if (empty.length)
+    return bad(c,
+      `値が空のクエリパラメータです: ${empty.map((k) => `「${k}」`).join('、')}`,
+      '渡さないなら、そのパラメータごと外してください。空の値を0や既定値として扱うと、'
+      + 'テンプレートが空を吐いたときに、エラーではなくもっともらしい誤答が返ります。',
+      'empty_parameter');
+
   const unknown = seen.filter((k) => k !== 'detail' && !allowed.includes(k));
   if (!unknown.length) return null;
   const near = (k: string) =>
@@ -369,7 +381,7 @@ const needPref = (c: any) => {
 };
 
 app.get('/', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return c.json({
     name: '日本の給与・労務データAPI',
@@ -440,7 +452,7 @@ app.get('/', (c) => {
  * 条文番号を受け取った利用者が e-Gov を開き直す手間がここで消える。
  */
 app.get('/v1/statute', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include', 'ref'] as const);
+  const unknownQ = rejectBadQuery(c, ['include', 'ref'] as const);
   if (unknownQ) return unknownQ;
 
   const ref = c.req.query('ref');
@@ -460,7 +472,7 @@ app.get('/v1/statute', (c) => {
 });
 
 app.get('/v1/statute/index', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return (
   c.json({
@@ -483,7 +495,7 @@ app.get('/v1/statute/index', (c) => {
  * に理由ごと書いてあるので、探した人が「無い」ではなく「なぜ無いか」に辿り着ける。
  */
 app.get('/openapi.json', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['profile', 'include'] as const);
+  const unknownQ = rejectBadQuery(c, ['profile', 'include'] as const);
   if (unknownQ) return unknownQ;
 
   const profile = c.req.query('profile');
@@ -496,7 +508,7 @@ app.get('/openapi.json', (c) => {
 });
 
 app.get('/v1/prefectures', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return (
   c.json({
@@ -508,7 +520,7 @@ app.get('/v1/prefectures', (c) => {
   }));
 });
 app.get('/v1/insurance-rates', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['prefecture', 'pref', 'as_of'] as const);
+  const unknownQ = rejectBadQuery(c, ['prefecture', 'pref', 'as_of'] as const);
   if (unknownQ) return unknownQ;
   const r = needPref(c); if ('err' in r) return r.err;
 
@@ -545,7 +557,7 @@ app.get('/v1/insurance-rates', (c) => {
 });
 
 app.get('/v1/standard-remuneration/table', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return (
   c.json({
@@ -556,7 +568,7 @@ app.get('/v1/standard-remuneration/table', (c) => {
   }));
 });
 app.get('/v1/standard-remuneration', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include', 'monthly_salary', 'pref', 'prefecture', 'remuneration'] as const);
+  const unknownQ = rejectBadQuery(c, ['include', 'monthly_salary', 'pref', 'prefecture', 'remuneration'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('remuneration') ?? c.req.query('monthly_salary');
@@ -575,7 +587,7 @@ app.get('/v1/standard-remuneration', (c) => {
 });
 
 app.get('/v1/employment-insurance', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['business_type', 'as_of'] as const);
+  const unknownQ = rejectBadQuery(c, ['business_type', 'as_of'] as const);
   if (unknownQ) return unknownQ;
   const t = (c.req.query('business_type') ?? 'general').toLowerCase();
   const bt = (empins.business_types as any)[t];
@@ -639,7 +651,7 @@ function minimumWageBeyondData(c: any, iso: string): any | null {
 }
 
 app.get('/v1/minimum-wage', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['date', 'include', 'pref', 'prefecture'] as const);
+  const unknownQ = rejectBadQuery(c, ['date', 'include', 'pref', 'prefecture'] as const);
   if (unknownQ) return unknownQ;
 
   const r = needPref(c); if ('err' in r) return r.err;
@@ -671,7 +683,7 @@ app.get('/v1/minimum-wage', (c) => {
 });
 
 app.get('/v1/minimum-wage/history', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include', 'pref', 'prefecture'] as const);
+  const unknownQ = rejectBadQuery(c, ['include', 'pref', 'prefecture'] as const);
   if (unknownQ) return unknownQ;
 
   const r = needPref(c); if ('err' in r) return r.err;
@@ -691,7 +703,7 @@ const PAYROLL_PARAMS = [
 ] as const;
 
 app.get('/v1/payroll', (c) => {
-  const unknown = rejectUnknownQuery(c, PAYROLL_PARAMS);
+  const unknown = rejectBadQuery(c, PAYROLL_PARAMS);
   if (unknown) return unknown;
 
   const r = needPref(c); if ('err' in r) return r.err;
@@ -924,7 +936,7 @@ const outOfCoverage = (c: any, iso: string) =>
   }, 422);
 
 app.get('/v1/holidays', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['from', 'include', 'to', 'year'] as const);
+  const unknownQ = rejectBadQuery(c, ['from', 'include', 'to', 'year'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('year');
@@ -951,7 +963,7 @@ app.get('/v1/holidays', (c) => {
 });
 
 app.get('/v1/holidays/check', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['calendar', 'date', 'include'] as const);
+  const unknownQ = rejectBadQuery(c, ['calendar', 'date', 'include'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('date');
@@ -980,7 +992,7 @@ app.get('/v1/holidays/check', (c) => {
 });
 
 app.get('/v1/business-days', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['calendar', 'end', 'from', 'include', 'start', 'to'] as const);
+  const unknownQ = rejectBadQuery(c, ['calendar', 'end', 'from', 'include', 'start', 'to'] as const);
   if (unknownQ) return unknownQ;
 
   const from = c.req.query('from') ?? c.req.query('start');
@@ -1004,7 +1016,7 @@ app.get('/v1/business-days', (c) => {
 });
 
 app.get('/v1/business-days/shift', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['calendar', 'date', 'days', 'include'] as const);
+  const unknownQ = rejectBadQuery(c, ['calendar', 'date', 'days', 'include'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('date');
@@ -1032,7 +1044,7 @@ app.get('/v1/business-days/shift', (c) => {
 // ---- Consumption tax --------------------------------------------------------
 
 app.get('/v1/consumption-tax', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['amount', 'date', 'include', 'reduced'] as const);
+  const unknownQ = rejectBadQuery(c, ['amount', 'date', 'include', 'reduced'] as const);
   if (unknownQ) return unknownQ;
 
   const dateRaw = c.req.query('date');
@@ -1094,7 +1106,7 @@ app.get('/v1/consumption-tax', (c) => {
 });
 
 app.get('/v1/consumption-tax/history', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return (
   c.json({
@@ -1106,7 +1118,7 @@ app.get('/v1/consumption-tax/history', (c) => {
 });// ---- Corporate number (法人番号) structural validation ----------------------
 
 app.get('/v1/corporate-number/validate', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include', 'number'] as const);
+  const unknownQ = rejectBadQuery(c, ['include', 'number'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('number');
@@ -1116,7 +1128,7 @@ app.get('/v1/corporate-number/validate', (c) => {
 });
 
 app.get('/v1/corporate-number/check-digit', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['base', 'include'] as const);
+  const unknownQ = rejectBadQuery(c, ['base', 'include'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('base');
@@ -1162,7 +1174,7 @@ const REGISTRATION_STATUS_CAVEAT = {
 } as const;
 
 app.get('/v1/invoice-number/validate', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include', 'number'] as const);
+  const unknownQ = rejectBadQuery(c, ['include', 'number'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('number');
@@ -1185,6 +1197,10 @@ app.get('/v1/invoice-number/validate', (c) => {
  * 重複は畳まずそのまま返す。呼ぶ側の一覧と行が揃わなくなるほうが困る。
  */
 app.post('/v1/invoice-number/validate/batch', async (c) => {
+  // GET と同じ検査を通す。第8反復で「触った9本だけ」を直したのと同じ形で、
+  // POST 4本がこの検査を通っておらず、`?zzz=1` を黙って無視していた。
+  const unknownQ = rejectBadQuery(c, [] as const);
+  if (unknownQ) return unknownQ;
   let payload: { numbers?: unknown };
   try {
     payload = await c.req.json();
@@ -1207,7 +1223,7 @@ app.post('/v1/invoice-number/validate/batch', async (c) => {
   const passed = results.filter((r) => r.check_digit_valid).length;
 
   return c.json({
-    run_id: await runId(payload),
+    run_id: await runId(c.req.path, payload),
     idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: results.length,
     summary: {
@@ -1226,7 +1242,7 @@ app.post('/v1/invoice-number/validate/batch', async (c) => {
 });
 
 app.get('/v1/withholding-tax', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['amount', 'column', 'dependants', 'include', 'taxable_amount'] as const);
+  const unknownQ = rejectBadQuery(c, ['amount', 'column', 'dependants', 'include', 'taxable_amount'] as const);
   if (unknownQ) return unknownQ;
 
   const amountRaw = c.req.query('taxable_amount') ?? c.req.query('amount');
@@ -1261,7 +1277,7 @@ app.get('/v1/withholding-tax', (c) => {
 });
 
 app.get('/v1/withholding-tax/daily', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['amount', 'column', 'dependants', 'include', 'taxable_amount'] as const);
+  const unknownQ = rejectBadQuery(c, ['amount', 'column', 'dependants', 'include', 'taxable_amount'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('taxable_amount') ?? c.req.query('amount');
@@ -1292,7 +1308,7 @@ app.get('/v1/withholding-tax/daily', (c) => {
 });
 
 app.get('/v1/withholding-tax/computer', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['amount', 'dependants', 'include', 'spouse', 'taxable_amount'] as const);
+  const unknownQ = rejectBadQuery(c, ['amount', 'dependants', 'include', 'spouse', 'taxable_amount'] as const);
   if (unknownQ) return unknownQ;
 
   const amountRaw = c.req.query('taxable_amount') ?? c.req.query('amount');
@@ -1337,8 +1353,10 @@ function canonicalise(v: any): any {
   return v;
 }
 
-async function runId(payload: unknown): Promise<string> {
-  const bytes = new TextEncoder().encode(JSON.stringify(canonicalise(payload)));
+async function runId(route: string, payload: unknown): Promise<string> {
+  // 経路を混ぜる。入れないと、同じ本文を別のエンドポイントに送ったときに同じIDが出る。
+  // run_id で台帳を突き合わせている人には、給与バッチと登録番号の検査が同じ実行に見える。
+  const bytes = new TextEncoder().encode(JSON.stringify([route, canonicalise(payload)]));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].slice(0, 16)
     .map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -1359,7 +1377,7 @@ function idempotencyNote(key: string | undefined) {
     deterministic_run_id: true,
     why:
       'この呼び出しは計算して返すだけで、何も記録しません。副作用が無いので、再送しても' +
-      '二重計上は起きません。run_id は送った内容だけから決まるので、同じ内容なら必ず同じ値に' +
+      '二重計上は起きません。run_id は呼んだ経路と送った内容から決まるので、同じ呼び出しなら必ず同じ値に' +
       'なります。通信が切れたときは、返ってきた run_id を自分の台帳と突き合わせてください。',
     not_applicable: [
       '409 Conflict — 処理中の重複を検出するには保存が要ります。持っていないので起きません。',
@@ -1371,6 +1389,10 @@ function idempotencyNote(key: string | undefined) {
 }
 
 app.post('/v1/payroll/batch', async (c) => {
+  // GET と同じ検査を通す。第8反復で「触った9本だけ」を直したのと同じ形で、
+  // POST 4本がこの検査を通っておらず、`?zzz=1` を黙って無視していた。
+  const unknownQ = rejectBadQuery(c, [] as const);
+  if (unknownQ) return unknownQ;
   let payload: { employees?: unknown; defaults?: unknown };
   try {
     payload = await c.req.json();
@@ -1413,7 +1435,7 @@ app.post('/v1/payroll/batch', async (c) => {
 
   const { results, errors, summary } = runBatch(rows as BatchRow[], defaults, detailRaw as Detail);
   return c.json({
-    run_id: await runId(payload),
+    run_id: await runId(c.req.path, payload),
     idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: rows.length,
     detail: detailRaw,
@@ -1441,7 +1463,7 @@ app.post('/v1/payroll/batch', async (c) => {
  * 事業主が既に持っている値で引けるようにしてある。
  */
 app.get('/v1/workers-compensation', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['business_type', 'wage_total', 'as_of'] as const);
+  const unknownQ = rejectBadQuery(c, ['business_type', 'wage_total', 'as_of'] as const);
   if (unknownQ) return unknownQ;
 
   const asOfRaw = c.req.query('as_of');
@@ -1505,7 +1527,7 @@ app.get('/v1/workers-compensation', (c) => {
 });
 
 app.get('/v1/leave-exemption', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['end', 'include', 'kind', 'start', 'worked_days'] as const);
+  const unknownQ = rejectBadQuery(c, ['end', 'include', 'kind', 'start', 'worked_days'] as const);
   if (unknownQ) return unknownQ;
 
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
@@ -1578,7 +1600,7 @@ const badWorkerType = (c: any, raw: unknown) =>
     '特定適用事業所の短時間労働者は11日です。');
 
 app.get('/v1/standard-remuneration/revision', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['current_remuneration', 'fixed_pay_change', 'include', 'months', 'revision_month', 'worker_type', 'year'] as const);
+  const unknownQ = rejectBadQuery(c, ['current_remuneration', 'fixed_pay_change', 'include', 'months', 'revision_month', 'worker_type', 'year'] as const);
   if (unknownQ) return unknownQ;
 
   const current = Number(c.req.query('current_remuneration'));
@@ -1652,7 +1674,7 @@ function parseSubmissionQuery(c: any): { value: any } | { err: any } {
 
 app.get('/v1/standard-remuneration/regular', (c) => {
   // 未知パラメータを黙って捨てると、acquired_on の綴り間違いが「対象」に化ける。
-  const unknownQ = rejectUnknownQuery(c, ['months', 'worker_type', 'previous_remuneration', 'acquired_month',
+  const unknownQ = rejectBadQuery(c, ['months', 'worker_type', 'previous_remuneration', 'acquired_month',
     'year', 'acquired_on', 'left_on', 'revision_month',
   ] as const);
   if (unknownQ) return unknownQ;
@@ -1708,6 +1730,10 @@ app.get('/v1/standard-remuneration/regular', (c) => {
  * 受け取れなかったのが前の2つ。
  */
 app.post('/v1/standard-remuneration/regular/batch', async (c) => {
+  // GET と同じ検査を通す。第8反復で「触った9本だけ」を直したのと同じ形で、
+  // POST 4本がこの検査を通っておらず、`?zzz=1` を黙って無視していた。
+  const unknownQ = rejectBadQuery(c, [] as const);
+  if (unknownQ) return unknownQ;
   let payload: { employees?: unknown; defaults?: unknown };
   try {
     payload = await c.req.json();
@@ -1832,7 +1858,7 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
 
   const decidedRows = results.filter((r) => r.changed !== null);
   return c.json({
-    run_id: await runId(payload),
+    run_id: await runId(c.req.path, payload),
     idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: rows.length,
     succeeded: results.length,
@@ -1873,7 +1899,7 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
 });
 
 app.get('/v1/standard-remuneration/leave-end', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['acquired_month', 'current_remuneration', 'include', 'kind', 'months', 'next_leave_starts_immediately', 'worker_type'] as const);
+  const unknownQ = rejectBadQuery(c, ['acquired_month', 'current_remuneration', 'include', 'kind', 'months', 'next_leave_starts_immediately', 'worker_type'] as const);
   if (unknownQ) return unknownQ;
 
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
@@ -1907,6 +1933,10 @@ app.get('/v1/standard-remuneration/leave-end', (c) => {
 });
 
 app.post('/v1/standard-remuneration/annual-average', async (c) => {
+  // GET と同じ検査を通す。第8反復で「触った9本だけ」を直したのと同じ形で、
+  // POST 4本がこの検査を通っておらず、`?zzz=1` を黙って無視していた。
+  const unknownQ = rejectBadQuery(c, [] as const);
+  if (unknownQ) return unknownQ;
   let body: any;
   try {
     body = await c.req.json();
@@ -1960,7 +1990,7 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
 
   if (type === 'regular')
     return c.json({
-      run_id: await runId(body),
+      run_id: await runId(c.req.path, body),
       idempotency: idempotencyNote(c.req.header('idempotency-key')),
       type,
       ...annualAverageRegular({
@@ -1979,7 +2009,7 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
       '年間平均は固定的賃金が実際に変わった場合にだけ使えます。「none」では該当しません。');
 
   return c.json({
-    run_id: await runId(body),
+    run_id: await runId(c.req.path, body),
     idempotency: idempotencyNote(c.req.header('idempotency-key')),
     type,
     ...annualAverageRevision({
@@ -2027,7 +2057,7 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
  * 全国一律の答えが存在しない。**答えられないほうを、答えられない形で返す。**
  */
 app.get('/v1/national-insurance', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['as_of', 'months', 'supplementary', 'include'] as const);
+  const unknownQ = rejectBadQuery(c, ['as_of', 'months', 'supplementary', 'include'] as const);
   if (unknownQ) return unknownQ;
 
   const asOfRaw = c.req.query('as_of');
@@ -2097,7 +2127,7 @@ app.get('/v1/national-insurance', (c) => {
 });
 
 app.get('/v1/annual-cost', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',
+  const unknownQ = rejectBadQuery(c, ['prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',
     'business_type', 'column', 'dependants', 'income_tax', 'resident_tax',
     'employment_type', 'workers_comp_type', 'bonuses', 'fiscal_year', 'as_of', 'include',
   ] as const);
@@ -2281,7 +2311,7 @@ app.get('/v1/annual-cost', (c) => {
 });
 
 app.get('/v1/annual-leave', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['hired_on', 'as_of', 'attendance_rate', 'weekly_days', 'weekly_hours',
+  const unknownQ = rejectBadQuery(c, ['hired_on', 'as_of', 'attendance_rate', 'weekly_days', 'weekly_hours',
     'annual_days', 'days_taken', 'include',
   ] as const);
   if (unknownQ) return unknownQ;
@@ -2367,7 +2397,7 @@ app.get('/v1/annual-leave', (c) => {
 });
 
 app.get('/v1/worker-type', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['weekly_hours', 'normal_weekly_hours', 'monthly_days', 'normal_monthly_days',
+  const unknownQ = rejectBadQuery(c, ['weekly_hours', 'normal_weekly_hours', 'monthly_days', 'normal_monthly_days',
     'monthly_wage', 'is_student', 'workplace_insured_count', 'employment_months',
   ] as const);
   if (unknownQ) return unknownQ;
@@ -2449,7 +2479,7 @@ app.get('/v1/worker-type', (c) => {
 });
 
 app.get('/v1/eligibility', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include', 'joined_on', 'left_on', 'month'] as const);
+  const unknownQ = rejectBadQuery(c, ['include', 'joined_on', 'left_on', 'month'] as const);
   if (unknownQ) return unknownQ;
 
   const monthRaw = c.req.query('month');
@@ -2489,7 +2519,7 @@ const OVERTIME_PARAMS = [
 ] as const;
 
 app.get('/v1/overtime-pay', (c) => {
-  const unknown = rejectUnknownQuery(c, OVERTIME_PARAMS);
+  const unknown = rejectBadQuery(c, OVERTIME_PARAMS);
   if (unknown) return unknown;
 
   const num = (name: string, required = false) => {
@@ -2556,7 +2586,7 @@ const BONUS_INSURANCE_PARAMS = [
  * 一度写した表が腐るのはこういう形で起きる。
  */
 app.get('/v1/commuting-allowance', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['amount', 'distance_km', 'fare', 'parking'] as const);
+  const unknownQ = rejectBadQuery(c, ['amount', 'distance_km', 'fare', 'parking'] as const);
   if (unknownQ) return unknownQ;
 
   const num = (key: string) => {
@@ -2654,7 +2684,7 @@ app.get('/v1/commuting-allowance', (c) => {
 });
 
 app.get('/v1/bonus-insurance', (c) => {
-  const unknown = rejectUnknownQuery(c, BONUS_INSURANCE_PARAMS);
+  const unknown = rejectBadQuery(c, BONUS_INSURANCE_PARAMS);
   if (unknown) return unknown;
   const r = needPref(c); if ('err' in r) return r.err;
 
@@ -2730,7 +2760,7 @@ app.get('/v1/bonus-insurance', (c) => {
 });
 
 app.get('/v1/age-milestones', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['as_of', 'birth_date', 'include'] as const);
+  const unknownQ = rejectBadQuery(c, ['as_of', 'birth_date', 'include'] as const);
   if (unknownQ) return unknownQ;
 
   const birth = parseDate(c.req.query('birth_date'));
@@ -2763,7 +2793,7 @@ const BONUS_TAX_PARAMS = [
 ] as const;
 
 app.get('/v1/bonus-tax', (c) => {
-  const unknown = rejectUnknownQuery(c, BONUS_TAX_PARAMS);
+  const unknown = rejectBadQuery(c, BONUS_TAX_PARAMS);
   if (unknown) return unknown;
 
   const n = (k: string) => {
@@ -2835,7 +2865,7 @@ app.get('/v1/bonus-tax', (c) => {
 });
 
 app.get('/v1/enums', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return (
   c.json({
@@ -2907,7 +2937,7 @@ app.get('/v1/enums', (c) => {
   }));
 });
 app.get('/v1/data-freshness', (c) => {
-  const unknownQ = rejectUnknownQuery(c, ['include'] as const);
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return (
   c.json(freshnessReport(new Date())));

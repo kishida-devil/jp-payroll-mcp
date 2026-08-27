@@ -3889,6 +3889,73 @@ for (const [p, want, label] of [
     ok(r.body.code === want, `${want} は機械可読のまま`, r.body.code);
   }
 }
+{
+  // 空の値は、渡さなかったのとは違う。
+  //
+  // `?weekly_hours=` は 400 ではなく 200 を返し、`Number('')` が 0 になるので
+  // 0時間として判定していた。テンプレートが空を吐いた利用者は、エラーではなく
+  // 「被保険者でない」という**もっともらしい誤答**を受け取っていた。
+  //
+  // 実測してから直した。128組のうち空文字で200が返ったのは7組、うち5組は
+  // 「渡されなかった」扱いで正しく、実害は2組だった。それでも直すのは中央で。
+  // 第8反復で「触った9本だけ」を直して残りを見落としたのと同じ形になるため。
+  const spec = (await get('/openapi.json')).body;
+  const leaked = [], kept = [];
+  for (const [path, ops] of Object.entries(spec.paths)) {
+    if (!ops.get) continue;
+    for (const q of ops.get.parameters ?? []) {
+      const r = await get(`${path}?${q.name}=`);
+      if (r.status === 200) leaked.push(`${path}?${q.name}=`);
+      else if (r.body?.code === 'empty_parameter') kept.push(q.name);
+    }
+  }
+  ok(leaked.length === 0, 'an empty value is refused on every parameter, not the two I found',
+     leaked.slice(0, 5).join(' | ') || 'none');
+  ok(kept.length >= 100, 'and the refusal is the central one, so a new endpoint gets it for free',
+     `${kept.length} parameters`);
+
+  // 省略はこれまでどおり通る。ここを壊すと、いま動いている呼び出しが落ちる。
+  for (const path of ['/v1/workers-compensation', '/v1/consumption-tax',
+                      '/v1/commuting-allowance', '/v1/eligibility']) {
+    const r = await get(path);
+    ok(r.status === 200, `${path} は省略時はこれまでどおり答える`, `${r.status}`);
+  }
+
+  const empty = await get('/v1/worker-type?weekly_hours=');
+  ok(empty.status === 400, 'the case that started this returns 400', `${empty.status}`);
+  ok(empty.body.code === 'empty_parameter', 'with a code of its own, not lumped into invalid_request');
+  ok(/値が空/.test(empty.body.error ?? ''), 'and says the value is empty, not that it is wrong');
+  ok(/外して/.test(empty.body.hint ?? ''), 'and says to drop the parameter instead');
+
+  // POST も同じ検査を通ること。第8反復の見落としがここに残っていた。
+  const postJson = async (path, body, q = '') => {
+    const r = await tryFetch(BASE + path + q, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+  const posts = Object.entries(spec.paths).filter(([, o]) => o.post).map(([p]) => p);
+  ok(posts.length === 4, 'there are four POSTs to check', `${posts.length}`);
+  for (const path of posts) {
+    const r = await postJson(path, {}, '?zzz=1');
+    ok(r.status === 400 && r.body.code === 'unknown_parameter',
+       `POST ${path} も未知のクエリを拒否する`, `${r.status} ${r.body.code}`);
+  }
+
+  // run_id は経路を含む。同じ本文でも、別の処理なら別の実行。
+  const body = { employees: [{ prefecture: 'Tokyo', monthly_salary: 300000, age: 40 }],
+                 numbers: ['T8700110005901'] };
+  const a = await postJson('/v1/payroll/batch', body);
+  const b = await postJson('/v1/invoice-number/validate/batch', body);
+  ok(a.body.run_id && b.body.run_id, 'both return a run_id');
+  ok(a.body.run_id !== b.body.run_id,
+     'and the same body on a different route is a different run — a ledger keyed on run_id would have merged them',
+     `${a.body.run_id} vs ${b.body.run_id}`);
+  const again = await postJson('/v1/payroll/batch', body);
+  ok(a.body.run_id === again.body.run_id, 'while the same call is still the same run', again.body.run_id);
+}
+
 
 
 
