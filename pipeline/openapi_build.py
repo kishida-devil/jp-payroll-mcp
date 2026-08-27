@@ -146,6 +146,57 @@ def _operation_id(path: str, method: str = "get") -> str:
     return method + "".join(w.capitalize() for w in (head.split("-") + [t for p in tail for t in p.split("-")]))
 
 
+# Custom GPT Actions は **最大30オペレーション**。超えると読み込みが失敗するので、
+# 会話で呼ばれないものを落とした版を別に出す。落とした理由も一緒に持たせる。
+# (スキーマの上限は1MB。こちらは85KBなので問題にならない。)
+GPT_ACTIONS_MAX_OPERATIONS = 30
+
+GPT_EXCLUDE: dict[str, str] = {
+    '/': '入口の一覧。仕様書を読み込んだ時点で不要。',
+    '/v1/enums': 'クライアントを書く人がビルド時に読む参照。会話では出てこない。',
+    '/v1/prefectures': '47件の名前一覧。各エンドポイントが名前を直接受け取る。',
+    '/v1/standard-remuneration/table': '全等級表。点で引ければ会話の問いには足りる。',
+    '/v1/consumption-tax': 'LOOP.md の3条件すべてで落ちる。',
+    '/v1/consumption-tax/history': '同上。',
+    '/v1/corporate-number/check-digit': 'テスト用番号の生成。実務の問いは validate 側。',
+    '/v1/minimum-wage/history': '「この時給で大丈夫か」には点の照会で足りる。',
+    '/v1/statute/index': '条文は ref で引ければよい。',
+    '/v1/data-freshness': '有用だが、会話の中で行動に結びつかない。',
+    '/v1/payroll/batch': 'バルク。会話は1人ずつ。',
+    '/v1/standard-remuneration/regular/batch': 'バルク。',
+    '/v1/invoice-number/validate/batch': 'バルク。',
+    '/v1/withholding-tax/computer': '同じ税額の別解法。会話では月額表で足りる。',
+}
+
+
+def build_gpt_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    """会話用に絞った仕様書。30オペレーションに収める。"""
+    import copy
+
+    out = copy.deepcopy(spec)
+    out["paths"] = {p: v for p, v in spec["paths"].items() if p not in GPT_EXCLUDE}
+
+    ops = sum(len([m for m in v if m in ("get", "post", "put", "patch", "delete")])
+              for v in out["paths"].values())
+    if ops > GPT_ACTIONS_MAX_OPERATIONS:
+        raise RecipeError(
+            f"GPT 用の仕様書が {ops} オペレーションで、上限 {GPT_ACTIONS_MAX_OPERATIONS} を超えています。"
+            f"GPT_EXCLUDE に追加するか、エンドポイントを統合してください。"
+        )
+
+    info = out.setdefault("info", {})
+    info["title"] = info.get("title", "") + " (GPT Actions)"
+    dropped = "\n".join(f"- {p} — {why}" for p, why in sorted(GPT_EXCLUDE.items()))
+    info["description"] = (
+        (info.get("description", "") or "")
+        + f"\n\nCustom GPT Actions は最大 {GPT_ACTIONS_MAX_OPERATIONS} オペレーションまでしか"
+          "読み込めないため、会話で呼ばれないものを落としてあります。"
+          f"全 {len(spec['paths'])} 件の完全版は /openapi.json にあります。\n\n"
+          f"落としたもの:\n{dropped}"
+    )
+    return out
+
+
 def write_spec(recipe: dict[str, Any]) -> Path:
     spec = build_spec(recipe)
     SPEC_DIR.mkdir(parents=True, exist_ok=True)
@@ -158,6 +209,14 @@ def write_spec(recipe: dict[str, Any]) -> Path:
     served = REPO_ROOT / "src" / "data" / "openapi.json"
     if served.parent.exists():
         served.write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    # Custom GPT Actions 用の絞った版。上限を超えていれば build_gpt_spec が落ちる。
+    gpt = build_gpt_spec(spec)
+    (SPEC_DIR / f"{recipe['slug']}.gpt.openapi.json").write_text(
+        json.dumps(gpt, ensure_ascii=False, indent=1), encoding="utf-8")
+    if served.parent.exists():
+        (served.parent / "openapi-gpt.json").write_text(
+            json.dumps(gpt, ensure_ascii=False, indent=1), encoding="utf-8")
 
     return out
 

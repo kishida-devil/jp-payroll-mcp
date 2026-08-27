@@ -3480,6 +3480,64 @@ for (const [p, want, label] of [
        `${path} says a retry is safe too`, JSON.stringify(a.body.idempotency));
   }
 }
+// ---- 59. Custom GPT Actions の30オペレーション上限に収めること (F-19) ----
+// バー: OpenAI の Custom GPT Actions は **最大30オペレーション**。超えると読み込み
+// そのものが失敗する。スキーマの上限は1MB(こちらは85KBなので問題にならない)。
+//
+// 記録された当時は33本だった。いま44本ある。**載らなければ、この配布経路は
+// まるごとゼロになる。**機能を増やすほど遠のく類の壁で、放っておくと悪化する一方だった。
+{
+  const full = await get('/openapi.json');
+  const gpt = await get('/openapi.json?profile=gpt');
+  const count = (spec) => Object.values(spec.paths ?? {})
+    .reduce((n, v) => n + Object.keys(v).filter((m) => ['get', 'post', 'put', 'patch', 'delete'].includes(m)).length, 0);
+
+  ok(full.status === 200 && gpt.status === 200, 'both profiles are served',
+     `${full.status} / ${gpt.status}`);
+
+  // ここが本体。30を超えたら Custom GPT に載らない。
+  ok(count(gpt.body) <= 30,
+     'the GPT profile fits inside the thirty-operation limit', `${count(gpt.body)}`);
+  ok(count(full.body) > 30,
+     'while the full one is over it, which is why the profile exists', `${count(full.body)}`);
+
+  // 1MBの上限。いまは余裕があるが、増え方を見ておく。
+  const bytes = new TextEncoder().encode(JSON.stringify(gpt.body)).length;
+  ok(bytes < 1_000_000, 'and inside the one-megabyte schema limit', `${bytes} bytes`);
+
+  // 絞った版が、絞った元の部分集合であること。別物になっていたら意味がない。
+  const fullPaths = new Set(Object.keys(full.body.paths ?? {}));
+  const extra = Object.keys(gpt.body.paths ?? {}).filter((p) => !fullPaths.has(p));
+  ok(extra.length === 0, 'the profile is a subset, not a different document',
+     extra.join(', ') || 'none');
+
+  // 会話で本当に要るものが残っていること。落としすぎては元も子もない。
+  for (const p of ['/v1/payroll', '/v1/worker-type', '/v1/annual-leave', '/v1/overtime-pay',
+                   '/v1/eligibility', '/v1/insurance-rates', '/v1/minimum-wage',
+                   '/v1/commuting-allowance', '/v1/annual-cost', '/v1/national-insurance',
+                   '/v1/statute', '/v1/standard-remuneration/revision']) {
+    ok(p in (gpt.body.paths ?? {}), `${p} survives the trim`, 'missing');
+  }
+
+  // 落としたものは、落とした理由ごと書いてあること。「無い」ではなく「なぜ無いか」に
+  // 辿り着けるようにする。
+  const desc = gpt.body.info?.description ?? '';
+  ok(/30/.test(desc) && /openapi\.json/.test(desc),
+     'the trimmed schema says why it is trimmed and where the full one is',
+     desc.slice(0, 120));
+  for (const dropped of ['/v1/payroll/batch', '/v1/consumption-tax', '/v1/enums']) {
+    ok(desc.includes(dropped), `${dropped} is listed as dropped, with a reason`,
+       desc.slice(0, 80));
+    ok(!(dropped in (gpt.body.paths ?? {})), `${dropped} really is out of the profile`);
+  }
+
+  // profile の値は検査すること。綴り間違いで完全版が返ると、上限に静かにぶつかる。
+  ok((await get('/openapi.json?profile=chatgpt')).status === 400,
+     'an unrecognised profile is refused rather than silently served in full');
+  ok((await get('/openapi.json?profile=full')).status === 200,
+     'and "full" is accepted explicitly');
+}
+
 
 
 

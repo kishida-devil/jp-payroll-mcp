@@ -13,6 +13,7 @@ import ctax from './data/consumption-tax.json';
 // by URL instead of a file upload, and always gets the deployed version
 // rather than whatever spec someone downloaded once.
 import openapiSpec from './data/openapi.json';
+import openapiGptSpec from './data/openapi-gpt.json';
 import {
   STATUTE_ATTRIBUTION, STATUTE_INDEX, STATUTE_LAWS,
   attachStatuteText, statuteDetail,
@@ -375,6 +376,7 @@ app.get('/', (c) => {
       'GET /v1/statute/index': 'Every provision available, with its law',
       'include=statute_text': 'Add to any endpoint to attach the text of whatever it cited',
       'GET /v1/enums': 'Every accepted enum value and error code, for build-time reference',
+      'GET /openapi.json?profile=gpt': 'Custom GPT Actions の30オペレーション上限に収めた仕様書。落とした14本は info.description に理由ごと記載',
       'GET /v1/data-freshness': 'What each dataset covers and when it is next due to change',
     },
     free_tier: {
@@ -426,9 +428,26 @@ app.get('/v1/statute/index', (c) => {
     attribution: STATUTE_ATTRIBUTION,
   }));
 });
+/**
+ * OpenAPI 仕様書。
+ *
+ * `?profile=gpt` で絞った版を返す。Custom GPT Actions には **最大30オペレーション**
+ * という上限があり、超えると読み込み自体が失敗する。いま44あるので、そのままでは
+ * この配布経路がまるごと使えない。絞った版では会話で呼ばれないもの — 一覧・バルク・
+ * ビルド時の参照・同じ数字の別解法 — を落としてある。何を落としたかは info.description
+ * に理由ごと書いてあるので、探した人が「無い」ではなく「なぜ無いか」に辿り着ける。
+ */
 app.get('/openapi.json', (c) => {
+  const unknownQ = rejectUnknownQuery(c, ['profile', 'include'] as const);
+  if (unknownQ) return unknownQ;
+
+  const profile = c.req.query('profile');
+  if (profile !== undefined && profile !== 'gpt' && profile !== 'full')
+    return bad(c, `Unknown profile: "${profile}"`,
+      'Use "gpt" for a schema inside the 30-operation limit Custom GPT Actions imposes, or omit it for everything.');
+
   c.header('Content-Type', 'application/json; charset=utf-8');
-  return c.body(JSON.stringify(openapiSpec));
+  return c.body(JSON.stringify(profile === 'gpt' ? openapiGptSpec : openapiSpec));
 });
 
 app.get('/v1/prefectures', (c) => {
