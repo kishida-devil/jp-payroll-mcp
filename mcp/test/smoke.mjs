@@ -488,6 +488,49 @@ for (const [name, args, check] of [
   ok(!byBirth.isError && byBirth.json?.coverage?.long_term_care === true,
      'birth_date alone is accepted', byBirth.text.slice(0, 120));
 }
+{
+  // ツールを増やすこと自体が、選択精度を下げる。
+  //
+  // 公開されている調査では、絞ったツールセットで95%だった選択精度が、大きなMCPを
+  // 丸ごと読み込むと71%まで落ちている。24ポイントの差がコンテキスト肥大だけで生じた。
+  // 劣化が始まるのは概ね30〜50本という指摘が複数ある。
+  //
+  // この周回で6本増やした。同じペースで2周すれば30を超える。**7本目・8本目のほうが、
+  // 案内文の千数百トークンより危ない。**上限を決めて、超えたら気づく形にしておく。
+  //
+  // 30を超えたときにすべきは、ここを緩めることではない。近いツールを統合するか、
+  // 使われていないものを落とすか。緩めるのは、劣化を測ってからにする。
+  const TOOL_BUDGET = 30;
+  ok(tools.length <= TOOL_BUDGET,
+     `the server stays inside its tool budget of ${TOOL_BUDGET}`,
+     `${tools.length} tools`);
+
+  // 説明は削らない。選択を決めているのはここで、短すぎるほうが誤選択を招く。
+  // 名前だけで隣のツールと区別がつかないなら、説明が要る。
+  const thin = tools.filter((t) => (t.description ?? '').length < 200);
+  ok(thin.length === 0,
+     'and every tool carries enough description to be told apart from its neighbours',
+     thin.map((t) => t.name).join(', ') || 'none');
+
+  // 案内文は選択のためではなく、答えの正しさのために置く。
+  // 口語→ツールの対応表を足して44問で測ったところ、routing あり/なしで
+  // 回答が1問も変わらなかったので外した。ここに戻すなら、また測ってからにする。
+  const instructions = client.getInstructions() ?? '';
+  ok(instructions.length > 0, 'the server still ships instructions', `${instructions.length} chars`);
+  ok(/Do not answer a Japanese payroll question from memory/.test(instructions),
+     'telling the assistant not to answer from memory');
+  ok(/coverage ends the day \*\*after\*\*/.test(instructions)
+       || /day \*\*after\*\* the last day worked/.test(instructions),
+     'and carrying the traps that make a remembered answer wrong');
+  ok(!/## What people actually ask/.test(instructions),
+     'without the routing table, which measured as making no difference across 44 questions');
+  // 実測 3,372字。routing の2,671字が戻れば6,043字になるので、その間に置く。
+  // 案内文そのものを禁じるのではなく、効果を測らずに膨らむのを止めるための線。
+  ok(instructions.length < 4500,
+     'and short enough that it is not paying for itself in tokens alone',
+     `${instructions.length} chars`);
+}
+
 
 
 
