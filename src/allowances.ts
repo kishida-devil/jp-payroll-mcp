@@ -247,44 +247,44 @@ export function resolveEarnings(base: number, allowances: AllowanceInput[] = [])
 export function allowanceError(a: unknown, index: number): string | null {
   const where = `allowances[${index}]`;
   if (typeof a !== 'object' || a === null || Array.isArray(a))
-    return `${where} must be an object.`;
+    return `${where} はオブジェクトで渡してください。`;
   const o = a as Record<string, unknown>;
 
   const amount = Number(o.amount);
   if (o.amount === undefined || !Number.isFinite(amount) || amount < 0)
-    return `${where}.amount is required and must be a non-negative number.`;
+    return `${where}.amount は必須で、0以上の数で渡してください。`;
 
   const kind = o.kind === undefined ? 'taxable' : String(o.kind);
   if (!ALLOWANCE_KINDS.includes(kind as AllowanceKind))
-    return `${where}.kind is "${kind}"; use one of ${ALLOWANCE_KINDS.join(', ')}.`;
+    return `${where}.kind が「${kind}」です。次のいずれかを使ってください: ${ALLOWANCE_KINDS.join(', ')}.`;
 
   if (o.name !== undefined && typeof o.name !== 'string')
-    return `${where}.name must be a string.`;
+    return `${where}.name は文字列で渡してください。`;
 
   if (o.distance_km !== undefined && o.distance_km !== null) {
     const km = Number(o.distance_km);
     if (!Number.isFinite(km) || km < 0)
-      return `${where}.distance_km must be a non-negative number of kilometres (one way).`;
+      return `${where}.distance_km は0以上のキロメートル数(片道)で渡してください。`;
     if (kind !== 'commuting')
-      return `${where}.distance_km only means something on a "commuting" item.`;
+      return `${where}.distance_km は kind が「commuting」の項目でのみ意味を持ちます。`;
   }
 
   if (o.fare !== undefined && o.fare !== null) {
     const fare = Number(o.fare);
     if (!Number.isFinite(fare) || fare < 0)
-      return `${where}.fare must be a non-negative number of yen.`;
+      return `${where}.fare は0以上の円で渡してください。`;
     if (kind !== 'commuting')
-      return `${where}.fare only means something on a "commuting" item.`;
+      return `${where}.fare は kind が「commuting」の項目でのみ意味を持ちます。`;
   }
 
   if (o.parking !== undefined && o.parking !== null) {
     const parking = Number(o.parking);
     if (!Number.isFinite(parking) || parking < 0)
-      return `${where}.parking must be a non-negative number of yen per month.`;
+      return `${where}.parking は0以上の円(月あたり)で渡してください。`;
     if (kind !== 'commuting')
-      return `${where}.parking only means something on a "commuting" item.`;
+      return `${where}.parking は kind が「commuting」の項目でのみ意味を持ちます。`;
     if (o.distance_km === undefined || o.distance_km === null)
-      return `${where}.parking is an addition to the distance band, so it needs distance_km alongside it.`;
+      return `${where}.parking は距離区分の額への加算なので、distance_km と一緒に渡してください。`;
   }
 
   return null;

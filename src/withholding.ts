@@ -160,5 +160,5 @@ export const WITHHOLDING_ATTRIBUTION = {
   includes_reconstruction_surtax: WITHHOLDING_META.includes_reconstruction_surtax,
   note: WITHHOLDING_META.note,
   scope:
-    'Monthly table (月額表) only. The daily table, bonus table and the year-end adjustment tables are not included.',
+    '月額表だけです。日額表・賞与の算出率表・年末調整の各表は含みません。',
 };

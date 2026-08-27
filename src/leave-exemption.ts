@@ -88,10 +88,10 @@ export function leaveExemption(args: {
     rule = 'spans_months';
     for (let k = startM; k <= afterM - 1; k++) months.push(k);
     explanation =
-      `The day after the leave ends (${iso(afterEnd)}) falls in ${ym(afterM)}, so the exemption runs from ` +
-      `${ym(startM)} to ${ym(afterM - 1)}.`;
+      `休業終了日の翌日(${iso(afterEnd)})は ${ym(afterM)} に属するので、免除されるのは ` +
+      `${ym(startM)} から ${ym(afterM - 1)} までです。`;
     if (months.length === 0)
-      explanation += ' That range is empty, so no month is exempt.';
+      explanation += ' その期間に日が含まれないため、免除される月はありません。';
   } else if (kind === 'childcare') {
     // 号2 — entirely within one month, exempt only if 14 days or more.
     const span = Math.round((end.getTime() - start.getTime()) / DAY) + 1;
@@ -99,14 +99,14 @@ export function leaveExemption(args: {
     rule = daysInMonth >= 14 ? 'fourteen_days_in_one_month' : 'none';
     if (rule === 'fourteen_days_in_one_month') months = [startM];
     explanation =
-      `The leave starts and ends within ${ym(startM)}, covering ${daysInMonth} days` +
-      (worked ? ` (${span} calendar days less ${worked} worked under 出生時育児休業)` : '') +
-      `. The threshold is 14 days, so the month is ${rule === 'none' ? 'not ' : ''}exempt.`;
+      `休業は ${ym(startM)} の中で始まり終わっており、${daysInMonth} 日間です` +
+      (worked ? `(暦日 ${span} 日から出生時育児休業中に就業した ${worked} 日を引いた日数です)` : '') +
+      `。要件は14日なので、この月は${rule === 'none' ? '免除されません' : '免除されます'}。`;
   } else {
     // 産休 within one month: no day-count rule exists, so nothing is exempt.
     explanation =
-      `The leave starts and ends within ${ym(startM)}. 産前産後休業 has no day-count rule, and the ` +
-      `month before the end month is earlier than the start month, so no month is exempt.`;
+      `休業は ${ym(startM)} の中で始まり終わっています。産前産後休業に日数要件はありませんが、`
+      + `終了月の前月が開始月より前になるため、免除される月はありません。`;
   }
 
   const overMonth = exceedsOneMonth(start, end);
@@ -144,5 +144,5 @@ export const LEAVE_ATTRIBUTION = {
   ],
   licence: '公共データ利用規約(第1.0版)',
   note:
-    'The 14-day rule for 育児休業 applies to leaves that started on or after 1 October 2022 (令和3年法律第66号). Both the employee and employer shares are exempt. The one-month test for bonus premiums follows 民法143条2項; the authorities describe it only as "judged by calendar days", so the boundary is worth confirming against your own case.',
+    '育児休業の14日要件は、2022年10月1日以後に開始した休業に適用されます(令和3年法律第66号)。従業員負担分と事業主負担分の両方が免除されます。賞与保険料の1か月要件は民法143条2項によりますが、当局の説明は「暦日で判断する」までで、境界は個別の事案で確認する価値があります。',
 };

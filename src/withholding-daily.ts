@@ -146,5 +146,5 @@ export const DAILY_ATTRIBUTION = {
   attribution_ja: DAILY_META.attribution_ja,
   columns: DAILY_META.columns,
   note:
-    'The 丙 column applies to day labourers and short-term hires and has its own anchors and rates. Above seven dependants the 甲 column deducts 50 yen per additional person, not the 1,610 yen of the monthly table.',
+    '丙欄は日雇いや短期雇用の人に使うもので、独自の基準額と税率を持ちます。扶養親族等が7人を超えると、甲欄では1人につき50円を控除します。月額表の1,610円ではありません。',
 };

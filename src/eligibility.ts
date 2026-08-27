@@ -125,7 +125,7 @@ export function eligibilityFor(args: {
     social_insurance_due: true,
     employment_insurance_due: true,
     reason: joinedThisMonth
-      ? `Eligibility begins on ${iso(joined!)}; the premium is due for the whole month regardless of the day joined.`
+      ? `${iso(joined!)} に資格を取得します。日付にかかわらず、その月は1か月分がかかります joined.`
       : '通常の在籍月です。',
   };
 }
@@ -143,7 +143,7 @@ export const ELIGIBILITY_ATTRIBUTION = {
   ],
   licence: '公共データ利用規約(第1.0版)',
   note:
-    '社会保険料は、資格を取得した月から、資格を喪失した月の前月までかかります。喪失した月自体はかかりません。 Employment insurance follows the wages actually paid, so it is judged separately.',
+    '社会保険料は、資格を取得した月から、資格を喪失した月の前月までかかります。喪失した月自体はかかりません。雇用保険は実際に支払った賃金に応じてかかるため、別に判定します。',
 };
 
 export { parseDate };

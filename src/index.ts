@@ -172,7 +172,7 @@ app.use('*', async (c, next) => {
     const { success } = await c.env.FREE_TIER.limit({ key });
     if (!success)
       return c.json({
-        error: `Free tier limit reached: ${FREE_TIER.requests_per_minute} requests per minute.`,
+        error: `無料枠の上限に達しました。1分あたり ${FREE_TIER.requests_per_minute} 回までです。`,
         code: 'rate_limited',
         hint: '直接呼ぶ場合とMCP経由に適用されます。本番の量を扱うなら RapidAPI の出品を見てください。'
           + UPGRADE.what,
@@ -202,7 +202,7 @@ app.use('*', async (c, next) => {
   if (detailRaw !== undefined && detailRaw !== 'compact' && detailRaw !== 'full'
       && c.res.status === 200) {
     c.res = new Response(JSON.stringify({
-      error: `Unknown detail: "${detailRaw}"`,
+      error: `該当する detail がありません: 「${detailRaw}」`,
       code: 'invalid_request',
       hint: '毎回同じ内容のフィールドを省くなら「compact」、すべて返すなら「full」(既定)を指定してください。',
     }), { status: 400, headers: { 'content-type': 'application/json; charset=utf-8' } });
@@ -286,13 +286,13 @@ function rejectUnknownQuery(c: any, allowed: readonly string[]) {
   const near = (k: string) =>
     allowed.find((a) => a.startsWith(k.slice(0, 4)) || k.startsWith(a.slice(0, 4)));
   return bad(c,
-    `Unknown query parameter${unknown.length > 1 ? 's' : ''}: ${unknown.map((u) => `"${u}"`).join(', ')}`,
+    `受け付けないクエリパラメータです: ${unknown.map((u) => `「${u}」`).join('、')}`,
     unknown.map((u) => {
       const s = near(u);
-      return s ? `Did you mean "${s}"?` : null;
+      return s ? `「${s}」の間違いではありませんか。` : null;
     }).filter(Boolean).join(' ') ||
-      `Accepted here: ${allowed.join(', ')}. Parameters are rejected rather than ignored, ` +
-      'because a silently dropped one produces a plausible wrong figure.',
+      `ここで受け付けるのは ${allowed.join('、')} です。黙って無視せず拒否しています。` +
+      '黙って捨てられたパラメータは、もっともらしい誤った数字を生むためです。',
     'unknown_parameter');
 }
 
@@ -332,13 +332,13 @@ function outsideRateWindow(c: any, set: RateSet, iso: string | null) {
   const w = RATE_WINDOWS[set];
   if (iso >= w.from && iso <= w.through) return null;
   return c.json({
-    error: `No ${set.replace(/_/g, ' ')} rates are published for ${iso}.`,
+    error: `${iso} 時点の${set === 'social_insurance' ? '社会保険' : set === 'employment_insurance' ? '雇用保険' : '労災保険'}料率は公表されていません。`,
     code: 'out_of_coverage',
     coverage: { from: w.from, through: w.through, table: w.label },
     hint: iso < w.from
-      ? `This API carries one rate table at a time — ${w.label}. ${w.note} ` +
-        'Returning the current rates for an earlier date would produce a plausible wrong figure, so it refuses instead.'
-      : `${w.note} The rates for ${iso} are not published yet; they appear here once the source publishes them.`,
+      ? `このAPIが持っている料率表は1つだけです — ${w.label}。${w.note} ` +
+        '過去の日付に現行の料率を返せば、もっともらしい誤った数字になるため、返さずに拒否します。'
+      : `${w.note} ${iso} 時点の料率はまだ公表されていません。出典が公表し次第ここに載ります。`,
   }, 422);
 }
 
@@ -358,10 +358,10 @@ const needPref = (c: any) => {
     // 「そんな県は無い」ではなく「大阪府と書けばよい」のほう。
     const meant = suggestPrefecture(raw ?? null);
     return {
-      err: bad(c, raw ? `Unknown prefecture: "${raw}"` : 'Missing required query parameter: prefecture',
+      err: bad(c, raw ? `該当する都道府県がありません: 「${raw}」` : '必須のクエリパラメータ prefecture がありません',
         meant
-          ? `Did you mean "${meant}"? 都道府県の接尾辞は1つしか正しくありません — 都は東京、道は北海道、府は京都と大阪、残る43が県です。`
-          : 'Accepts English name ("Tokyo"), Japanese ("東京" / "東京都"), or JIS code 1-47. See /v1/prefectures.',
+          ? `「${meant}」の間違いではありませんか。都道府県の接尾辞は1つしか正しくありません — 都は東京、道は北海道、府は京都と大阪、残る43が県です。`
+          : '英語名(「Tokyo」)、日本語(「東京」「東京都」)、JISコード1〜47のいずれかで渡してください。一覧は GET /v1/prefectures です。',
         raw ? 'unknown_prefecture' : 'missing_parameter'),
     };
   }
@@ -372,57 +372,57 @@ app.get('/', (c) => {
   const unknownQ = rejectUnknownQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
   return c.json({
-    name: 'Japan Payroll and Labor Constants API',
+    name: '日本の給与・労務データAPI',
     description:
       '日本の給与・社会保険・労働法の公表データを1つのAPIに。47都道府県の社会保険料率と雇用保険料率、50等級の標準報酬月額表、24年分の最低賃金、祝日と営業日計算、1989年以降の消費税率、法人番号とインボイス登録番号の検査。すべて政府の公開データから機械的に抽出し、公表されている数字と突き合わせて確認しています。',
     version: '2.10.0',
     endpoints: {
-      'GET /v1/prefectures': 'All 47 prefectures with JIS codes and Japanese names',
-      'GET /v1/insurance-rates?prefecture=Tokyo': 'Health, long-term care, pension and child-support rates',
-      'GET /v1/standard-remuneration?remuneration=350000': 'Standard monthly remuneration grade lookup',
+      'GET /v1/prefectures': '47都道府県。JISコードと日本語名つき',
+      'GET /v1/insurance-rates?prefecture=Tokyo': '健康保険・介護保険・厚生年金・子ども子育て拠出金の料率',
+      'GET /v1/standard-remuneration?remuneration=350000': '標準報酬月額の等級照会',
       'GET /v1/standard-remuneration/table': 'Full 50-grade table',
-      'GET /v1/employment-insurance?business_type=general': 'Employment insurance rates by business type',
-      'GET /v1/minimum-wage?prefecture=Tokyo&date=2020-01-01': 'Minimum wage in effect on a date',
-      'GET /v1/minimum-wage/history?prefecture=Tokyo': 'Full history since FY2002',
-      'GET /v1/payroll?prefecture=Tokyo&monthly_salary=350000&age=40&dependants=2': 'Full monthly payslip: social insurance, income tax and net pay in one call',
-      'GET /v1/holidays?year=2026': 'Public holidays for a year (or from=&to= for a range)',
-      'GET /v1/holidays/check?date=2026-01-01': 'Is a date a holiday, weekend or business day',
-      'GET /v1/business-days?from=2026-01-01&to=2026-03-31': 'Count business days in a range',
-      'GET /v1/business-days/shift?date=2026-01-01&days=1': 'Move N business days forward or back',
-      'calendar=bank': 'Add &calendar=bank to any business-day endpoint for the statutory banking calendar (銀行法施行令第5条): also closed 12/31-1/3',
-      'GET /v1/consumption-tax?date=2015-01-01&amount=1000': 'Consumption tax rate in force, optionally applied to an amount',
-      'GET /v1/consumption-tax/history': 'Every rate change since 1989',
+      'GET /v1/employment-insurance?business_type=general': '事業の種類ごとの雇用保険料率',
+      'GET /v1/minimum-wage?prefecture=Tokyo&date=2020-01-01': 'その日に効力を持つ最低賃金',
+      'GET /v1/minimum-wage/history?prefecture=Tokyo': '平成14年度以降の全履歴',
+      'GET /v1/payroll?prefecture=Tokyo&monthly_salary=350000&age=40&dependants=2': '月次の給与明細。社会保険料・源泉所得税・手取りを1回で',
+      'GET /v1/holidays?year=2026': '1年分の祝日(from=&to= で範囲指定も可)',
+      'GET /v1/holidays/check?date=2026-01-01': 'その日が祝日・週末・営業日のどれかを判定する',
+      'GET /v1/business-days?from=2026-01-01&to=2026-03-31': '範囲内の営業日数を数える',
+      'GET /v1/business-days/shift?date=2026-01-01&days=1': 'N営業日ぶん前後に動かす',
+      'calendar=bank': '営業日系のエンドポイントに &calendar=bank を付けると銀行の休日(銀行法施行令第5条)になります。12月31日から1月3日も休みです',
+      'GET /v1/consumption-tax?date=2015-01-01&amount=1000': 'その時点で有効な消費税率。金額を渡せば適用した額も返す',
+      'GET /v1/consumption-tax/history': '1989年以降のすべての税率改定',
       'GET /v1/corporate-number/validate?number=8700110005901': 'Validate a 法人番号 check digit (Peppol ICD 0188)',
-      'GET /v1/corporate-number/check-digit?base=700110005901': 'Compute the check digit for a 12-digit base number',
-      'GET /v1/invoice-number/validate?number=T8700110005901': 'Validate a qualified invoice registration number',
+      'GET /v1/corporate-number/check-digit?base=700110005901': '12桁の基礎番号からチェックディジットを計算する',
+      'GET /v1/invoice-number/validate?number=T8700110005901': '適格請求書発行事業者の登録番号を検査する',
       'POST /v1/invoice-number/validate/batch': '登録番号をまとめて形式検査 — 分かるのは形式だけで、登録・取消・失効は国税庁の公表サイトでしか分からない',
       'GET /v1/withholding-tax?taxable_amount=300000&dependants=2': 'Monthly withholding income tax (源泉徴収税額表 月額表)',
       'GET /v1/withholding-tax/daily?taxable_amount=12000&column=hei': 'Daily withholding table (日額表), including the 丙 column',
-      'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': 'Same tax by the statutory formula method (電算機計算の特例)',
-      'POST /v1/payroll/batch': `Up to ${MAX_BATCH} payslips in one call, with run totals (free tier: ${FREE_TIER.batch_rows} per batch)`,
-      'GET /v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-03-28': 'Which months of social insurance a maternity or childcare leave exempts',
+      'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': '同じ税額を電算機計算の特例で求める',
+      'POST /v1/payroll/batch': `1回の呼び出しで最大 ${MAX_BATCH} 人分の給与明細と合計を返します(無料枠は1回 ${FREE_TIER.batch_rows} 人まで)`,
+      'GET /v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-03-28': '産休・育休がどの月の社会保険料を免除するか',
       'GET /v1/national-insurance?months=12': '国民年金は全国一律なので額を返す。国民健康保険は市町村の条例なので全国一律の額が存在せず、返さない理由を返す',
       'GET /v1/annual-cost?prefecture=Tokyo&monthly_salary=400000&age=40&bonuses=800000,800000': '年間の労務コスト — 健保の賞与上限は年度累計573万、厚年は1回150万なので、月次×12では出ない',
       'GET /v1/annual-leave?hired_on=2020-04-01&attendance_rate=0.9': '年次有給休暇の付与日数と年5日の時季指定義務 — 勤続で10→20日、週30時間未満は比例付与 (労基法39条)',
       'GET /v1/worker-type?weekly_hours=25&monthly_wage=100000&workplace_insured_count=51&employment_months=12': '被保険者区分の判定 — 四分の三基準と20時間/88,000円/学生/51人。誤ると定時決定の支払基礎日数が17日と11日で入れ替わる',
-      'GET /v1/eligibility?month=2026-03&left_on=2026-03-30': 'Whether social insurance is due in a joining or leaving month',
-      'GET /v1/age-milestones?birth_date=1986-04-01': 'When 40, 65, 70 and 75 are reached and what each changes',
-      'GET /v1/bonus-insurance?prefecture=Tokyo&bonus=800000&age=40': 'Social insurance on a bonus, with the annual and per-payment caps',
-      'GET /v1/bonus-tax?bonus=500000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2': 'Withholding tax on a bonus (賞与の算出率表)',
-      'GET /v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=20&night_hours=5': '割増賃金 — overtime 25%, over 60h 50%, statutory holiday 35%, night 25% on top (労基法37条)',
-      'GET /v1/workers-compensation?business_type=98&wage_total=3600000': '労災保険料 — the whole premium falls on the employer, at a rate that runs from 2.5 to 88 per 1,000 by trade',
-      'GET /v1/commuting-allowance?amount=12000&distance_km=12&parking=3000': '通勤手当の非課税限度額 — social insurance counts it in full, income tax only above the ceiling. The table changed twice in twelve months, once retroactively',
-      'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': 'Is a 随時改定 (月額変更) due? Judges health and pension separately',
+      'GET /v1/eligibility?month=2026-03&left_on=2026-03-30': '入社月・退職月に社会保険料がかかるかどうか',
+      'GET /v1/age-milestones?birth_date=1986-04-01': '40歳・65歳・70歳・75歳の到達日と、それぞれ何が変わるか',
+      'GET /v1/bonus-insurance?prefecture=Tokyo&bonus=800000&age=40': '賞与の社会保険料。年度累計と1回あたりの上限つき',
+      'GET /v1/bonus-tax?bonus=500000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2': '賞与にかかる源泉所得税(賞与の算出率表)',
+      'GET /v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=20&night_hours=5': '割増賃金 — 時間外25%、月60時間超50%、法定休日35%、深夜はこれに25%上乗せ(労基法37条)',
+      'GET /v1/workers-compensation?business_type=98&wage_total=3600000': '労災保険料 — 全額が事業主負担。率は事業の種類によって1,000分の2.5から88まで開く',
+      'GET /v1/commuting-allowance?amount=12000&distance_km=12&parking=3000': '通勤手当の非課税限度額 — 社会保険は全額を報酬に算入し、所得税は限度額を超えた分にだけかかる。この表は12か月で2度、うち1度は遡って改定された',
+      'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': '随時改定(月額変更)に当たるかを判定する。健康保険と厚生年金を別々に見る',
       'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': 'Annual 定時決定 (算定基礎) from April-June pay',
-      'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': 'Revision on returning from maternity or childcare leave (one grade is enough)',
-      'POST /v1/standard-remuneration/regular/batch': '算定基礎届 for a whole payroll in one call — June is the one month everybody is decided at once (健保法41条)',
-      'POST /v1/standard-remuneration/annual-average': 'Seasonal work: 年間平均による保険者算定 for either determination',
-      'GET /v1/statute?ref=健康保険法第43条': 'Full text of a provision this API cites — 健保法43条 and 厚年法81条の2 resolve too',
-      'GET /v1/statute/index': 'Every provision available, with its law',
-      'include=statute_text': 'Add to any endpoint to attach the text of whatever it cited',
-      'GET /v1/enums': 'Every accepted enum value and error code, for build-time reference',
+      'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': '産休・育休からの復帰時の改定(1等級差で足りる)',
+      'POST /v1/standard-remuneration/regular/batch': '算定基礎届を全従業員まとめて1回で。6月は全員が一斉に決まる唯一の月です(健保法41条)',
+      'POST /v1/standard-remuneration/annual-average': '季節的な業務 — どちらの決定でも年間平均による保険者算定を使う',
+      'GET /v1/statute?ref=健康保険法第43条': 'このAPIが引用している条項の全文。健保法43条や厚年法81条の2のような略称も解決します',
+      'GET /v1/statute/index': '収録しているすべての条項と、その法令',
+      'include=statute_text': 'どのエンドポイントにも付けられます。引用した条項の本文が添えられます',
+      'GET /v1/enums': '受け付けるすべての列挙値とエラーコード。作るときに読むための参照',
       'GET /openapi.json?profile=gpt': 'Custom GPT Actions の30オペレーション上限に収めた仕様書。落とした14本は info.description に理由ごと記載',
-      'GET /v1/data-freshness': 'What each dataset covers and when it is next due to change',
+      'GET /v1/data-freshness': '各データが何を収録していて、次にいつ変わるか',
     },
     free_tier: {
       ...FREE_TIER,
@@ -445,15 +445,15 @@ app.get('/v1/statute', (c) => {
 
   const ref = c.req.query('ref');
   if (!ref)
-    return bad(c, '"ref" is required.',
-      'A citation such as "健康保険法第43条". See GET /v1/statute/index for everything available. ' +
-      'Abbreviations (健保法43条) and paragraph-level references (第43条第1項) resolve to the article.');
+    return bad(c, '「ref」は必須です。',
+      '「健康保険法第43条」のような条項の指定です。収録されている条項は GET /v1/statute/index で一覧できます。' +
+      '略称(健保法43条)や項単位の指定(第43条第1項)も、その条に解決します。');
 
   const detail = statuteDetail(ref);
   if (!detail)
-    return bad(c, `No provision is bundled for "${ref}".`,
-      'Only the provisions this API actually cites are bundled — see GET /v1/statute/index. ' +
-      'For anything else, e-Gov 法令検索 has the full corpus: https://laws.e-gov.go.jp/',
+    return bad(c, `「${ref}」の条文は収録されていません。`,
+      'このAPIが実際に引用している条項だけを収録しています。GET /v1/statute/index を参照してください。' +
+      'ここに無い条文は e-Gov 法令検索に全文があります: https://laws.e-gov.go.jp/',
       'out_of_coverage');
 
   return c.json({ ...detail, attribution: STATUTE_ATTRIBUTION });
@@ -488,8 +488,8 @@ app.get('/openapi.json', (c) => {
 
   const profile = c.req.query('profile');
   if (profile !== undefined && profile !== 'gpt' && profile !== 'full')
-    return bad(c, `Unknown profile: "${profile}"`,
-      'Use "gpt" for a schema inside the 30-operation limit Custom GPT Actions imposes, or omit it for everything.');
+    return bad(c, `該当する profile がありません: 「${profile}」`,
+      'Custom GPT Actions の30オペレーション上限に収めた仕様書は「gpt」を指定してください。省略すると全エンドポイントを収めた仕様書になります。');
 
   c.header('Content-Type', 'application/json; charset=utf-8');
   return c.body(JSON.stringify(profile === 'gpt' ? openapiGptSpec : openapiSpec));
@@ -514,7 +514,7 @@ app.get('/v1/insurance-rates', (c) => {
 
   const asOfRaw = c.req.query('as_of');
   if (asOfRaw !== undefined && !parseDate(asOfRaw))
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
   const outside = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
   if (outside) return outside;
 
@@ -532,8 +532,8 @@ app.get('/v1/insurance-rates', (c) => {
       child_care_contribution_employer_only: insurance.meta.child_care_contribution_rate,
     },
     notes: {
-      split: 'Health, long-term care, pension and child-support premiums are split 50/50 between employee and employer.',
-      long_term_care: 'Long-term care applies only to employees aged 40-64 (介護保険第2号被保険者).',
+      split: '健康保険・介護保険・厚生年金・子ども子育て拠出金は、従業員と事業主で折半します。',
+      long_term_care: '介護保険料がかかるのは40歳以上65歳未満(介護保険第2号被保険者)だけです。',
       bonus_caps: {
         health_annual: insurance.meta.bonus_cap_health_annual,
         pension_monthly: insurance.meta.bonus_cap_pension_monthly,
@@ -562,7 +562,7 @@ app.get('/v1/standard-remuneration', (c) => {
   const raw = c.req.query('remuneration') ?? c.req.query('monthly_salary');
   const rem = Number(raw);
   if (!raw || !Number.isFinite(rem) || rem < 0)
-    return bad(c, 'Query parameter "remuneration" must be a non-negative number (monthly yen).');
+    return bad(c, 'クエリパラメータ「remuneration」は0以上の数(月額の円)で渡してください。');
   const g = findGrade(rem);
   const pen = pensionStandardRemuneration(g);
   return c.json({
@@ -580,12 +580,12 @@ app.get('/v1/employment-insurance', (c) => {
   const t = (c.req.query('business_type') ?? 'general').toLowerCase();
   const bt = (empins.business_types as any)[t];
   if (!bt)
-    return bad(c, `Unknown business_type: "${t}"`,
-      `One of: ${Object.keys(empins.business_types).join(', ')}`);
+    return bad(c, `該当する business_type がありません: 「${t}」`,
+      `次のいずれかです: ${Object.keys(empins.business_types).join(', ')}`);
 
   const asOfRaw = c.req.query('as_of');
   if (asOfRaw !== undefined && !parseDate(asOfRaw))
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
   const outside = outsideRateWindow(c, 'employment_insurance', asOfRaw ?? null);
   if (outside) return outside;
 
@@ -625,7 +625,7 @@ function minimumWageBeyondData(c: any, iso: string): any | null {
   if (newest && newest >= due) return null;
 
   return c.json({
-    error: `The minimum wage in force on ${iso} is not established in this dataset.`,
+    error: `${iso} 時点で効力を持つ最低賃金は、このデータセットに収録されていません。`,
     code: 'out_of_coverage',
     coverage: { through: newest, covers: d.covers, next_revision_expected: due },
     hint:
@@ -645,7 +645,7 @@ app.get('/v1/minimum-wage', (c) => {
   const r = needPref(c); if ('err' in r) return r.err;
   const date = c.req.query('date') ?? null;
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
-    return bad(c, 'Query parameter "date" must be ISO format YYYY-MM-DD.');
+    return bad(c, 'クエリパラメータ「date」はYYYY-MM-DD形式で渡してください。');
 
   // 日付を渡さない既定は「今日」。今日が改定日を越えていれば同じ扱いにする。
   const asked = date ?? new Date().toISOString().slice(0, 10);
@@ -655,7 +655,7 @@ app.get('/v1/minimum-wage', (c) => {
   const row = minimumWageAt(r.pref, date);
   if (!row)
     return c.json({
-      error: `No minimum wage on record for ${r.pref} on or before ${date}.`,
+      error: `${date} 以前の ${r.pref} の最低賃金は収録されていません。`,
       code: 'out_of_coverage', earliest_fiscal_year: 2002,
     }, 404);
   const p = (minwage.prefectures as any)[r.pref];
@@ -699,60 +699,60 @@ app.get('/v1/payroll', (c) => {
   const salaryRaw = c.req.query('monthly_salary');
   const salary = Number(salaryRaw);
   if (!salaryRaw || !Number.isFinite(salary) || salary < 0)
-    return bad(c, 'Query parameter "monthly_salary" is required and must be a non-negative number (yen).');
+    return bad(c, 'クエリパラメータ「monthly_salary」は必須で、0以上の数(円)で渡してください。');
 
   const ageRaw = c.req.query('age');
   const age = ageRaw === undefined ? null : Number(ageRaw);
   if (ageRaw !== undefined && (!Number.isFinite(age!) || age! < 0 || age! > 120))
-    return bad(c, 'Query parameter "age" must be a number between 0 and 120.');
+    return bad(c, 'クエリパラメータ「age」は0から120の数で渡してください。');
 
   const btKey = (c.req.query('business_type') ?? 'general').toLowerCase();
   if (!(empins.business_types as any)[btKey])
-    return bad(c, `Unknown business_type: "${btKey}"`,
-      `One of: ${Object.keys(empins.business_types).join(', ')}`);
+    return bad(c, `該当する business_type がありません: 「${btKey}」`,
+      `次のいずれかです: ${Object.keys(empins.business_types).join(', ')}`);
 
   // 源泉所得税まで通すかどうか。既定で通す — 課税対象額は「社会保険料等控除後の
   // 給与等の金額」であって総支給額ではなく、そこを呼び出し側に計算させるのが
   // この種の実装で最も多い誤りだから。
   const taxRaw = (c.req.query('income_tax') ?? 'true').toLowerCase();
   if (!['true', 'false', '1', '0', 'yes', 'no'].includes(taxRaw))
-    return bad(c, `"income_tax" must be a boolean; got "${taxRaw}".`);
+    return bad(c, `「income_tax」は真偽値で渡してください。渡されたのは「${taxRaw}」でした。`);
   const withTax = ['true', '1', 'yes'].includes(taxRaw);
 
   const colRaw = (c.req.query('column') ?? 'kou').toLowerCase();
   if (colRaw !== 'kou' && colRaw !== 'otsu')
-    return bad(c, `Unknown column: "${colRaw}"`,
-      'Use "kou" (甲欄, a 扶養控除等申告書 was filed) or "otsu" (乙欄, it was not).');
+    return bad(c, `該当する column がありません: 「${colRaw}」`,
+      '扶養控除等申告書が提出されていれば「kou」(甲欄)、されていなければ「otsu」(乙欄)です。');
 
   const depRaw = c.req.query('dependants') ?? '0';
   const dependants = Number(depRaw);
   if (!Number.isInteger(dependants) || dependants < 0 || dependants > 50)
-    return bad(c, '"dependants" must be an integer between 0 and 50.');
+    return bad(c, '「dependants」は0から50の整数で渡してください。');
 
   const residentRaw = c.req.query('resident_tax') ?? '0';
   const residentTax = Number(residentRaw);
   if (!Number.isFinite(residentTax) || residentTax < 0)
-    return bad(c, '"resident_tax" must be a non-negative number.',
-      'Resident tax is assessed by the municipality and notified to the employer; this API cannot compute it, but will subtract a figure you supply.');
+    return bad(c, '「resident_tax」は0以上の数で渡してください。',
+      '住民税は市区町村が課して事業主に通知するもので、このAPIでは算出できません。渡された額を差し引くことはします。');
 
   const birthRaw = c.req.query('birth_date');
   const birth = birthRaw === undefined ? null : parseDate(birthRaw);
   if (birthRaw !== undefined && !birth)
-    return bad(c, '"birth_date" must be a valid ISO date (YYYY-MM-DD).',
-      'With a birth date the 40, 65, 70 and 75 milestones are applied exactly.');
+    return bad(c, '「birth_date」はYYYY-MM-DD形式の日付で渡してください。',
+      '生年月日を渡すと、40歳・65歳・70歳・75歳の到達日を正確に当てはめます。');
 
   // 年齢は「あると精度が上がる」ものではなく、徴収するかどうかを決める要件そのもの。
   // 渡さなければ介護保険なしで計算して200を返していたが、それは「40歳未満」という
   // 仮定を黙って置くことで、40〜64歳なら必ず過少になる。非専門の利用者ほど
   // 年齢が要ることを知らないので、いちばん間違えやすい人が黙って間違える。
   if (ageRaw === undefined && birthRaw === undefined)
-    return bad(c, 'Either "age" or "birth_date" is required.', '介護保険法第9条 makes age the test itself: a 第2号被保険者 is someone 40 or over and under 65. Without it this endpoint would have to assume "under 40", which silently under-collects — 2,430 yen a month on a 300,000 yen salary in Tokyo. Pass age, or birth_date to have the 40, 65, 70 and 75 milestones applied to the exact day.',
+    return bad(c, '「age」か「birth_date」のどちらかが必要です。', '介護保険法第9条は年齢そのものを基準にしています。第2号被保険者は40歳以上65歳未満です。年齢が無ければこのエンドポイントは「40歳未満」と仮定するほかなく、黙って徴収不足になります。東京で月給30万円なら月2,430円です。age を渡すか、birth_date を渡して40歳・65歳・70歳・75歳の到達日を正確に当てはめてください。',
       'missing_parameter');
 
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
   // as_of は年齢の判定だけでなく**どの料率表を使うか**でもある。載っていない
   // 時点を渡されて現行の率で答えるのは、間違いに気づく手がかりを消すこと。
   const outsideRates = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
@@ -764,17 +764,17 @@ app.get('/v1/payroll', (c) => {
   const smrRaw = c.req.query('standard_remuneration');
   const smr = smrRaw === undefined ? null : Number(smrRaw);
   if (smrRaw !== undefined && (!Number.isFinite(smr!) || smr! <= 0))
-    return bad(c, '"standard_remuneration" must be a positive number.',
-      'The 標準報酬月額 fixed by 算定基礎届 or 月額変更届. Pass it whenever you know it: without ' +
-      'it the grade is re-derived from the pay you send, which is wrong in any month with overtime. ' +
-      'GET /v1/standard-remuneration/regular decides it.');
+    return bad(c, '「standard_remuneration」は正の数で渡してください。',
+      '算定基礎届または月額変更届で決まっている標準報酬月額です。分かっているなら必ず渡してください。'
+      + '渡さないと、送られた支給額から等級を引き直すことになり、残業のある月は必ず誤ります。'
+      + 'GET /v1/standard-remuneration/regular が決定します。');
 
   const empRaw = c.req.query('employment_type');
   const EMPLOYMENT_TYPES = ['employee', 'director', 'director_employee'] as const;
   if (empRaw !== undefined && !(EMPLOYMENT_TYPES as readonly string[]).includes(empRaw))
-    return bad(c, `Unknown employment_type: "${empRaw}"`,
-      'Use "employee", "director" (役員 — not covered by employment insurance, 雇用保険法第4条), ' +
-      'or "director_employee" (兼務役員 — covered when the employee side is genuine). Defaults to employee.');
+    return bad(c, `該当する employment_type がありません: 「${empRaw}」`,
+      '「employee」「director」(役員 — 雇用保険の適用外、雇用保険法第4条)、' +
+      'または「director_employee」(兼務役員 — 従業員としての実態があれば適用)のいずれかです。既定は employee です。');
   const empType = (empRaw ?? 'employee') as 'employee' | 'director' | 'director_employee';
 
   // 通勤手当。社会保険では報酬に含み、所得税では非課税限度額まで課さない。
@@ -782,42 +782,42 @@ app.get('/v1/payroll', (c) => {
   const commRaw = c.req.query('commuting_allowance');
   const commuting = commRaw === undefined ? null : Number(commRaw);
   if (commRaw !== undefined && (!Number.isFinite(commuting!) || commuting! < 0))
-    return bad(c, '"commuting_allowance" must be a non-negative number (yen per month).');
+    return bad(c, '「commuting_allowance」は0以上の数(月あたりの円)で渡してください。');
 
   const kmRaw = c.req.query('commuting_distance_km');
   const km = kmRaw === undefined ? null : Number(kmRaw);
   if (kmRaw !== undefined && (!Number.isFinite(km!) || km! < 0))
-    return bad(c, '"commuting_distance_km" must be a non-negative number (one-way kilometres).',
-      'Pass it when the person commutes by car or bicycle; the non-taxable ceiling then comes from the distance table (国税庁 No.2585) instead of the 150,000 yen transit ceiling.');
+    return bad(c, '「commuting_distance_km」は0以上の数(片道キロメートル)で渡してください。',
+      '車や自転車で通う人に渡してください。非課税限度額が、150,000円の交通機関の上限ではなく距離の表(国税庁 No.2585)から決まります。');
 
   const fareRaw = c.req.query('commuting_fare');
   const fare = fareRaw === undefined ? null : Number(fareRaw);
   if (fareRaw !== undefined && (!Number.isFinite(fare!) || fare! < 0))
-    return bad(c, '"commuting_fare" must be a non-negative number (yen per month).',
-      'The reasonable fare or toll paid on top of a car or bicycle commute. With commuting_distance_km it makes the combined ceiling: distance band + fare, capped at 150,000.');
+    return bad(c, '「commuting_fare」は0以上の数(月あたりの円)で渡してください。',
+      '交通用具通勤に加えて支払う合理的な運賃・有料道路料金です。commuting_distance_km と併せると、距離区分の額に運賃を足した額が限度額になり、150,000円で頭打ちです。');
 
   // 駐車場等の利用料は距離区分の額への「加算」なので、距離が無ければ成り立たない。
   const parkRaw = c.req.query('commuting_parking');
   const parking = parkRaw === undefined ? null : Number(parkRaw);
   if (parkRaw !== undefined && (!Number.isFinite(parking!) || parking! < 0))
-    return bad(c, '"commuting_parking" must be a non-negative number (yen per month).',
-      'The parking cost the employee bears for a car or bicycle commute. It is added to the distance band, up to 5,000 a month.');
+    return bad(c, '「commuting_parking」は0以上の数(月あたりの円)で渡してください。',
+      '交通用具通勤で本人が負担する駐車場代です。距離区分の額に、月5,000円を上限として加算されます。');
 
   if (commRaw === undefined && (kmRaw !== undefined || fareRaw !== undefined || parkRaw !== undefined))
-    return bad(c, 'commuting_distance_km, commuting_fare and commuting_parking only mean something alongside commuting_allowance.',
-      'Pass the allowance you actually pay; the distance, fare and parking decide how much of it is non-taxable.',
+    return bad(c, 'commuting_distance_km・commuting_fare・commuting_parking は commuting_allowance と一緒でなければ意味を持ちません。',
+      '実際に支払っている手当を渡してください。距離・運賃・駐車場代が、そのうち非課税になる額を決めます。',
       'missing_parameter');
 
   if (parkRaw !== undefined && kmRaw === undefined)
-    return bad(c, 'commuting_parking is an addition to the distance band, so it needs commuting_distance_km.',
-      'The parking addition exists only for a commute by car or bicycle. Someone travelling only by train has no distance band for it to be added to.',
+    return bad(c, 'commuting_parking は距離区分の額への加算なので、commuting_distance_km が必要です。',
+      '駐車場代の加算は交通用具通勤の制度です。交通機関だけで通う人には、加算する距離区分がありません。',
       'missing_parameter');
 
   // 労災保険は全額事業主負担。事業の種類ごとに率が35倍開くので既定値は置かない。
   const wcRaw = c.req.query('workers_comp_type');
   if (wcRaw !== undefined && !workersCompType(wcRaw))
-    return bad(c, `Unknown workers_comp_type: "${wcRaw}"`,
-      'Use the 事業の種類の番号 from GET /v1/workers-compensation, for example 98 for 卸売業・小売業、飲食店又は宿泊業.',
+    return bad(c, `該当する workers_comp_type がありません: 「${wcRaw}」`,
+      'GET /v1/workers-compensation の事業の種類の番号を使ってください。例えば卸売業・小売業、飲食店又は宿泊業は98です。',
       'unknown_workers_comp_type');
 
   const allowances = commuting === null ? [] : [{
@@ -876,18 +876,18 @@ app.get('/v1/payroll', (c) => {
       rounding: insurance.meta.rounding,
       basis: '社会保険料は標準報酬月額にかかります。雇用保険料と源泉所得税は実際の支給額にかかります。',
       income_tax: withTax
-        ? 'Income tax is computed from pay after social insurance, which this endpoint derives for you. Pass income_tax=false to omit it.'
-        : 'Income tax omitted. Pass income_tax=true to include it.',
+        ? '源泉所得税は社会保険料控除後の額から計算します。その控除はこのエンドポイントが行うので、総支給額を渡してください。income_tax=false を渡せば計算しません。'
+        : '源泉所得税を出していません。含めるには income_tax=true を渡してください。',
       workers_compensation: wcRaw !== undefined
-        ? 'Workers compensation is borne entirely by the employer and is included in totals.employer_cost.'
-        : 'Workers compensation (労災保険) is not included unless you pass workers_comp_type; the rate runs from 2.5/1000 to 88/1000 by industry, so there is no safe default. totals.employer_cost is short by that amount until you do.',
+        ? '労災保険料は全額が事業主負担で、totals.employer_cost に含まれます。'
+        : '労災保険は workers_comp_type を渡さないかぎり含みません。率は業種によって1,000分の2.5から88まで開くため、安全な既定値がありません。渡すまでは totals.employer_cost がその分だけ不足します。',
       resident_tax: residentTax
-        ? 'Resident tax is the figure you supplied; it is not computed here.'
-        : 'Resident tax (住民税) is assessed by the municipality and is not computed here. Pass resident_tax= to subtract it.',
-      batch: 'POST /v1/payroll/batch runs many employees at once, and takes named pay items as an array.',
+        ? '住民税は渡された額です。ここでは算出しません。'
+        : '住民税は市区町村が課すもので、ここでは算出しません。resident_tax= を渡せば差し引きます。',
+      batch: 'POST /v1/payroll/batch は多人数をまとめて処理し、支給項目を名前つきの配列で受け取ります。',
       commuting: commuting !== null
-        ? 'A commuting allowance is remuneration for social insurance in full, but income tax is charged only on what exceeds the non-taxable ceiling. earnings.items carries the split.'
-        : 'Pass commuting_allowance to have the allowance counted as remuneration for social insurance and exempted, up to the statutory ceiling, from income tax.',
+        ? '通勤手当は社会保険では全額が報酬に入りますが、所得税は非課税限度額を超えた分にだけかかります。earnings.items にその内訳が入ります。'
+        : 'commuting_allowance を渡すと、その手当を社会保険の報酬に算入したうえで、法定の限度額まで所得税を非課税として扱います。',
     },
     attribution: {
       ...ATTRIBUTION,
@@ -913,11 +913,11 @@ const readCalendar = (c: any): Calendar | null => {
   return raw === 'standard' || raw === 'bank' ? raw : null;
 };
 const badCalendar = (c: any) =>
-  bad(c, `Unknown calendar: "${c.req.query('calendar')}"`, 'Use "standard" or "bank".');
+  bad(c, `該当する calendar がありません: 「${c.req.query('calendar')}」`, '「standard」か「bank」を使ってください。');
 
 const outOfCoverage = (c: any, iso: string) =>
   c.json({
-    error: `Date ${iso} is outside the published range.`,
+    error: `${iso} は公表されている範囲の外です。`,
     code: 'out_of_coverage',
     coverage: COVERAGE,
     hint: '内閣府が公表しているのはこの範囲だけです。先の年は毎年2月に追加されます。',
@@ -932,9 +932,9 @@ app.get('/v1/holidays', (c) => {
   const to = c.req.query('to');
 
   if (from || to) {
-    if (!from || !to) return bad(c, 'Both "from" and "to" are required when querying a range.');
-    if (!parseISO(from) || !parseISO(to)) return bad(c, '"from" and "to" must be ISO dates (YYYY-MM-DD).');
-    if (from > to) return bad(c, '"from" must not be after "to".');
+    if (!from || !to) return bad(c, '範囲で問い合わせるときは「from」と「to」の両方が必要です。');
+    if (!parseISO(from) || !parseISO(to)) return bad(c, '「from」と「to」はYYYY-MM-DD形式の日付で渡してください。');
+    if (from > to) return bad(c, '「from」は「to」より後にできません。');
     if (!inCoverage(from)) return outOfCoverage(c, from);
     if (!inCoverage(to)) return outOfCoverage(c, to);
     const list = holidaysBetween(from, to);
@@ -943,7 +943,7 @@ app.get('/v1/holidays', (c) => {
 
   const year = Number(raw);
   if (!raw || !Number.isInteger(year))
-    return bad(c, 'Query parameter "year" is required.', 'Or use from= and to= for a date range.');
+    return bad(c, 'クエリパラメータ「year」は必須です。', '期間で取るなら from= と to= を使ってください。');
   if (year < HOLIDAY_META.year_from || year > HOLIDAY_META.year_to)
     return outOfCoverage(c, String(year));
   const list = holidaysInYear(year);
@@ -956,7 +956,7 @@ app.get('/v1/holidays/check', (c) => {
 
   const raw = c.req.query('date');
   const d = parseISO(raw);
-  if (!d) return bad(c, 'Query parameter "date" is required and must be a valid ISO date (YYYY-MM-DD).');
+  if (!d) return bad(c, 'クエリパラメータ「date」は必須で、YYYY-MM-DD形式の日付で渡してください。');
   const iso = toISO(d);
   if (!inCoverage(iso)) return outOfCoverage(c, iso);
   const cal = readCalendar(c);
@@ -987,8 +987,8 @@ app.get('/v1/business-days', (c) => {
   const to = c.req.query('to') ?? c.req.query('end');
   const a = parseISO(from);
   const b = parseISO(to);
-  if (!a || !b) return bad(c, '"from" and "to" are required and must be ISO dates (YYYY-MM-DD).');
-  if (from! > to!) return bad(c, '"from" must not be after "to".');
+  if (!a || !b) return bad(c, '「from」と「to」は必須で、YYYY-MM-DD形式の日付で渡してください。');
+  if (from! > to!) return bad(c, '「from」は「to」より後にできません。');
   if (!inCoverage(from!)) return outOfCoverage(c, from!);
   if (!inCoverage(to!)) return outOfCoverage(c, to!);
   const cal = readCalendar(c);
@@ -1009,17 +1009,17 @@ app.get('/v1/business-days/shift', (c) => {
 
   const raw = c.req.query('date');
   const d = parseISO(raw);
-  if (!d) return bad(c, 'Query parameter "date" is required and must be a valid ISO date (YYYY-MM-DD).');
+  if (!d) return bad(c, 'クエリパラメータ「date」は必須で、YYYY-MM-DD形式の日付で渡してください。');
   if (!inCoverage(toISO(d))) return outOfCoverage(c, toISO(d));
   const nRaw = c.req.query('days') ?? '1';
   const n = Number(nRaw);
   if (!Number.isInteger(n) || Math.abs(n) > 10_000)
-    return bad(c, '"days" must be an integer between -10000 and 10000.',
-      'Positive moves forward, negative moves backward. 1 = next business day.');
+    return bad(c, '「days」は-10000から10000の整数で渡してください。',
+      '正の数で先へ、負の数で前へ動きます。1 は翌営業日です。');
   const cal = readCalendar(c);
   if (!cal) return badCalendar(c);
   const result = shiftBusinessDays(d, n, cal);
-  if (!result) return outOfCoverage(c, 'the resulting date');
+  if (!result) return outOfCoverage(c, '計算後の日付');
   return c.json({
     from: toISO(d), days: n, calendar: cal, result: toISO(result),
     result_weekday: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][result.getUTCDay()],
@@ -1037,7 +1037,7 @@ app.get('/v1/consumption-tax', (c) => {
 
   const dateRaw = c.req.query('date');
   if (dateRaw && !parseISO(dateRaw))
-    return bad(c, '"date" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「date」はYYYY-MM-DD形式の日付で渡してください。');
   const on = dateRaw ?? null;
 
   const period = on
@@ -1046,7 +1046,7 @@ app.get('/v1/consumption-tax', (c) => {
 
   if (!period)
     return c.json({
-      error: `No consumption tax was in force on ${on}.`,
+      error: `${on} の時点では消費税は施行されていません。`,
       code: 'out_of_coverage',
       hint: '日本の消費税は1989年4月1日に導入されました。',
       introduced: ctax.history[0].effective_from,
@@ -1058,7 +1058,7 @@ app.get('/v1/consumption-tax', (c) => {
 
   if (reduced && !rate)
     return c.json({
-      error: 'No reduced rate existed on that date.',
+      error: 'その日には軽減税率はありません。',
       code: 'out_of_coverage',
       reduced_rate_since: ctax.reduced_rate_scope.since,
     }, 422);
@@ -1079,14 +1079,14 @@ app.get('/v1/consumption-tax', (c) => {
   if (amountRaw !== undefined) {
     const amount = Number(amountRaw);
     if (!Number.isFinite(amount) || amount < 0)
-      return bad(c, '"amount" must be a non-negative number (yen, tax-exclusive).');
+      return bad(c, '「amount」は0以上の数(円、税抜)で渡してください。');
     // Consumption tax is truncated to the yen on the invoice total.
     const tax = Math.floor(amount * rate!.total);
     body.calculation = {
       amount_excluding_tax: amount,
       tax,
       amount_including_tax: amount + tax,
-      rounding: 'tax truncated to the yen (切り捨て)',
+      rounding: '税額の円未満を切り捨てる',
     };
   }
 
@@ -1110,7 +1110,7 @@ app.get('/v1/corporate-number/validate', (c) => {
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('number');
-  if (!raw) return bad(c, 'Query parameter "number" is required.', 'A 13-digit 法人番号, e.g. 8700110005901.');
+  if (!raw) return bad(c, 'クエリパラメータ「number」は必須です。', 'A 13-digit 法人番号, e.g. 8700110005901.');
   const r = validateCorporateNumber(raw);
   return c.json({ input: raw, ...r, attribution: CORPORATE_NUMBER_ATTRIBUTION });
 });
@@ -1120,7 +1120,7 @@ app.get('/v1/corporate-number/check-digit', (c) => {
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('base');
-  if (!raw) return bad(c, 'Query parameter "base" is required.', 'A 12-digit 会社法人等番号, e.g. 700110005901.');
+  if (!raw) return bad(c, 'クエリパラメータ「base」は必須です。', 'A 12-digit 会社法人等番号, e.g. 700110005901.');
   const r = fromBaseNumber(raw);
   if (!r.ok) return bad(c, r.reason);
   return c.json({
@@ -1167,8 +1167,8 @@ app.get('/v1/invoice-number/validate', (c) => {
 
   const raw = c.req.query('number');
   if (!raw)
-    return bad(c, 'Query parameter "number" is required.',
-      'A registration number such as T8700110005901.');
+    return bad(c, 'クエリパラメータ「number」は必須です。',
+      'T8700110005901 のような登録番号です。');
   return c.json({
     ...validateInvoiceNumber(raw),
     registration_status: REGISTRATION_STATUS_CAVEAT,
@@ -1189,19 +1189,19 @@ app.post('/v1/invoice-number/validate/batch', async (c) => {
   try {
     payload = await c.req.json();
   } catch {
-    return bad(c, 'Request body must be JSON.', 'POST {"numbers": ["T8700110005901", ...]}');
+    return bad(c, 'リクエストボディはJSONで送ってください。', 'POST {"numbers": ["T8700110005901", ...]}');
   }
 
   const list = payload?.numbers;
   if (!Array.isArray(list))
-    return bad(c, '"numbers" must be an array of registration numbers.');
-  if (list.length === 0) return bad(c, '"numbers" must not be empty.');
+    return bad(c, '「numbers」は登録番号の配列で渡してください。');
+  if (list.length === 0) return bad(c, '「numbers」が空です。');
   if (list.length > MAX_INVOICE_BATCH)
-    return bad(c, `A batch is limited to ${MAX_INVOICE_BATCH} numbers; got ${list.length}.`,
-      'Split the run, or use the bulk dataset the NTA publishes.',
+    return bad(c, `1回のバッチは ${MAX_INVOICE_BATCH} 件までです。渡されたのは ${list.length} 件でした。`,
+      '何回かに分けるか、国税庁が公表している全件データを使ってください。',
       'batch_too_large');
   if (list.some((n) => typeof n !== 'string'))
-    return bad(c, 'Every element of "numbers" must be a string.');
+    return bad(c, '「numbers」の各要素は文字列で渡してください。');
 
   const results = (list as string[]).map((n, index) => ({ index, ...validateInvoiceNumber(n) }));
   const passed = results.filter((r) => r.check_digit_valid).length;
@@ -1232,29 +1232,29 @@ app.get('/v1/withholding-tax', (c) => {
   const amountRaw = c.req.query('taxable_amount') ?? c.req.query('amount');
   const amount = Number(amountRaw);
   if (!amountRaw || !Number.isFinite(amount) || amount < 0)
-    return bad(c, 'Query parameter "taxable_amount" is required and must be a non-negative number.',
-      'This is the monthly pay AFTER social insurance deductions (社会保険料等控除後の給与等の金額).');
+    return bad(c, 'クエリパラメータ「taxable_amount」は必須で、0以上の数で渡してください。',
+      '社会保険料等控除後の給与等の金額です。');
 
   const colRaw = (c.req.query('column') ?? 'kou').toLowerCase();
   if (colRaw !== 'kou' && colRaw !== 'otsu')
-    return bad(c, `Unknown column: "${colRaw}"`,
-      'Use "kou" (甲欄, a 扶養控除等申告書 was filed) or "otsu" (乙欄, it was not).');
+    return bad(c, `該当する column がありません: 「${colRaw}」`,
+      '扶養控除等申告書が提出されていれば「kou」(甲欄)、されていなければ「otsu」(乙欄)です。');
   const column = colRaw as Column;
 
   const depRaw = c.req.query('dependants') ?? '0';
   const dependants = Number(depRaw);
   if (!Number.isInteger(dependants) || dependants < 0 || dependants > 50)
-    return bad(c, '"dependants" must be an integer between 0 and 50.',
-      '扶養親族等の数. Ignored for the 乙 column.');
+    return bad(c, '「dependants」は0から50の整数で渡してください。',
+      '扶養親族等の数です。乙欄では使いません。');
 
   const r = withholdingTax(amount, column, dependants);
   return c.json({
     ...r,
     notes: {
-      input: 'taxable_amount is pay after social insurance, not gross pay.',
+      input: 'taxable_amount は社会保険料控除後の額です。総支給額ではありません。',
       table_range: { from: TABLE_MIN, to: TABLE_MAX },
-      over_seven: `The table stops at ${MAX_DEPENDANTS_IN_TABLE} dependants; beyond that 1,610 yen is deducted per additional person.`,
-      excludes: 'Resident tax and the year-end adjustment are out of scope.',
+      over_seven: `税額表は扶養親族等 ${MAX_DEPENDANTS_IN_TABLE} 人までです。それを超える分は1人につき1,610円を控除します。`,
+      excludes: '住民税と年末調整はこのAPIの対象外です。',
     },
     attribution: WITHHOLDING_ATTRIBUTION,
   });
@@ -1267,25 +1267,25 @@ app.get('/v1/withholding-tax/daily', (c) => {
   const raw = c.req.query('taxable_amount') ?? c.req.query('amount');
   const amount = Number(raw);
   if (!raw || !Number.isFinite(amount) || amount < 0)
-    return bad(c, 'Query parameter "taxable_amount" is required and must be a non-negative number.',
-      'The day’s pay AFTER social insurance deductions.');
+    return bad(c, 'クエリパラメータ「taxable_amount」は必須で、0以上の数で渡してください。',
+      '社会保険料を控除したあとの日額です。');
 
   const colRaw = (c.req.query('column') ?? 'kou').toLowerCase();
   if (!['kou', 'otsu', 'hei'].includes(colRaw))
-    return bad(c, `Unknown column: "${colRaw}"`,
-      'Use "kou", "otsu", or "hei" (丙欄, for day labourers and short-term hires).');
+    return bad(c, `該当する column がありません: 「${colRaw}」`,
+      '「kou」「otsu」または「hei」(丙欄、日雇いや短期雇用の人)のいずれかです。');
 
   const dependants = Number(c.req.query('dependants') ?? '0');
   if (!Number.isInteger(dependants) || dependants < 0 || dependants > 50)
-    return bad(c, '"dependants" must be an integer between 0 and 50.');
+    return bad(c, '「dependants」は0から50の整数で渡してください。');
 
   return c.json({
     ...dailyWithholdingTax(amount, colRaw as DailyColumn, dependants),
     notes: {
-      input: 'taxable_amount is the day’s pay after social insurance.',
+      input: 'taxable_amount は社会保険料控除後の日額です。',
       table_range: { from: DAILY_MIN, to: DAILY_MAX },
-      over_seven: `Beyond ${DAILY_MAX_DEPENDANTS} dependants the 甲 column deducts 50 yen per additional person.`,
-      hei: 'The 丙 column is for day labourers and short-term hires, and has its own rates.',
+      over_seven: `扶養親族等が ${DAILY_MAX_DEPENDANTS} 人を超えると、甲欄では1人につき50円を控除します。`,
+      hei: '丙欄は日雇いや短期雇用の人のためのもので、独自の税率を持ちます。',
     },
     attribution: DAILY_ATTRIBUTION,
   });
@@ -1298,19 +1298,19 @@ app.get('/v1/withholding-tax/computer', (c) => {
   const amountRaw = c.req.query('taxable_amount') ?? c.req.query('amount');
   const amount = Number(amountRaw);
   if (!amountRaw || !Number.isFinite(amount) || amount < 0)
-    return bad(c, 'Query parameter "taxable_amount" is required and must be a non-negative number.',
-      'Monthly pay AFTER social insurance deductions.');
+    return bad(c, 'クエリパラメータ「taxable_amount」は必須で、0以上の数で渡してください。',
+      '社会保険料を控除したあとの月額です。');
 
   const spouseRaw = (c.req.query('spouse') ?? 'false').toLowerCase();
   if (!['true', 'false', '1', '0', 'yes', 'no'].includes(spouseRaw))
-    return bad(c, `"spouse" must be a boolean; got "${spouseRaw}".`);
+    return bad(c, `「spouse」は真偽値で渡してください。渡されたのは「${spouseRaw}」でした。`);
   const hasSpouse = ['true', '1', 'yes'].includes(spouseRaw);
 
   const depRaw = c.req.query('dependants') ?? '0';
   const dependants = Number(depRaw);
   if (!Number.isInteger(dependants) || dependants < 0 || dependants > 50)
-    return bad(c, '"dependants" must be an integer between 0 and 50.',
-      '源泉控除対象親族の数. Count each of the taxpayer’s own 障害者 / 寡婦 / ひとり親 / 勤労学生 statuses as one.');
+    return bad(c, '「dependants」は0から50の整数で渡してください。',
+      '源泉控除対象親族の数です。本人が障害者・寡婦・ひとり親・勤労学生に当たる場合、それぞれ1人として数えます。');
 
   return c.json({
     ...computerMethod(amount, hasSpouse, dependants),
@@ -1375,15 +1375,15 @@ app.post('/v1/payroll/batch', async (c) => {
   try {
     payload = await c.req.json();
   } catch {
-    return bad(c, 'Request body must be JSON.',
+    return bad(c, 'リクエストボディはJSONで送ってください。',
       'POST {"defaults": {...}, "employees": [{...}]}');
   }
 
   const rows = payload?.employees;
   if (!Array.isArray(rows))
-    return bad(c, '"employees" must be an array.', 'Each element is one employee for this run.');
+    return bad(c, '「employees」は配列で渡してください。', '配列の各要素が、この実行における1人分です。');
   if (rows.length === 0)
-    return bad(c, '"employees" must not be empty.');
+    return bad(c, '「employees」が空です。');
   // The free tier can run a batch — just a small one. Gating the endpoint
   // entirely would hide the feature from the people most likely to want it;
   // capping it lets them see exactly what it returns before deciding to pay.
@@ -1392,24 +1392,24 @@ app.post('/v1/payroll/batch', async (c) => {
   if (rows.length > cap)
     return bad(c,
       paid
-        ? `A batch is limited to ${MAX_BATCH} employees; got ${rows.length}.`
-        : `The free tier allows ${FREE_TIER.batch_rows} employees per batch; got ${rows.length}.`,
+        ? `1回のバッチは ${MAX_BATCH} 人までです。渡されたのは ${rows.length} 人でした。`
+        : `無料枠では1回のバッチにつき ${FREE_TIER.batch_rows} 人までです。渡されたのは ${rows.length} 人でした。`,
       paid
-        ? 'Split the run into several requests.'
-        : `Batches of up to ${MAX_BATCH} are available through ${UPGRADE.where}. ` +
-          'Everything else on the free tier is unmetered per call — this cap applies only to batch size.',
+        ? '何回かに分けて実行してください。'
+        : `1回 ${MAX_BATCH} 人までのバッチは ${UPGRADE.where} で利用できます。` +
+          '無料枠の他の呼び出しに回数の制限はありません。この上限はバッチの人数だけにかかります。',
       'batch_too_large');
   if (rows.some((r) => typeof r !== 'object' || r === null || Array.isArray(r)))
-    return bad(c, 'Every element of "employees" must be an object.');
+    return bad(c, '「employees」の各要素はオブジェクトで渡してください。');
 
   const defaults = (payload?.defaults ?? {}) as BatchDefaults;
   if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults))
-    return bad(c, '"defaults" must be an object.');
+    return bad(c, '「defaults」はオブジェクトで渡してください。');
 
   const detailRaw = (c.req.query('detail') ?? 'full').toLowerCase();
   if (detailRaw !== 'full' && detailRaw !== 'compact')
-    return bad(c, `Unknown detail: "${detailRaw}"`,
-      'Use "full" for every premium split, or "compact" for the payout figures only.');
+    return bad(c, `該当する detail がありません: 「${detailRaw}」`,
+      '保険料の内訳まで見るなら「full」、支払額だけなら「compact」を指定してください。');
 
   const { results, errors, summary } = runBatch(rows as BatchRow[], defaults, detailRaw as Detail);
   return c.json({
@@ -1424,11 +1424,11 @@ app.post('/v1/payroll/batch', async (c) => {
     results,
     errors,
     notes: {
-      partial: 'A row that fails is reported in "errors" and skipped; the rest still run.',
-      order: 'Each result carries the index of its input row.',
-      detail: 'Add ?detail=compact for payout figures only — roughly a tenth the size on a large run.',
-      employer_cost: 'summary.employer_cost is gross pay plus the employer social insurance share.',
-      resident_tax: 'Resident tax is only ever the figure you supply; it is not computed.',
+      partial: '失敗した行は「errors」に入れて飛ばします。残りはそのまま処理します。',
+      order: '各結果は、入力の何行目かを持っています。',
+      detail: '?detail=compact を付けると支払額だけになります。大きな実行ではおよそ10分の1の大きさです。',
+      employer_cost: 'summary.employer_cost は総支給額に事業主負担の社会保険料を足したものです。',
+      resident_tax: '住民税は渡された額をそのまま使います。ここでは算出しません。',
     },
     attribution: { ...ATTRIBUTION, withholding_tax: WITHHOLDING_ATTRIBUTION },
   });
@@ -1446,7 +1446,7 @@ app.get('/v1/workers-compensation', (c) => {
 
   const asOfRaw = c.req.query('as_of');
   if (asOfRaw !== undefined && !parseDate(asOfRaw))
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
   const outside = outsideRateWindow(c, 'workers_compensation', asOfRaw ?? null);
   if (outside) return outside;
 
@@ -1460,8 +1460,8 @@ app.get('/v1/workers-compensation', (c) => {
       count: WORKERS_COMP_TYPES.length,
       business_types: WORKERS_COMP_TYPES,
       notes: {
-        lookup: 'Pass business_type= the 事業の種類の番号 (for example 98) to get one row, and wage_total= to have the premium worked out.',
-        payroll: 'GET /v1/payroll?workers_comp_type=98 folds it into totals.employer_cost.',
+        lookup: 'business_type= に事業の種類の番号(例: 98)を渡すとその1件だけを返します。wage_total= を渡すと保険料を計算します。',
+        payroll: 'GET /v1/payroll?workers_comp_type=98 で totals.employer_cost に算入されます。',
         excluded: WORKERS_COMP_META.excluded,
       },
       attribution: WORKERS_COMP_ATTRIBUTION,
@@ -1470,15 +1470,15 @@ app.get('/v1/workers-compensation', (c) => {
 
   const type = workersCompType(raw);
   if (!type)
-    return bad(c, `Unknown business_type: "${raw}"`,
-      'Use the 事業の種類の番号 from GET /v1/workers-compensation (02-99).',
+    return bad(c, `該当する business_type がありません: 「${raw}」`,
+      'GET /v1/workers-compensation の事業の種類の番号(02〜99)を使ってください。',
       'unknown_workers_comp_type');
 
   const wageRaw = c.req.query('wage_total');
   const wage = wageRaw === undefined ? null : Number(wageRaw);
   if (wageRaw !== undefined && (!Number.isFinite(wage!) || wage! < 0))
-    return bad(c, '"wage_total" must be a non-negative number (yen).',
-      'The 賃金総額 for the period — the same wage base employment insurance uses.');
+    return bad(c, '「wage_total」は0以上の数(円)で渡してください。',
+      'その期間の賃金総額です。雇用保険と同じ算定基礎を使います。');
 
   return c.json({
     fiscal_year: WORKERS_COMP_META.fiscal_year,
@@ -1496,8 +1496,8 @@ app.get('/v1/workers-compensation', (c) => {
       },
     } : {}),
     notes: {
-      burden: 'The whole premium falls on the employer; nothing is deducted from the employee.',
-      wage_base: 'Charged on 賃金総額 (徴収法第2条第2項) — the same base as employment insurance, so a commuting allowance counts and a reimbursement does not.',
+      burden: '保険料は全額が事業主負担です。従業員からは引きません。',
+      wage_base: '賃金総額(徴収法第2条第2項)にかかります。雇用保険と同じ算定基礎なので、通勤手当は含み、実費弁償は含みません。',
       excluded: WORKERS_COMP_META.excluded,
     },
     attribution: WORKERS_COMP_ATTRIBUTION,
@@ -1510,32 +1510,32 @@ app.get('/v1/leave-exemption', (c) => {
 
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
-    return bad(c, `Unknown kind: "${kindRaw}"`,
+    return bad(c, `該当する kind がありません: 「${kindRaw}」`,
       'Use "maternity" (産前産後休業) or "childcare" (育児休業等).');
 
   const start = parseDate(c.req.query('start'));
   if (!start)
-    return bad(c, '"start" is required and must be an ISO date (YYYY-MM-DD).');
+    return bad(c, '「start」は必須で、YYYY-MM-DD形式の日付で渡してください。');
   const end = parseDate(c.req.query('end'));
   if (!end)
-    return bad(c, '"end" is required and must be an ISO date (YYYY-MM-DD).');
+    return bad(c, '「end」は必須で、YYYY-MM-DD形式の日付で渡してください。');
   if (end.getTime() < start.getTime())
-    return bad(c, '"end" must not be before "start".');
+    return bad(c, '「end」は「start」より前にできません。');
 
   const workedRaw = c.req.query('worked_days') ?? '0';
   const workedDays = Number(workedRaw);
   if (!Number.isInteger(workedDays) || workedDays < 0 || workedDays > 31)
-    return bad(c, '"worked_days" must be an integer between 0 and 31.',
-      'Days worked during 出生時育児休業 only. Hours convert as floor(hours / daily contracted hours).');
+    return bad(c, '「worked_days」は0から31の整数で渡してください。',
+      '出生時育児休業中に就業した日数だけです。時間単位は floor(時間 ÷ 1日の所定労働時間) で日数に換算します。');
   if (workedDays > 0 && kindRaw === 'maternity')
-    return bad(c, 'worked_days applies only to 出生時育児休業, not to 産前産後休業.');
+    return bad(c, 'worked_days は出生時育児休業にだけ使います。産前産後休業には使いません。');
 
   return c.json({
     ...leaveExemption({ kind: kindRaw as LeaveKind, start, end, workedDays }),
     notes: {
-      priority: '産前産後休業 takes precedence: 健保法159条1項 excludes anyone already covered by 159条の3.',
-      consecutive: 'Two childcare leaves with no working day between them count as one (健保法159条2項).',
-      shares: 'Both the employee and employer shares are exempt.',
+      priority: '産前産後休業が優先します。健保法159条1項は、159条の3で既に免除されている人を対象から外しています。',
+      consecutive: '間に就業日を挟まない2回の育児休業は1回として扱います(健保法159条2項)。',
+      shares: '従業員負担分と事業主負担分の両方が免除されます。',
     },
     attribution: LEAVE_ATTRIBUTION,
   });
@@ -1545,18 +1545,18 @@ const WORKER_TYPES = ['general', 'part_time_short_hours', 'short_time_insured'] 
 
 /** `350000:31,352000:30,349000:31` — amount:payment_basis_days, three months. */
 function parseMonths(raw: string | undefined): PayMonth[] | string {
-  if (!raw) return '"months" is required.';
+  if (!raw) return '「months」は必須です。';
   const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
-  if (parts.length !== 3) return `"months" needs exactly 3 entries, got ${parts.length}.`;
+  if (parts.length !== 3) return `「months」はちょうど3か月分が必要です。渡されたのは ${parts.length} 件でした。`;
   const out: PayMonth[] = [];
   for (const [i, p] of parts.entries()) {
     const [a, d] = p.split(':');
     const remuneration = Number(a);
     const days = Number(d);
     if (!Number.isFinite(remuneration) || remuneration < 0)
-      return `Month ${i + 1}: "${a}" is not a valid remuneration.`;
+      return `${i + 1}か月目: 「${a}」は報酬月額として読めません。`;
     if (!Number.isInteger(days) || days < 0 || days > 31)
-      return `Month ${i + 1}: payment basis days must be an integer from 0 to 31, got "${d}".`;
+      return `${i + 1}か月目: 支払基礎日数は0から31の整数で渡してください。渡されたのは「${d}」でした。`;
     out.push({ remuneration, payment_basis_days: days });
   }
   return out;
@@ -1573,9 +1573,9 @@ function parseWorkerType(raw: unknown): WorkerType | null {
 }
 
 const badWorkerType = (c: any, raw: unknown) =>
-  bad(c, `Unknown worker_type: "${String(raw)}"`,
-    `Use one of ${WORKER_TYPES.join(', ')}. The day threshold is 17 except for ` +
-    '短時間労働者 at a 特定適用事業所, where it is 11.');
+  bad(c, `該当する worker_type がありません: 「${String(raw)}」`,
+    `次のいずれかを使ってください: ${WORKER_TYPES.join(', ')}。支払基礎日数の要件は17日です。ただし` +
+    '特定適用事業所の短時間労働者は11日です。');
 
 app.get('/v1/standard-remuneration/revision', (c) => {
   const unknownQ = rejectUnknownQuery(c, ['current_remuneration', 'fixed_pay_change', 'include', 'months', 'revision_month', 'worker_type', 'year'] as const);
@@ -1583,8 +1583,8 @@ app.get('/v1/standard-remuneration/revision', (c) => {
 
   const current = Number(c.req.query('current_remuneration'));
   if (!Number.isFinite(current) || current < 0)
-    return bad(c, '"current_remuneration" is required and must be a non-negative number.',
-      'Pass the 報酬月額 the current grade was based on, not the 標準報酬月額 — the upper and lower exceptions turn on the actual pay.');
+    return bad(c, '「current_remuneration」は必須で、0以上の数で渡してください。',
+      '現在の等級の基礎になった報酬月額を渡してください。標準報酬月額ではありません。上下限の例外は実際の報酬で決まります。');
 
   const months = parseMonths(c.req.query('months'));
   if (typeof months === 'string')
@@ -1595,8 +1595,8 @@ app.get('/v1/standard-remuneration/revision', (c) => {
 
   const changeRaw = (c.req.query('fixed_pay_change') ?? '').toLowerCase();
   if (!['increase', 'decrease', 'none'].includes(changeRaw))
-    return bad(c, '"fixed_pay_change" is required.',
-      'Use "increase", "decrease" or "none". Only fixed pay counts — overtime alone never triggers a revision. See guidance.fixed_pay in the response.');
+    return bad(c, '「fixed_pay_change」は必須です。',
+      '「increase」「decrease」「none」のいずれかです。固定的賃金だけが対象で、残業代だけでは随時改定になりません。応答の guidance.fixed_pay も参照してください。');
 
   return c.json({
     ...judgeRevision({
@@ -1618,8 +1618,8 @@ function parseSubmissionQuery(c: any): { value: any } | { err: any } {
   const yearRaw = c.req.query('year');
   const year = yearRaw === undefined ? new Date().getFullYear() : Number(yearRaw);
   if (!Number.isInteger(year) || year < 2000 || year > 2100)
-    return { err: bad(c, '"year" must be a four-digit year.',
-      'The determination year. Its 1 July is the reference date the article fixes.') };
+    return { err: bad(c, '「year」は4桁の年で渡してください。',
+      '定時決定の対象年です。その年の7月1日が条文の定める基準日になります。') };
 
   const iso = (key: string) => {
     const raw = c.req.query(key);
@@ -1631,11 +1631,11 @@ function parseSubmissionQuery(c: any): { value: any } | { err: any } {
 
   const acquired = iso('acquired_on');
   if (!acquired.ok)
-    return { err: bad(c, '"acquired_on" must be a valid ISO date (YYYY-MM-DD).',
+    return { err: bad(c, '「acquired_on」はYYYY-MM-DD形式の日付で渡してください。',
       '資格取得日。6月1日から7月1日までの取得は定時決定の対象外です (健康保険法第41条)。') };
   const left = iso('left_on');
   if (!left.ok)
-    return { err: bad(c, '"left_on" must be a valid ISO date (YYYY-MM-DD).',
+    return { err: bad(c, '「left_on」はYYYY-MM-DD形式の日付で渡してください。',
       '退職日。基準日である7月1日に使用されていなければ対象外です。') };
 
   // 1〜12を受け取り、7〜9だけを除外事由にする。7〜9以外を拒否すると、6月に改定が
@@ -1643,7 +1643,7 @@ function parseSubmissionQuery(c: any): { value: any } | { err: any } {
   const revRaw = c.req.query('revision_month');
   const revision = revRaw === undefined ? null : Number(revRaw);
   if (revRaw !== undefined && (!Number.isInteger(revision!) || revision! < 1 || revision! > 12))
-    return { err: bad(c, '"revision_month" must be a month number from 1 to 12.',
+    return { err: bad(c, '「revision_month」は1から12の月番号で渡してください。',
       '定時決定を外すのは「七月から九月までのいずれかの月」からの随時改定だけです (健康保険法第41条)。' +
       'それ以外の月の改定は定時決定を妨げないので、渡せば「提出対象」と返します。') };
 
@@ -1659,7 +1659,7 @@ app.get('/v1/standard-remuneration/regular', (c) => {
 
   const months = parseMonths(c.req.query('months'));
   if (typeof months === 'string')
-    return bad(c, months, 'Format: months=350000:30,352000:31,349000:30 for April, May and June.');
+    return bad(c, months, '形式: months=350000:30,352000:31,349000:30 (4月・5月・6月の順)');
 
   const workerType = parseWorkerType(c.req.query('worker_type'));
   if (workerType === null) return badWorkerType(c, c.req.query('worker_type'));
@@ -1667,13 +1667,13 @@ app.get('/v1/standard-remuneration/regular', (c) => {
   const prevRaw = c.req.query('previous_remuneration');
   const previous = prevRaw === undefined ? undefined : Number(prevRaw);
   if (previous !== undefined && (!Number.isFinite(previous) || previous < 0))
-    return bad(c, '"previous_remuneration" must be a non-negative number.',
-      'Needed only so the response can name the grade that carries over when no month qualifies.');
+    return bad(c, '「previous_remuneration」は0以上の数で渡してください。',
+      'どの月も要件を満たさないときに、引き継がれる等級を示すためだけに使います。');
 
   const acquiredRaw = c.req.query('acquired_month');
   const acquired = acquiredRaw === undefined ? undefined : Number(acquiredRaw);
   if (acquired !== undefined && (!Number.isInteger(acquired) || acquired < 1 || acquired > 12))
-    return bad(c, '"acquired_month" must be a month number from 1 to 12.');
+    return bad(c, '「acquired_month」は1から12の月番号で渡してください。');
 
   const sub = parseSubmissionQuery(c);
   if ('err' in sub) return sub.err;
@@ -1712,33 +1712,33 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
   try {
     payload = await c.req.json();
   } catch {
-    return bad(c, 'Request body must be JSON.',
+    return bad(c, 'リクエストボディはJSONで送ってください。',
       'POST {"defaults": {...}, "employees": [{"id": "e1", "months": [{"remuneration": 350000, "payment_basis_days": 30}, ...]}]}');
   }
 
   const rows = payload?.employees;
   if (!Array.isArray(rows))
-    return bad(c, '"employees" must be an array.', 'Each element is one employee to decide.');
-  if (rows.length === 0) return bad(c, '"employees" must not be empty.');
+    return bad(c, '「employees」は配列で渡してください。', '配列の各要素が、決定する従業員1人です。');
+  if (rows.length === 0) return bad(c, '「employees」が空です。');
 
   const { paid } = entitlement(c);
   const cap = paid ? MAX_BATCH : FREE_TIER.batch_rows;
   if (rows.length > cap)
     return bad(c,
       paid
-        ? `A batch is limited to ${MAX_BATCH} employees; got ${rows.length}.`
-        : `The free tier allows ${FREE_TIER.batch_rows} employees per batch; got ${rows.length}.`,
+        ? `1回のバッチは ${MAX_BATCH} 人までです。渡されたのは ${rows.length} 人でした。`
+        : `無料枠では1回のバッチにつき ${FREE_TIER.batch_rows} 人までです。渡されたのは ${rows.length} 人でした。`,
       paid
-        ? 'Split the run into several requests.'
-        : `Batches of up to ${MAX_BATCH} are available through ${UPGRADE.where}. ` +
-          'A 算定基礎届 covers everyone at once, so this is the cap most likely to bind in June.',
+        ? '何回かに分けて実行してください。'
+        : `1回 ${MAX_BATCH} 人までのバッチは ${UPGRADE.where} で利用できます。` +
+          '算定基礎届は全員を一度に対象とするため、6月にいちばん効きやすい上限です。',
       'batch_too_large');
   if (rows.some((r) => typeof r !== 'object' || r === null || Array.isArray(r)))
-    return bad(c, 'Every element of "employees" must be an object.');
+    return bad(c, '「employees」の各要素はオブジェクトで渡してください。');
 
   const defaults = (payload?.defaults ?? {}) as Record<string, unknown>;
   if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults))
-    return bad(c, '"defaults" must be an object.');
+    return bad(c, '「defaults」はオブジェクトで渡してください。');
 
   const results: any[] = [];
   const errors: any[] = [];
@@ -1752,19 +1752,19 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
     const monthsRaw = row.months ?? (defaults as any).months;
     if (!Array.isArray(monthsRaw) || monthsRaw.length !== 3)
       return at('invalid_request',
-        'months must be an array of exactly three entries — April, May and June (健康保険法第41条).');
+        'months は4月・5月・6月のちょうど3件の配列で渡してください(健康保険法第41条)。');
 
     const months: PayMonth[] = [];
     for (const [i, mRaw] of monthsRaw.entries()) {
       if (typeof mRaw !== 'object' || mRaw === null || Array.isArray(mRaw))
-        return at('invalid_request', `months[${i}] must be an object.`);
+        return at('invalid_request', `months[${i}] はオブジェクトで渡してください。`);
       const mo = mRaw as Record<string, unknown>;
       const remuneration = Number(mo.remuneration);
       const days = Number(mo.payment_basis_days);
       if (!Number.isFinite(remuneration) || remuneration < 0)
-        return at('invalid_request', `months[${i}].remuneration must be a non-negative number.`);
+        return at('invalid_request', `months[${i}].remuneration は0以上の数で渡してください。`);
       if (!Number.isInteger(days) || days < 0 || days > 31)
-        return at('invalid_request', `months[${i}].payment_basis_days must be a whole number of days from 0 to 31.`);
+        return at('invalid_request', `months[${i}].payment_basis_days は0から31の整数(日数)で渡してください。`);
       months.push({ remuneration, payment_basis_days: days });
     }
 
@@ -1772,18 +1772,18 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
     const workerType = parseWorkerType(wtRaw === undefined ? undefined : String(wtRaw));
     if (workerType === null)
       return at('unknown_worker_type',
-        `Unknown worker_type: "${String(wtRaw)}". Use one of ${WORKER_TYPES.join(', ')}.`);
+        `該当する worker_type がありません: 「${String(wtRaw)}」 次のいずれかを使ってください: ${WORKER_TYPES.join(', ')}.`);
 
     const prevRaw = row.previous_remuneration ?? (defaults as any).previous_remuneration;
     const previous = prevRaw === undefined || prevRaw === null ? undefined : Number(prevRaw);
     if (previous !== undefined && (!Number.isFinite(previous) || previous < 0))
-      return at('invalid_request', 'previous_remuneration must be a non-negative number.');
+      return at('invalid_request', 'previous_remuneration は0以上の数で渡してください。');
 
     // 6月の作業は「誰を出すか」を選り分けること。等級だけ出しても提出物は決まらない。
     const yearRaw = row.year ?? (defaults as any).year;
     const year = yearRaw === undefined || yearRaw === null ? new Date().getFullYear() : Number(yearRaw);
     if (!Number.isInteger(year) || year < 2000 || year > 2100)
-      return at('invalid_request', 'year must be a four-digit year.');
+      return at('invalid_request', 'year は4桁の年で渡してください。');
 
     const isoOf = (key: string) => {
       const v = (row as any)[key] ?? (defaults as any)[key];
@@ -1793,16 +1793,16 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
       return { ok: true as const, value: str };
     };
     const acquired = isoOf('acquired_on');
-    if (!acquired.ok) return at('invalid_request', 'acquired_on must be a valid ISO date (YYYY-MM-DD).');
+    if (!acquired.ok) return at('invalid_request', 'acquired_on はYYYY-MM-DD形式の日付で渡してください。');
     const leftOn = isoOf('left_on');
-    if (!leftOn.ok) return at('invalid_request', 'left_on must be a valid ISO date (YYYY-MM-DD).');
+    if (!leftOn.ok) return at('invalid_request', 'left_on はYYYY-MM-DD形式の日付で渡してください。');
 
     const revRaw = (row as any).revision_month ?? (defaults as any).revision_month;
     const revision = revRaw === undefined || revRaw === null ? null : Number(revRaw);
     if (revRaw !== undefined && revRaw !== null
         && (!Number.isInteger(revision!) || revision! < 1 || revision! > 12))
       return at('invalid_request',
-        'revision_month must be a month number from 1 to 12. Only a revision from July to September displaces the determination (健康保険法第41条).');
+        'revision_month は1から12の月で渡してください。定時決定を覆すのは7月から9月の随時改定だけです(健康保険法第41条)。');
 
     let decision;
     try {
@@ -1857,16 +1857,16 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
     results,
     errors,
     notes: {
-      partial: 'A row that fails is reported in "errors" and skipped; the rest still run.',
+      partial: '失敗した行は「errors」に入れて飛ばします。残りはそのまま処理します。',
       changed:
-        'changed is null unless previous_remuneration was given — with no grade from last year there is ' +
-        'nothing to compare, and reporting false there would read as "did not move".',
-      months: 'The three entries are April, May and June in that order. A month under 17 payment-basis ' +
-        'days is left out of the average (健康保険法第41条).',
+        'previous_remuneration を渡さなければ changed は null です。前年の等級が無ければ比べる相手が'
+        + '無く、false を返すと「動かなかった」と読めてしまうためです。',
+      months: '3つの要素は4月・5月・6月の順です。支払基礎日数が17日未満の月は' +
+        '平均から除きます(健康保険法第41条)。',
       submission:
-        'submission.required judges 健康保険法第41条 from acquired_on, left_on and revision_month. ' +
-        'Without any of the three it is null — not knowing and not having to file are different answers. ' +
-        'An excluded employee is still graded, so the exclusion can be checked against a figure.',
+        'submission.required は acquired_on・left_on・revision_month から健康保険法第41条を判定します。' +
+        '3つのいずれも渡されなければ null です。分からないことと、出さなくてよいことは別の答えです。' +
+        '適用除外の人にも等級は付けます。除外の判断を数字と突き合わせて確かめられるようにするためです。',
     },
     attribution: REVISION_ATTRIBUTION,
   });
@@ -1878,17 +1878,17 @@ app.get('/v1/standard-remuneration/leave-end', (c) => {
 
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
-    return bad(c, `Unknown kind: "${kindRaw}"`,
+    return bad(c, `該当する kind がありません: 「${kindRaw}」`,
       'Use "maternity" (産前産後休業終了時改定) or "childcare" (育児休業等終了時改定).');
 
   const current = Number(c.req.query('current_remuneration'));
   if (!Number.isFinite(current) || current < 0)
-    return bad(c, '"current_remuneration" is required and must be a non-negative number.');
+    return bad(c, '「current_remuneration」は必須で、0以上の数で渡してください。');
 
   const months = parseMonths(c.req.query('months'));
   if (typeof months === 'string')
     return bad(c, months,
-      'Three months from the one containing the day after the leave ended. Format: months=260000:31,258000:30,262000:31.');
+      '休業終了日の翌日が属する月から3か月です。形式: months=260000:31,258000:30,262000:31.');
 
   const workerType = parseWorkerType(c.req.query('worker_type'));
   if (workerType === null) return badWorkerType(c, c.req.query('worker_type'));
@@ -1911,43 +1911,43 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return bad(c, 'Body must be valid JSON.', 'Send Content-Type: application/json.');
+    return bad(c, '本文が正しいJSONではありません。', 'Send Content-Type: application/json.');
   }
   if (!body || typeof body !== 'object' || Array.isArray(body))
-    return bad(c, 'Body must be a JSON object.');
+    return bad(c, '本文はJSONオブジェクトで渡してください。');
 
   const type = String(body.type ?? '').toLowerCase();
   if (type !== 'regular' && type !== 'revision')
-    return bad(c, '"type" is required.',
-      '"regular" for 定時決定の年間平均 (前年7月〜当年6月), "revision" for 随時改定の年間平均 (変動月前9か月＋以後3か月).');
+    return bad(c, '「type」は必須です。',
+      '定時決定の年間平均(前年7月〜当年6月)は「regular」、随時改定の年間平均(変動月前9か月＋以後3か月)は「revision」です。');
 
   if (!Array.isArray(body.months) || body.months.length !== 12)
-    return bad(c, '"months" must be an array of exactly 12 entries.',
+    return bad(c, '「months」はちょうど12件の配列で渡してください。',
       type === 'regular'
-        ? 'In order from 前年7月 to 当年6月, each {"remuneration": n, "payment_basis_days": n}.'
-        : 'The 9 months before the pay change, then the 3 months after, each {"fixed": n, "non_fixed": n, "payment_basis_days": n}.');
+        ? '前年7月から当年6月までの順に、各要素は {"remuneration": n, "payment_basis_days": n} です。'
+        : '賃金の変動前9か月と変動後3か月です。各要素は {"fixed": n, "non_fixed": n, "payment_basis_days": n}.');
 
   const months: AnnualMonth[] = [];
   for (const [i, m] of body.months.entries()) {
     if (!m || typeof m !== 'object')
-      return bad(c, `months[${i}] must be an object.`);
+      return bad(c, `months[${i}] はオブジェクトで渡してください。`);
     const days = Number(m.payment_basis_days);
     if (!Number.isInteger(days) || days < 0 || days > 31)
-      return bad(c, `months[${i}].payment_basis_days must be an integer from 0 to 31.`);
+      return bad(c, `months[${i}].payment_basis_days は0から31の整数で渡してください。`);
     if (type === 'regular') {
       const r = Number(m.remuneration);
       if (!Number.isFinite(r) || r < 0)
-        return bad(c, `months[${i}].remuneration must be a non-negative number.`);
+        return bad(c, `months[${i}].remuneration は0以上の数で渡してください。`);
       months.push({ month: m.month, remuneration: r, payment_basis_days: days });
     } else {
       const fixed = Number(m.fixed);
       const nonFixed = Number(m.non_fixed);
       if (!Number.isFinite(fixed) || fixed < 0)
-        return bad(c, `months[${i}].fixed must be a non-negative number.`,
-          'Fixed pay is base salary and fixed allowances; the annual figure averages it over the 3 months after the change only.');
+        return bad(c, `months[${i}].fixed は0以上の数で渡してください。`,
+          '固定的賃金は基本給と固定手当です。年間平均では変動後の3か月だけで平均します。');
       if (!Number.isFinite(nonFixed) || nonFixed < 0)
-        return bad(c, `months[${i}].non_fixed must be a non-negative number.`,
-          'Non-fixed pay is overtime and the like; it is averaged over all 12 months.');
+        return bad(c, `months[${i}].non_fixed は0以上の数で渡してください。`,
+          '非固定的賃金は残業代などです。12か月すべてで平均します。');
       months.push({ month: m.month, fixed, non_fixed: nonFixed, payment_basis_days: days });
     }
   }
@@ -1972,11 +1972,11 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
 
   const current = Number(body.current_remuneration);
   if (!Number.isFinite(current) || current < 0)
-    return bad(c, '"current_remuneration" is required for type "revision".');
+    return bad(c, 'type が「revision」のときは「current_remuneration」が必要です。');
   const change = String(body.fixed_pay_change ?? '').toLowerCase();
   if (change !== 'increase' && change !== 'decrease')
-    return bad(c, '"fixed_pay_change" must be "increase" or "decrease" for type "revision".',
-      'The annual-average route exists only where fixed pay actually changed; "none" can never qualify.');
+    return bad(c, 'type が「revision」のとき、「fixed_pay_change」は「increase」か「decrease」でなければなりません。',
+      '年間平均は固定的賃金が実際に変わった場合にだけ使えます。「none」では該当しません。');
 
   return c.json({
     run_id: await runId(body),
@@ -2033,13 +2033,13 @@ app.get('/v1/national-insurance', (c) => {
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date().toISOString().slice(0, 10) : asOfRaw;
   if (asOfRaw !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) || !parseDate(asOfRaw)))
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
 
   // 保険料は毎年度4月に変わる。収録している年度の外を、その年度の額で答えない。
   // 最低賃金と同じ形の防壁で、データが追いつけば自動的に外れる。
   if (asOf < NATIONAL_PENSION.from || asOf > NATIONAL_PENSION.through)
     return c.json({
-      error: `The national pension contribution for ${asOf} is not carried here.`,
+      error: `${asOf} 時点の国民年金保険料は収録していません。`,
       code: 'out_of_coverage',
       coverage: { from: NATIONAL_PENSION.from, through: NATIONAL_PENSION.through,
                   fiscal_year: NATIONAL_PENSION.fiscal_year },
@@ -2054,11 +2054,11 @@ app.get('/v1/national-insurance', (c) => {
   const monthsRaw = c.req.query('months');
   const months = monthsRaw === undefined ? 1 : Number(monthsRaw);
   if (monthsRaw !== undefined && (!Number.isInteger(months) || months < 1 || months > 480))
-    return bad(c, '"months" must be a whole number of months from 1 to 480.');
+    return bad(c, '「months」は1から480までの整数(月数)で渡してください。');
 
   const suppRaw = c.req.query('supplementary');
   if (suppRaw !== undefined && suppRaw !== 'true' && suppRaw !== 'false')
-    return bad(c, '"supplementary" must be true or false.',
+    return bad(c, '「supplementary」は true か false で渡してください。',
       '付加保険料。任意で月400円を納めると老齢基礎年金が増えます (国民年金法第87条の2)。');
   const supplementary = suppRaw === 'true';
 
@@ -2108,58 +2108,58 @@ app.get('/v1/annual-cost', (c) => {
   const salaryRaw = c.req.query('monthly_salary');
   const salary = salaryRaw === undefined ? NaN : Number(salaryRaw);
   if (salaryRaw === undefined || !Number.isFinite(salary) || salary < 0)
-    return bad(c, '"monthly_salary" is required and must be a non-negative number.');
+    return bad(c, '「monthly_salary」は必須で、0以上の数で渡してください。');
 
   const ageRaw = c.req.query('age');
   const age = ageRaw === undefined ? null : Number(ageRaw);
   if (ageRaw !== undefined && (!Number.isFinite(age!) || age! < 0 || age! > 120))
-    return bad(c, '"age" must be a number between 0 and 120.');
+    return bad(c, '「age」は0から120の数で渡してください。');
   const birthRaw = c.req.query('birth_date');
   const birth = birthRaw === undefined ? null : parseDate(birthRaw);
   if (birthRaw !== undefined && !birth)
-    return bad(c, '"birth_date" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「birth_date」はYYYY-MM-DD形式の日付で渡してください。');
   if (ageRaw === undefined && birthRaw === undefined)
-    return bad(c, 'Either "age" or "birth_date" is required.',
-      '介護保険法第9条 makes age the test for whether long-term care is charged at all, so an annual figure without it would be understated for anyone between 40 and 64.',
+    return bad(c, '「age」か「birth_date」のどちらかが必要です。',
+      '介護保険法第9条は年齢そのものを、介護保険料がかかるかどうかの基準にしています。年齢が無ければ、40歳以上65歳未満の人について年額が過小になります。',
       'missing_parameter');
 
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
   const outside = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
   if (outside) return outside;
 
   const btKey = String(c.req.query('business_type') ?? 'general').toLowerCase();
   if (!(empins.business_types as any)[btKey])
-    return bad(c, `Unknown business_type: "${btKey}"`);
+    return bad(c, `該当する business_type がありません: 「${btKey}」`);
 
   const colRaw = String(c.req.query('column') ?? 'kou').toLowerCase();
   if (colRaw !== 'kou' && colRaw !== 'otsu')
-    return bad(c, `Unknown column: "${colRaw}". Use "kou" or "otsu".`);
+    return bad(c, `該当する column がありません: 「${colRaw}」。「kou」か「otsu」を使ってください。`);
 
   const depRaw = c.req.query('dependants');
   const dependants = depRaw === undefined ? 0 : Number(depRaw);
   if (depRaw !== undefined && (!Number.isInteger(dependants) || dependants < 0))
-    return bad(c, '"dependants" must be a whole number of 0 or more.');
+    return bad(c, '「dependants」は0以上の整数で渡してください。');
 
   const residentRaw = c.req.query('resident_tax');
   const residentTax = residentRaw === undefined ? 0 : Number(residentRaw);
   if (residentRaw !== undefined && (!Number.isFinite(residentTax) || residentTax < 0))
-    return bad(c, '"resident_tax" must be a non-negative number.');
+    return bad(c, '「resident_tax」は0以上の数で渡してください。');
 
   const smrRaw = c.req.query('standard_remuneration');
   const smr = smrRaw === undefined ? null : Number(smrRaw);
   if (smrRaw !== undefined && (!Number.isFinite(smr!) || smr! < 0))
-    return bad(c, '"standard_remuneration" must be a non-negative number.');
+    return bad(c, '「standard_remuneration」は0以上の数で渡してください。');
 
   const empRaw = String(c.req.query('employment_type') ?? 'employee');
   if (empRaw !== 'employee' && empRaw !== 'director' && empRaw !== 'director_employee')
-    return bad(c, `Unknown employment_type: "${empRaw}".`);
+    return bad(c, `該当する employment_type がありません: 「${empRaw}」`);
 
   const wcRaw = c.req.query('workers_comp_type');
   if (wcRaw !== undefined && !workersCompType(wcRaw))
-    return bad(c, `Unknown workers_comp_type: "${wcRaw}"`);
+    return bad(c, `該当する workers_comp_type がありません: 「${wcRaw}」`);
 
   const bonusRaw = c.req.query('bonuses');
   const bonuses: number[] = [];
@@ -2167,8 +2167,8 @@ app.get('/v1/annual-cost', (c) => {
     for (const part of bonusRaw.split(',')) {
       const v = Number(part.trim());
       if (!Number.isFinite(v) || v < 0)
-        return bad(c, `"bonuses" must be a comma-separated list of non-negative numbers; got "${part.trim()}".`,
-          'They are applied in the order given, because the health cap is cumulative over the year.');
+        return bad(c, `「bonuses」は0以上の数をカンマ区切りで渡してください。渡されたのは「${part.trim()}」でした。`,
+          '渡された順に処理します。健康保険の上限が年度累計のためです。');
       bonuses.push(v);
     }
   }
@@ -2178,7 +2178,7 @@ app.get('/v1/annual-cost', (c) => {
     ? (asOf!.getUTCMonth() >= 3 ? asOf!.getUTCFullYear() : asOf!.getUTCFullYear() - 1)
     : Number(fyRaw);
   if (fyRaw !== undefined && (!Number.isInteger(fiscalYear) || fiscalYear < 2000 || fiscalYear > 2100))
-    return bad(c, '"fiscal_year" must be a four-digit year. The year runs 1 April to 31 March.');
+    return bad(c, '「fiscal_year」は4桁の年で渡してください。年度は4月1日から翌年3月31日までです。');
 
   const slip = computePayslip({
     prefecture: r.pref, monthly_salary: salary, age, birth_date: birth, as_of: asOf!,
@@ -2289,17 +2289,17 @@ app.get('/v1/annual-leave', (c) => {
   const hiredRaw = c.req.query('hired_on');
   const hired = hiredRaw === undefined ? null : parseDate(hiredRaw);
   if (hiredRaw === undefined)
-    return bad(c, '"hired_on" is required.',
+    return bad(c, '「hired_on」は必須です。',
       '雇入れの日。付与日は雇入れから6か月後で、以降1年ごとです (労働基準法第39条第1項)。',
       'missing_parameter');
-  if (!hired) return bad(c, '"hired_on" must be a valid ISO date (YYYY-MM-DD).');
+  if (!hired) return bad(c, '「hired_on」はYYYY-MM-DD形式の日付で渡してください。');
 
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
   if (asOf! < hired)
-    return bad(c, '"as_of" is before "hired_on".',
+    return bad(c, '「as_of」が「hired_on」より前です。',
       '判定日が雇入れの日より前です。');
 
   const num = (key: string, max?: number) => {
@@ -2318,7 +2318,7 @@ app.get('/v1/annual-leave', (c) => {
     ['annual_days', annualDays], ['days_taken', taken],
   ] as const)
     if (f.bad)
-      return bad(c, `"${key}" is out of range.`,
+      return bad(c, `「${key}」が範囲外です。`,
         key === 'attendance_rate'
           ? '出勤率は0から1で渡してください。八割以上で付与が生じます (労働基準法第39条第1項)。'
           : undefined);
@@ -2381,7 +2381,7 @@ app.get('/v1/worker-type', (c) => {
 
   const weekly = num('weekly_hours');
   if (!weekly.given)
-    return bad(c, '"weekly_hours" is required.',
+    return bad(c, '「weekly_hours」は必須です。',
       '1週間の所定労働時間。四分の三基準(健康保険法第3条第1項第9号本文)も20時間の要件も、まずこれで決まります。',
       'missing_parameter');
 
@@ -2399,12 +2399,13 @@ app.get('/v1/worker-type', (c) => {
     ['employment_months', months],
   ] as const)
     if (f.bad)
-      return bad(c, `"${key}" must be a non-negative number` +
-        (key.startsWith('normal_') ? ' greater than zero.' : '.'));
+      return bad(c, key.startsWith('normal_')
+        ? `「${key}」は0より大きい数で渡してください。`
+        : `「${key}」は0以上の数で渡してください。`);
 
   const studentRaw = c.req.query('is_student');
   if (studentRaw !== undefined && studentRaw !== 'true' && studentRaw !== 'false')
-    return bad(c, '"is_student" must be true or false.');
+    return bad(c, '「is_student」は true か false で渡してください。');
 
   const decision = judgeWorkerType({
     weekly_hours: weekly.value!,
@@ -2456,21 +2457,21 @@ app.get('/v1/eligibility', (c) => {
     ? parseDate(/^\d{4}-\d{2}$/.test(monthRaw) ? `${monthRaw}-01` : monthRaw)
     : new Date();
   if (!month)
-    return bad(c, '"month" must be YYYY-MM or a full ISO date.');
+    return bad(c, '「month」はYYYY-MM、または日付まで含めた形で渡してください。');
 
   const joinedRaw = c.req.query('joined_on');
   const joined = joinedRaw === undefined ? null : parseDate(joinedRaw);
   if (joinedRaw !== undefined && !joined)
-    return bad(c, '"joined_on" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「joined_on」はYYYY-MM-DD形式の日付で渡してください。');
 
   const leftRaw = c.req.query('left_on');
   const left = leftRaw === undefined ? null : parseDate(leftRaw);
   if (leftRaw !== undefined && !left)
-    return bad(c, '"left_on" must be a valid ISO date (YYYY-MM-DD).',
-      'This is the last day worked, not the day eligibility ends.');
+    return bad(c, '「left_on」はYYYY-MM-DD形式の日付で渡してください。',
+      'これは最後に勤務した日です。資格を喪失する日ではありません。');
 
   if (joined && left && left.getTime() < joined.getTime())
-    return bad(c, '"left_on" must not be before "joined_on".');
+    return bad(c, '「left_on」は「joined_on」より前にできません。');
 
   return c.json({
     ...eligibilityFor({ month, joined, left }),
@@ -2500,15 +2501,15 @@ app.get('/v1/overtime-pay', (c) => {
 
   const base = num('base_monthly_pay', true);
   if (!Number.isFinite(base) || base <= 0)
-    return bad(c, '"base_monthly_pay" is required and must be a positive number.',
-      'The part of monthly pay that counts toward the premium base. 労働基準法施行規則第21条 lists ' +
-      'the seven allowances that may be excluded, and only those — see excludable_allowances in the response.');
+    return bad(c, '「base_monthly_pay」は必須で、正の数で渡してください。',
+      '月給のうち割増賃金の算定基礎に入る部分です。労働基準法施行規則第21条が除外できる7種類を'
+      + '限定列挙しており、それ以外は除外できません。レスポンスの excludable_allowances を見てください。');
 
   const scheduled = num('monthly_scheduled_hours', true);
   if (!Number.isFinite(scheduled) || scheduled <= 0)
-    return bad(c, '"monthly_scheduled_hours" is required and must be a positive number.',
-      'Average scheduled hours per month: annual working days × daily hours ÷ 12. ' +
-      'It varies by employer, so it cannot be assumed.');
+    return bad(c, '「monthly_scheduled_hours」は必須で、正の数で渡してください。',
+      '月平均所定労働時間です。年間所定労働日数 × 1日の所定労働時間 ÷ 12 で求めます。 ' +
+      '事業所ごとに異なるため、既定値を置けません。');
 
   const hours = {
     overtime_hours: num('overtime_hours'),
@@ -2517,15 +2518,15 @@ app.get('/v1/overtime-pay', (c) => {
     holiday_night_hours: num('holiday_night_hours'),
   };
   for (const [k, v] of Object.entries(hours))
-    if (!Number.isFinite(v)) return bad(c, `"${k}" must be a non-negative number of hours.`);
+    if (!Number.isFinite(v)) return bad(c, `「${k}」は0以上の時間数で渡してください。`);
 
   if (hours.night_hours > hours.overtime_hours + hours.holiday_hours + 744)
-    return bad(c, '"night_hours" exceeds any plausible total.',
-      'Night hours are hours that also fall between 22:00 and 05:00, not a separate block of work.');
+    return bad(c, '「night_hours」が現実的な範囲を超えています。',
+      '深夜時間数は、22時から5時に重なる時間のことです。別枠の労働ではありません。');
 
   const roundRaw = c.req.query('round');
   if (roundRaw !== undefined && !['true', 'false'].includes(roundRaw))
-    return bad(c, '"round" must be "true" or "false".');
+    return bad(c, '「round」は「true」か「false」で渡してください。');
 
   return c.json({
     ...overtimePay({
@@ -2571,7 +2572,7 @@ app.get('/v1/commuting-allowance', (c) => {
   const parking = num('parking');
 
   for (const [key, f] of [['amount', amount], ['distance_km', km], ['fare', fare], ['parking', parking]] as const)
-    if (f.bad) return bad(c, `"${key}" must be a non-negative number.`);
+    if (f.bad) return bad(c, `「${key}」は0以上の数で渡してください。`);
 
   const reference = {
     transit: {
@@ -2613,15 +2614,15 @@ app.get('/v1/commuting-allowance', (c) => {
 
   if (amount.raw === undefined) {
     if (km.raw !== undefined || fare.raw !== undefined || parking.raw !== undefined)
-      return bad(c, 'distance_km, fare and parking only mean something alongside amount.',
-        'Pass amount= the commuting allowance you actually pay, and the rest decides how much of it is non-taxable. With no parameters at all you get the whole table.',
+      return bad(c, 'distance_km・fare・parking は amount と一緒でなければ意味を持ちません。',
+        'amount= に実際に支払っている通勤手当を渡してください。残りのパラメータが、そのうち非課税になる額を決めます。何も渡さなければ表全体を返します。',
         'missing_parameter');
     return c.json({ reference, revisions, attribution: COMMUTING_SOURCE });
   }
 
   if (parking.raw !== undefined && km.raw === undefined)
-    return bad(c, 'parking is an addition to the distance band, so it needs distance_km.',
-      'The parking addition exists only for a commute by car or bicycle. Someone travelling only by train has no distance band for it to be added to.',
+    return bad(c, 'parking は距離区分の額への加算なので、distance_km が必要です。',
+      '駐車場代の加算は交通用具通勤の制度です。交通機関だけで通う人には、加算する距離区分がありません。',
       'missing_parameter');
 
   const split = commutingExemption({
@@ -2660,56 +2661,56 @@ app.get('/v1/bonus-insurance', (c) => {
   const bonusRaw = c.req.query('bonus');
   const bonus = Number(bonusRaw);
   if (!bonusRaw || !Number.isFinite(bonus) || bonus < 0)
-    return bad(c, 'Query parameter "bonus" is required and must be a non-negative number (yen).');
+    return bad(c, 'クエリパラメータ「bonus」は必須で、0以上の数(円)で渡してください。');
 
   const ytdRaw = c.req.query('fiscal_year_to_date') ?? '0';
   const ytd = Number(ytdRaw);
   if (!Number.isFinite(ytd) || ytd < 0)
-    return bad(c, '"fiscal_year_to_date" must be a non-negative number.',
-      'The 標準賞与額 already counted since 1 April; needed to apply the annual health cap.');
+    return bad(c, '「fiscal_year_to_date」は0以上の数で渡してください。',
+      '4月1日以降に既に計上した標準賞与額です。健康保険の年度上限を当てはめるために必要です。');
 
   const ageRaw = c.req.query('age');
   const age = ageRaw === undefined ? null : Number(ageRaw);
   if (ageRaw !== undefined && (!Number.isFinite(age!) || age! < 0 || age! > 120))
-    return bad(c, '"age" must be a number between 0 and 120.');
+    return bad(c, '「age」は0から120の数で渡してください。');
 
   const birthRaw = c.req.query('birth_date');
   const birth = birthRaw === undefined ? null : parseDate(birthRaw);
   if (birthRaw !== undefined && !birth)
-    return bad(c, '"birth_date" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「birth_date」はYYYY-MM-DD形式の日付で渡してください。');
 
   // 賞与にも同じ法理が働く。月次だけ直して賞与を残すと、片方だけ正しい状態になる。
   if (ageRaw === undefined && birthRaw === undefined)
-    return bad(c, 'Either "age" or "birth_date" is required.', '介護保険法第9条 makes age the test itself: a 第2号被保険者 is someone 40 or over and under 65. Without it this endpoint would have to assume "under 40", which silently under-collects — 2,430 yen a month on a 300,000 yen salary in Tokyo. Pass age, or birth_date to have the 40, 65, 70 and 75 milestones applied to the exact day.',
+    return bad(c, '「age」か「birth_date」のどちらかが必要です。', '介護保険法第9条は年齢そのものを基準にしています。第2号被保険者は40歳以上65歳未満です。年齢が無ければこのエンドポイントは「40歳未満」と仮定するほかなく、黙って徴収不足になります。東京で月給30万円なら月2,430円です。age を渡すか、birth_date を渡して40歳・65歳・70歳・75歳の到達日を正確に当てはめてください。',
       'missing_parameter');
 
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
 
   // 資格喪失月の賞与、および休業中の賞与には保険料がかからない。以前はこれらを
   // 受け取っておらず、退職日を渡しても無視して満額を返していた。
   const paidRaw = c.req.query('paid_on');
   const paidOn = paidRaw === undefined ? null : parseDate(paidRaw);
   if (paidRaw !== undefined && !paidOn)
-    return bad(c, '"paid_on" must be a valid ISO date (YYYY-MM-DD).',
-      'The date the bonus was paid. Needed to tell whether it falls in the month eligibility was lost.');
+    return bad(c, '「paid_on」はYYYY-MM-DD形式の日付で渡してください。',
+      '賞与を支払った日です。資格喪失月に当たるかどうかの判定に使います。');
 
   const leftRaw = c.req.query('left_on');
   const leftOn = leftRaw === undefined ? null : parseDate(leftRaw);
   if (leftRaw !== undefined && !leftOn)
-    return bad(c, '"left_on" must be a valid ISO date (YYYY-MM-DD).',
-      'The last day worked. Eligibility is lost the day after, so 30 and 31 March give opposite answers.');
+    return bad(c, '「left_on」はYYYY-MM-DD形式の日付で渡してください。',
+      '最後に勤務した日です。資格喪失はその翌日なので、3月30日と3月31日では結論が逆になります。');
   if (leftOn && !paidOn)
-    return bad(c, '"left_on" needs "paid_on" as well.',
-      'Whether the bonus is exempt depends on which month it was paid in, not only on when employment ended.');
+    return bad(c, '「left_on」には「paid_on」も必要です。',
+      '賞与が免除されるかは、支払われた月がどこかで決まります。退職時期だけでは決まりません。');
 
   const leaveRaw = c.req.query('leave_exempt');
   if (leaveRaw !== undefined && !['true', 'false'].includes(leaveRaw))
-    return bad(c, '"leave_exempt" must be "true" or "false".',
-      'True when the bonus falls inside a 産前産後休業 or a 育児休業 exceeding one month. ' +
-      'GET /v1/leave-exemption decides this from the leave dates.');
+    return bad(c, '「leave_exempt」は「true」か「false」で渡してください。',
+      '賞与が産前産後休業中、または1か月を超える育児休業中に当たるとき true です。' +
+      'これは GET /v1/leave-exemption が休業日から判定します。');
 
   const pref = insurance.prefectures[r.pref];
   return c.json({
@@ -2720,9 +2721,9 @@ app.get('/v1/bonus-insurance', (c) => {
       paid_on: paidOn, left_on: leftOn, leave_exempt: leaveRaw === 'true',
     }),
     notes: {
-      base: '標準賞与額 is the bonus truncated to the thousand yen.',
-      annual_cap: 'The health-side cap is cumulative across the fiscal year, so pass fiscal_year_to_date or it cannot be applied.',
-      withholding: 'Income tax on a bonus is a separate calculation — see /v1/bonus-tax.',
+      base: '標準賞与額は賞与の千円未満を切り捨てた額です。',
+      annual_cap: '健康保険側の上限は年度累計なので、fiscal_year_to_date を渡さないと当てはめられません。',
+      withholding: '賞与の所得税は別の計算です。/v1/bonus-tax を参照してください。',
     },
     attribution: BONUS_INSURANCE_ATTRIBUTION,
   });
@@ -2734,11 +2735,11 @@ app.get('/v1/age-milestones', (c) => {
 
   const birth = parseDate(c.req.query('birth_date'));
   if (!birth)
-    return bad(c, 'Query parameter "birth_date" is required and must be an ISO date (YYYY-MM-DD).');
+    return bad(c, 'クエリパラメータ「birth_date」は必須で、YYYY-MM-DD形式の日付で渡してください。');
   const asOfRaw = c.req.query('as_of');
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
-    return bad(c, '"as_of" must be a valid ISO date (YYYY-MM-DD).');
+    return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
 
   return c.json({
     ...ageStatus(birth, asOf!),
@@ -2774,16 +2775,16 @@ app.get('/v1/bonus-tax', (c) => {
 
   const bonus = n('bonus');
   if (bonus === undefined || Number.isNaN(bonus) || bonus < 0)
-    return bad(c, 'Query parameter "bonus" is required and must be a non-negative number (yen).');
+    return bad(c, 'クエリパラメータ「bonus」は必須で、0以上の数(円)で渡してください。');
 
   const prev = n('previous_month_pay');
   if (prev === undefined || Number.isNaN(prev) || prev < 0)
-    return bad(c, 'Query parameter "previous_month_pay" is required and must be a non-negative number.',
-      'The rate is looked up from LAST month’s pay, not from the bonus.');
+    return bad(c, 'クエリパラメータ「previous_month_pay」は必須で、0以上の数で渡してください。',
+      '税率は前月の給与から引きます。賞与の額からではありません。');
 
   const prevIns = n('previous_month_insurance') ?? 0;
   if (Number.isNaN(prevIns) || prevIns < 0)
-    return bad(c, '"previous_month_insurance" must be a non-negative number.');
+    return bad(c, '「previous_month_insurance」は0以上の数で渡してください。');
   // 賞与の源泉税は「賞与から社会保険料を控除した額」に率を乗じる。既定を0にすると
   // 課税標準が膨らんで税額が過大になる。独立した批評で、賞与50万・東京・40歳の例で
   // 3,063円の差が実測された。しかもこのパラメータはOpenAPIに載っていなかったので、
@@ -2793,22 +2794,22 @@ app.get('/v1/bonus-tax', (c) => {
   // 渡し忘れた人に間違った額を返し続けることを意味する。
   const bonusInsRaw = c.req.query('bonus_insurance');
   if (bonusInsRaw === undefined)
-    return bad(c, '"bonus_insurance" is required.',
-      'Withholding on a bonus is charged on the bonus *after* its own social insurance ' +
-      '(所得税法第186条第2項). Defaulting it to zero inflates the tax — around 3,000 yen on a ' +
-      '500,000 yen bonus. GET /v1/bonus-insurance computes the figure; pass 0 only if the ' +
-      'employee genuinely pays no social insurance on it.');
+    return bad(c, '「bonus_insurance」は必須です。',
+      '賞与の源泉徴収は、その賞与の社会保険料を控除した後の額にかかります' +
+      '(所得税法第186条第2項)。0を既定にすると税額が過大になります。50万円の賞与でおよそ3,000円です。'
+      + 'GET /v1/bonus-insurance がその額を計算します。0を渡してよいのは、その賞与に社会保険料が'
+      + '実際にかからない場合だけです。');
   const bonusIns = n('bonus_insurance') ?? 0;
   if (Number.isNaN(bonusIns) || bonusIns < 0)
-    return bad(c, '"bonus_insurance" must be a non-negative number.');
+    return bad(c, '「bonus_insurance」は0以上の数で渡してください。');
 
   const colRaw = (c.req.query('column') ?? 'kou').toLowerCase();
   if (colRaw !== 'kou' && colRaw !== 'otsu')
-    return bad(c, `Unknown column: "${colRaw}"`, 'Use "kou" or "otsu".');
+    return bad(c, `該当する column がありません: 「${colRaw}」`, '「kou」か「otsu」を使ってください。');
 
   const dependants = Number(c.req.query('dependants') ?? '0');
   if (!Number.isInteger(dependants) || dependants < 0 || dependants > 50)
-    return bad(c, '"dependants" must be an integer between 0 and 50.');
+    return bad(c, '「dependants」は0から50の整数で渡してください。');
 
   const r = bonusWithholding({
     previousMonthPay: prev, previousMonthInsurance: prevIns,
@@ -2825,9 +2826,9 @@ app.get('/v1/bonus-tax', (c) => {
     ...r,
     exceptions: BONUS_EXCEPTIONS,
     notes: {
-      procedure: 'Rate from last month’s pay after social insurance; applied to this bonus after its own social insurance.',
-      rounding: 'Tax is truncated to the yen.',
-      not_the_monthly_table: 'Bonuses do not use 月額表. Using it here would be wrong.',
+      procedure: '税率は前月の社会保険料控除後の給与から決まります。それをこの賞与の社会保険料控除後の額に掛けます。',
+      rounding: '税額は円未満を切り捨てます。',
+      not_the_monthly_table: '賞与に月額表は使いません。ここで使えば誤りになります。',
     },
     attribution: BONUS_ATTRIBUTION,
   });
@@ -2843,13 +2844,13 @@ app.get('/v1/enums', (c) => {
       value: k, label_ja: v.label_ja,
     })),
     column: [
-      { value: 'kou', label_ja: '甲欄', description: 'A 扶養控除等申告書 was filed.' },
-      { value: 'otsu', label_ja: '乙欄', description: 'No 扶養控除等申告書 was filed.' },
+      { value: 'kou', label_ja: '甲欄', description: '扶養控除等申告書が提出されています。' },
+      { value: 'otsu', label_ja: '乙欄', description: '扶養控除等申告書が提出されていません。' },
     ],
     // The daily table has a third column the monthly table does not.
     daily_column: [
-      { value: 'kou', label_ja: '甲欄', description: 'A 扶養控除等申告書 was filed.' },
-      { value: 'otsu', label_ja: '乙欄', description: 'No 扶養控除等申告書 was filed.' },
+      { value: 'kou', label_ja: '甲欄', description: '扶養控除等申告書が提出されています。' },
+      { value: 'otsu', label_ja: '乙欄', description: '扶養控除等申告書が提出されていません。' },
       { value: 'hei', label_ja: '丙欄', description: '日々雇い入れられる人。扶養親族等の控除はありません。' },
     ],
     worker_type: [
@@ -2861,13 +2862,13 @@ app.get('/v1/enums', (c) => {
       },
       {
         value: 'short_time_insured', label_ja: '特定適用事業所の短時間労働者', payment_basis_days: 11,
-        description: '健康保険法施行規則第24条の2. The 11-day threshold reaches 定時決定, 随時改定 and both leave-end revisions.',
+        description: '健康保険法施行規則第24条の2。11日の要件は定時決定・随時改定・休業終了時改定のいずれにも及びます。',
       },
     ],
     fixed_pay_change: [
       { value: 'increase', label_ja: '昇給', description: '固定的賃金が上がった。' },
       { value: 'decrease', label_ja: '降給', description: '固定的賃金が下がった。' },
-      { value: 'none', label_ja: '変動なし', description: 'Only non-fixed pay moved. Never triggers a 随時改定.' },
+      { value: 'none', label_ja: '変動なし', description: '非固定的賃金だけが動いた場合です。随時改定にはなりません。' },
     ],
     leave_kind: [
       { value: 'maternity', label_ja: '産前産後休業' },
@@ -2902,7 +2903,7 @@ app.get('/v1/enums', (c) => {
       { value: 'not_found', description: 'そのエンドポイントはありません。' },
       { value: 'internal_error', description: '想定していない失敗です。' },
     ],
-    prefectures: 'See GET /v1/prefectures for all 47.',
+    prefectures: '47件すべては GET /v1/prefectures を見てください。',
   }));
 });
 app.get('/v1/data-freshness', (c) => {

@@ -68,7 +68,7 @@ export function fromBaseNumber(input: string):
   if (!DIGITS.test(cleaned))
     return { ok: false, reason: '基礎番号は数字だけです(ハイフンと空白は無視します)。' };
   if (cleaned.length !== 12)
-    return { ok: false, reason: `A base number (会社法人等番号) is 12 digits; got ${cleaned.length}.` };
+    return { ok: false, reason: `基礎番号(会社法人等番号)は12桁です。渡されたのは ${cleaned.length} 桁でした。` };
   const cd = checkDigitFor(cleaned);
   return { ok: true, corporate_number: `${cd}${cleaned}`, base_number: cleaned, check_digit: cd };
 }
@@ -111,7 +111,7 @@ export type InvoiceNumberResult = {
 };
 
 const EMPIRICAL_NOTE =
-  'The NTA publishes no check-digit rule for sole proprietors and unincorporated associations. It was confirmed empirically: all 614,413 non-corporate registrations in the official bulk dataset satisfy the corporate check digit, with no counterexamples.';
+  '国税庁は個人事業者と人格のない社団等についてチェックディジットの規則を公表していません。実測で確かめました。公式の一括データに含まれる非法人の登録 614,413 件すべてが法人のチェックディジットを満たし、反例はありませんでした。';
 
 export function validateInvoiceNumber(input: string): InvoiceNumberResult {
   const cleaned = input.replace(/[-\s　]/g, '').toUpperCase();
@@ -146,8 +146,8 @@ export function validateInvoiceNumber(input: string): InvoiceNumberResult {
     expected_check_digit: expected,
     could_be_corporate_number: cdValid,
     reason: cdValid
-      ? `Well-formed. The holder may be a corporation — in which case the digits are its 法人番号 — or a sole proprietor or unincorporated association, whose numbers satisfy the same check digit. Telling them apart requires the NTA register. ${EMPIRICAL_NOTE}`
-      : `Check digit ${given} does not match the expected ${expected}, so this is almost certainly a typo. ${EMPIRICAL_NOTE}`,
+      ? `形式としては正しい番号です。保有者は法人(その場合この数字が法人番号です)のこともあれば、個人事業者や人格のない社団等のこともあります。それらの番号も同じチェックディジットを満たすため、区別には国税庁の登録簿が要ります。${EMPIRICAL_NOTE}`
+      : `チェックディジットが ${given} で、期待される ${expected} と一致しません。入力間違いの可能性が高いです。 ${EMPIRICAL_NOTE}`,
   };
 }
 

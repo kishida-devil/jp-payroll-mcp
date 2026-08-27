@@ -119,7 +119,7 @@ export function bonusInsurance(input: BonusInsuranceInput) {
       health_annual_used_before: input.fiscal_year_to_date,
       health_annual_remaining_after: Math.max(0, headroom - healthBase),
       pension_per_payment: PENSION_PER_PAYMENT_CAP,
-      fiscal_year: '1 April to 31 March',
+      fiscal_year: '4月1日から翌年3月31日まで',
     },
     coverage: { health_insurance: healthApplies, long_term_care: ltc, pension: pensionApplies },
     deductions: {

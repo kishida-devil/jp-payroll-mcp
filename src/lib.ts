@@ -200,7 +200,7 @@ export const ATTRIBUTION = {
     effective_from: insurance.meta.effective_from,
     fiscal_year: insurance.meta.fiscal_year,
     licence:
-      '全国健康保険協会 permits reproduction with attribution but prohibits modification without consent, and does not apply PDL1.0. Republished here as numerical rate data, which falls outside copyright protection.',
+      '全国健康保険協会は出典を示した転載を認めていますが、承諾のない改変を禁じており、PDL1.0は適用していません。ここでは数値の料率データとして再掲しています。数値データは著作権の保護対象外です。',
     attribution_ja: '出典：全国健康保険協会（協会けんぽ）保険料額表',
   },
   minimum_wage: {
@@ -218,5 +218,5 @@ export const ATTRIBUTION = {
     attribution_ja: '出典：厚生労働省ホームページを加工して作成',
   },
   disclaimer:
-    'Derived from Japanese government sources. Not endorsed by, affiliated with, or guaranteed by any government agency. Figures were reshaped from the official files; verify against the source before relying on them for statutory filings.',
+    '日本の政府公表資料から作成しています。政府機関の承認・関与・保証を受けたものではありません。数値は公式ファイルから組み直しているため、法定の届出に用いる前に出典と照合してください。',
 };

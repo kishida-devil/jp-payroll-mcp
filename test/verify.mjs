@@ -2,7 +2,7 @@
 // 協会けんぽ 令和8年度保険料額表 workbook, plus boundary and rule checks.
 import fixture from './official-fixture.json' with { type: 'json' };
 import freshness from '../src/data/freshness.json' with { type: 'json' };
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:8799';
 
@@ -455,7 +455,7 @@ for (const [p, want, label] of [
   ok(corp.body.could_be_corporate_number === true, 'could be a corporate number');
   // A passing check digit does NOT prove it is a corporation: sole-proprietor
   // numbers satisfy the same rule (614,413 confirmed, zero counterexamples).
-  ok(/sole proprietor/i.test(corp.body.reason), 'the response refuses to attribute the holder');
+  ok(/個人事業者/.test(corp.body.reason), 'the response refuses to attribute the holder');
   ok(/614,413/.test(corp.body.reason), 'the empirical basis is stated');
 
   // A wrong check digit is reported as almost certainly a typo.
@@ -463,7 +463,9 @@ for (const [p, want, label] of [
   ok(typo.body.format_valid === true, 'format is still valid');
   ok(typo.body.check_digit_valid === false, 'check digit fails');
   ok(typo.body.expected_check_digit !== typo.body.check_digit, 'expected digit is reported');
-  ok(/typo/i.test(typo.body.reason), 'a mismatch is called out as a likely typo');
+  // 文言を和文に揃えたので照合も和文にする。見たいのは「入力間違いだと述べているか」。
+  ok(/入力間違い/.test(typo.body.reason), 'a mismatch is called out as a likely typo',
+     typo.body.reason?.slice(0, 50));
 
   // Every other leading digit must fail for the same 12-digit tail.
   let failures = 0;
@@ -1046,7 +1048,8 @@ for (const [p, want, label] of [
   const at65 = (await a('birth_date=1961-06-15&as_of=2026-08-25')).body;
   ok(at65.long_term_care === false && at65.pension === true && at65.health_insurance === true,
      'at 65 only long-term care leaves the payslip');
-  ok(at65.notes.some((n) => /municipality/.test(n)), 'the 65 case explains where LTC goes instead');
+  ok(at65.notes.some((n) => /市区町村/.test(n)), 'the 65 case explains where LTC goes instead',
+     JSON.stringify(at65.notes).slice(0, 70));
 
   ok((await a('birth_date=nope')).status === 400, 'a bad birth date is rejected');
   ok((await a('')).status === 400, 'birth_date is required');
@@ -1952,7 +1955,7 @@ for (const [p, want, label] of [
 
   // 綴りが近ければ候補を出す。
   const typo = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&standard_remuneration_=300000')).body;
-  ok(/Did you mean/.test(typo.hint ?? ''), 'a near miss suggests the right name', typo.hint);
+  ok(/間違いではありませんか/.test(typo.hint ?? ''), 'a near miss suggests the right name', typo.hint);
 
   // 正しいパラメータは当然通る。
   ok((await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&standard_remuneration=300000&employment_type=director&income_tax=false')).status === 200,
@@ -2947,7 +2950,7 @@ for (const [p, want, label] of [
   // 近い綴りには候補を出す。拒否だけでは直せない。
   const typo = await (await tryFetch(
     `${BASE}/v1/minimum-wage?prefecture=Tokyo&dat=2026-01-01`)).json();
-  ok(/Did you mean/.test(typo.hint ?? ''),
+  ok(/間違いではありませんか/.test(typo.hint ?? ''),
      'a near miss suggests the parameter that was meant', typo.hint);
 }
 // ---- 53. 年次有給休暇 (F-07) ----
@@ -3768,6 +3771,102 @@ for (const [p, want, label] of [
     ok(JA.test(r.reason ?? ''), `${label} の理由が和文で返る`, r.reason?.slice(0, 40));
   }
 }
+{
+  // 走査を二度、狭く作ってしまった。
+  //
+  // 一度目はキー名(reason / note / basis)で探して37件。三項演算子の片側だけ訳した
+  // のをテストが捕まえたので、二度目は文字列リテラル全部に広げた。ところが英文の
+  // 条件を「4文字以上+3文字以上+3文字以上の3語連続」にしたため、177件で止まった。
+  // 英語の散文は in / on / is / not のような短い機能語で埋まっている。だから
+  // `The minimum wage in force on ...` も `"months" needs exactly 3 entries` も
+  // すり抜けた。**入力を間違えた瞬間に読む文言ほど短く、いちばん漏れていた。**
+  //
+  // 語長ではなく機能語で数える。ただしパラメータ名・URL・ヘッダ値は数えない。
+  // そこを数えたせいで「No.2585」「from=&to=」が英文と誤判定されていた。
+  const FUNC = /\b(the|is|are|was|an|of|in|on|to|and|for|not|this|that|it|be|with|from|only|when|must|needs?|cannot|its|but|by|or|at|you|your|has|have|does|do|so|if|any|all|each|per|than|then|there|here|which|what|why|how|into|over|under|between|because|rather|instead|whether|while|would|should|could|may|can|will|use|pass|got|see|add)\b/gi;
+  const NOISE = /https?:\/\/\S+|\b[a-z][a-z_-]*=\S*|No\.\d+|\$\{[^}]*\}|\/v1\/[\w/-]+|[「"][a-z_]+[」"]/g;
+  const JA = /[ぁ-んァ-ヶ一-龥]/;
+  const KANA = /[ぁ-んァ-ヶ]/;
+  // Peppol の 0188 は登録された識別子の正式名称で、訳すと別物を指す。
+  const KEEP = ['0188 (Corporate Number of Japan, ISO 6523 ICD)'];
+
+  const dir = new URL('../src/', import.meta.url);
+  const names = (await readdir(dir, { recursive: true })).filter((n) => n.endsWith('.ts'));
+  const english = [], mixed = [], frag = [];
+  for (const name of names) {
+    const src = await readFile(new URL(name.replace(/\\/g, '/'), dir), 'utf8');
+    for (const [i, line] of src.split('\n').entries()) {
+      const st = line.trim();
+      if (st.startsWith('*') || st.startsWith('//') || st.startsWith('/*')) continue;
+      for (const m of line.matchAll(/['`]([^'`\n]{12,})['`]/g)) {
+        const t = m[1];
+        if (KEEP.includes(t)) continue;
+        const at = `src/${name.replace(/\\/g, '/')}:${i + 1} ${t.slice(0, 40)}`;
+        // かなの直後に小文字ラテン = 部分置換の残骸。正しい並びは API や YYYY で大文字。
+        if (/[ぁ-んァ-ヶ][a-z]/.test(t)) frag.push(at);
+        if ((t.replace(NOISE, ' ').match(FUNC) ?? []).length < 1) continue;
+        if (!JA.test(t)) english.push(at);
+        else if (KANA.test(t)) mixed.push(at);
+      }
+    }
+  }
+  ok(names.length >= 20, 'the sweep reads every module under src/, not a list I keep up to date', `${names.length} files`);
+  ok(english.length === 0, 'no sentence is left in English, however short', english.slice(0, 4).join(' | ') || 'none');
+  ok(mixed.length === 0, 'and none is half in each', mixed.slice(0, 4).join(' | ') || 'none');
+  ok(frag.length === 0, 'and no partial replace left the tail of the original behind', frag.slice(0, 4).join(' | ') || 'none');
+
+  // 入力を間違えた瞬間に言語が切り替わらないこと。ここが本体。
+  //
+  // 手で並べた一覧では、私が思い付いた経路しか踏めない。実際 `Unknown column:`
+  // の6箇所は、静的走査(${...} を除くと機能語が0語になる)も、私が書いた17件の
+  // 一覧も、どちらもすり抜けた。だから経路を仕様書から取る。全パス×全パラメータに
+  // 不正値を投げて、エンドポイントごとの検証を書き漏らしなく踏む。
+  const spec = (await get('/openapi.json')).body;
+  const engRuntime = [];
+  let refused = 0;
+  for (const [path, ops] of Object.entries(spec.paths)) {
+    if (!ops.get) continue;
+    for (const url of [path, ...(ops.get.parameters ?? []).map((q) => `${path}?${q.name}=zz`)]) {
+      const r = await get(url);
+      if (r.status < 400) continue;
+      refused++;
+      for (const k of ['error', 'hint']) {
+        const v = r.body?.[k];
+        if (typeof v === 'string' && v && !JA.test(v)) engRuntime.push(`${url} ${k}: ${v.slice(0, 46)}`);
+      }
+    }
+  }
+  ok(refused >= 60, 'the sweep reached that many validators, so it is not vacuous', `${refused} refusals`);
+  ok(engRuntime.length === 0, 'and every refusal along the way speaks Japanese',
+     engRuntime.slice(0, 5).join(' | ') || 'none');
+
+  const postJson = async (path, body) => {
+    const r = await tryFetch(BASE + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+  for (const path of Object.entries(spec.paths).filter(([, o]) => o.post).map(([p]) => p)) {
+    const r = await postJson(path, {});
+    ok(r.status >= 400, `POST ${path} は空の本文を拒否する`, `${r.status}`);
+    ok(JA.test(r.body.error ?? ''), `POST ${path} のエラー文が和文`, r.body.error?.slice(0, 44));
+  }
+
+  // code は英字のまま。読む人向けの文と、分岐に使う値は別物。
+  for (const [path, want] of [
+    ['/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&zzz=1', 'unknown_parameter'],
+    ['/v1/payroll?prefecture=Atlantis&monthly_salary=300000&age=40', 'unknown_prefecture'],
+    ['/v1/holidays?year=2100', 'out_of_coverage'],
+  ]) {
+    const r = await get(path);
+    ok(r.body.code === want, `${want} は機械可読のまま`, r.body.code);
+  }
+}
+
+
+
 
 
 

@@ -81,48 +81,48 @@ export function readRow(
   const prefecture = resolvePrefecture(prefRaw ?? null);
   if (!prefecture)
     return fail(prefRaw ? 'unknown_prefecture' : 'missing_parameter',
-      prefRaw ? `Unknown prefecture: "${prefRaw}"` : 'prefecture is required, here or in defaults.');
+      prefRaw ? `該当する都道府県がありません: 「${prefRaw}」` : 'prefecture は必須です。この行か defaults に入れてください。');
 
   const salary = Number(row.monthly_salary);
   if (row.monthly_salary === undefined || !Number.isFinite(salary) || salary < 0)
-    return fail('invalid_request', 'monthly_salary is required and must be a non-negative number.');
+    return fail('invalid_request', 'monthly_salary は必須で、0以上の数で渡してください。');
 
   const ageRaw = row.age ?? defaults.age;
   const age = ageRaw === undefined || ageRaw === null ? null : Number(ageRaw);
   if (age !== null && (!Number.isFinite(age) || age < 0 || age > 120))
-    return fail('invalid_request', 'age must be a number between 0 and 120.');
+    return fail('invalid_request', 'age は0から120の数で渡してください。');
 
   const birthRaw = row.birth_date ?? defaults.birth_date;
   const birth = birthRaw === undefined || birthRaw === null ? null : parseDate(String(birthRaw));
   if (birthRaw !== undefined && birthRaw !== null && !birth)
-    return fail('invalid_request', 'birth_date must be a valid ISO date (YYYY-MM-DD).');
+    return fail('invalid_request', 'birth_date はYYYY-MM-DD形式の日付で渡してください。');
 
   // 介護保険法第9条は40歳以上65歳未満を第2号被保険者と定める。年齢が無ければ
   // 徴収するかどうかが決まらず、黙って「40歳未満」と置けば40〜64歳は必ず過少になる。
   // 行ごとに書かせるのは現実的でないので、defaults に置けば全行が継承する。
   if (age === null && birth === null)
     return fail('missing_parameter',
-      'Either age or birth_date is required (介護保険法第9条: a 第2号被保険者 is 40 or over and under 65). ' +
-      'Put it in defaults to apply it to every row.');
+      'age か birth_date のどちらかが必要です(介護保険法第9条: 第2号被保険者は40歳以上65歳未満)。' +
+      'defaults に入れると全行に適用されます。');
 
   const btKey = String(row.business_type ?? defaults.business_type ?? 'general').toLowerCase();
   if (!(empins.business_types as any)[btKey])
-    return fail('invalid_request', `Unknown business_type: "${btKey}"`);
+    return fail('invalid_request', `該当する business_type がありません: 「${btKey}」`);
 
   const colRaw = String(row.column ?? defaults.column ?? 'kou').toLowerCase();
   if (colRaw !== 'kou' && colRaw !== 'otsu')
-    return fail('invalid_request', `Unknown column: "${colRaw}". Use "kou" or "otsu".`);
+    return fail('invalid_request', `該当する column がありません: 「${colRaw}」。「kou」か「otsu」を使ってください。`);
 
   const dependants = Number(row.dependants ?? defaults.dependants ?? 0);
   if (!Number.isInteger(dependants) || dependants < 0 || dependants > 50)
-    return fail('invalid_request', 'dependants must be an integer between 0 and 50.');
+    return fail('invalid_request', 'dependants は0から50の整数で渡してください。');
 
   const incomeTax = readBoolean(row.income_tax ?? defaults.income_tax, true);
-  if (incomeTax === null) return fail('invalid_request', 'income_tax must be a boolean.');
+  if (incomeTax === null) return fail('invalid_request', 'income_tax は真偽値で渡してください。');
 
   const residentTax = Number(row.resident_tax ?? defaults.resident_tax ?? 0);
   if (!Number.isFinite(residentTax) || residentTax < 0)
-    return fail('invalid_request', 'resident_tax must be a non-negative number.');
+    return fail('invalid_request', 'resident_tax は0以上の数で渡してください。');
 
   // 標準報酬月額は行ごとにしか意味がないので defaults からは取らない。
   let smr: number | null = null;
@@ -130,25 +130,25 @@ export function readRow(
     smr = Number(row.standard_remuneration);
     if (!Number.isFinite(smr) || smr <= 0)
       return fail('invalid_request',
-        'standard_remuneration must be a positive number — the 標準報酬月額 fixed by 算定基礎届 or 月額変更届.');
+        'standard_remuneration は正の数で渡してください。算定基礎届または月額変更届で決まっている標準報酬月額です。');
   }
 
   const empRaw = String(row.employment_type ?? defaults.employment_type ?? 'employee');
   if (!(EMPLOYMENT_TYPES as readonly string[]).includes(empRaw))
     return fail('invalid_request',
-      `Unknown employment_type: "${empRaw}". Use employee, director or director_employee.`);
+      `該当する employment_type がありません: 「${empRaw}」。employee・director・director_employee のいずれかを使ってください。`);
 
   const wcCandidate = row.workers_comp_type ?? defaults.workers_comp_type;
   const wcRaw = wcCandidate === undefined || wcCandidate === null ? null : String(wcCandidate);
   if (wcRaw !== null && !workersCompType(wcRaw))
     return fail('invalid_request',
-      `Unknown workers_comp_type: "${wcRaw}". Use the 事業の種類の番号 from GET /v1/workers-compensation.`);
+      `該当する workers_comp_type がありません: 「${wcRaw}」。GET /v1/workers-compensation の事業の種類の番号を使ってください。`);
 
   // 支給項目。1行だけ落として残りは走らせるので、行の中で検証する。
   let allowances: AllowanceInput[] = [];
   if (row.allowances !== undefined && row.allowances !== null) {
     if (!Array.isArray(row.allowances))
-      return fail('invalid_request', 'allowances must be an array of pay items.');
+      return fail('invalid_request', 'allowances は支給項目の配列で渡してください。');
     for (let i = 0; i < row.allowances.length; i++) {
       const err = allowanceError(row.allowances[i], i);
       if (err) return fail('invalid_request', err);

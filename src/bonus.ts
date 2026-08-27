@@ -78,16 +78,16 @@ export function bonusWithholding(args: {
 
   if (args.previousMonthPay <= 0)
     return notApplicable('no_previous_month_pay',
-      'There was no pay in the previous month, so the rate cannot be looked up.');
+      '前月に給与の支払いが無いため、税率を引けません。');
 
   if (prevAfter <= 0)
     return notApplicable('previous_pay_at_or_below_insurance',
-      'Last month’s pay did not exceed its social insurance, so the rate cannot be looked up.');
+      '前月の給与が社会保険料を上回らないため、税率を引けません。');
 
   const limit = prevAfter * 10;
   if (bonusAfter > limit)
     return notApplicable('bonus_exceeds_ten_times',
-      'The bonus after social insurance is more than ten times last month’s pay after social insurance, so this table must not be used.',
+      '社会保険料控除後の賞与が、前月の控除後給与の10倍を超えています。この表は使えません。',
       { ten_times_limit: limit });
 
   const bands = args.column === 'otsu' ? OTSU : KOU[Math.min(args.dependants, MAX_DEPENDANTS)];
@@ -116,5 +116,5 @@ export const BONUS_ATTRIBUTION = {
   attribution_ja: BONUS_META.attribution_ja,
   method_ja: BONUS_META.method,
   note:
-    '税率は前月の社会保険料控除後の給与から決まります。税額は、その率をこの賞与の社会保険料控除後の額に掛けたものです。 Three cases fall outside the table entirely and are reported rather than approximated.',
+    '税率は前月の社会保険料控除後の給与から決まります。税額は、その率をこの賞与の社会保険料控除後の額に掛けたものです。3つの場合は表の範囲外になるため、近似せずそのまま報告します。',
 };

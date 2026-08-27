@@ -151,7 +151,7 @@ export function computePayslip(input: PayslipInput) {
       pension: pensionApplies,
       employment_insurance: eiInsured,
       basis: status
-        ? 'Determined from the birth date using the statutory milestones.'
+        ? '生年月日から、法定の到達日にもとづいて判定しています。'
         : '介護保険の40〜64歳の区分だけを当てはめました。65歳・70歳・75歳の到達を正確に見るには birth_date を渡してください。',
     },
     standard_remuneration: {

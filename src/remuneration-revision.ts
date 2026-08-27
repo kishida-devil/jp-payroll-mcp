@@ -767,5 +767,5 @@ export const REVISION_ATTRIBUTION = {
   ],
   licence: '公共データ利用規約(第1.0版)',
   caveat:
-    'This decides whether a filing is due; it is not the filing. 保険者算定 by 日本年金機構 can differ, and several cases turn on facts an API cannot see — whether a difference is "例年発生することが見込まれる", whether pay counts as 実費弁償. The grade tables are the FY2026 figures; 令和7年法律第74号 adds pension grades 33-35 from 2027-09-01, which will move the 665,000 yen boundary threshold with them.',
+    'これは届出が必要かどうかを判定するもので、届出そのものではありません。日本年金機構による保険者算定は異なることがあり、いくつかの論点はAPIから見えない事実で決まります。差が「例年発生することが見込まれる」かどうか、支給が実費弁償に当たるかどうかなどです。等級表は令和8年度の数値で、令和7年法律第74号により2027年9月1日から厚生年金の等級33〜35が追加され、665,000円の境界もそれに伴って動きます。',
 };

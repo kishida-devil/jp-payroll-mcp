@@ -84,7 +84,7 @@ export function overtimePay(input: OvertimeInput) {
     round = true,
   } = input;
 
-  if (scheduled <= 0) throw new Error('monthly_scheduled_hours must be greater than zero.');
+  if (scheduled <= 0) throw new Error('monthly_scheduled_hours は0より大きい必要があります。');
 
   const rawHourly = base / scheduled;
   const hourly = round ? roundYen(rawHourly) : rawHourly;

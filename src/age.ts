@@ -109,9 +109,9 @@ export function ageStatus(birth: Date, on: Date): AgeStatus {
     );
   const thisMonth = milestones.filter((m) => m.applies_from_month === iso(on).slice(0, 7));
   for (const m of thisMonth)
-    notes.push(`Age ${m.age} is reached this month (${m.reached_on}); ${m.effect} applies from this month.`);
+    notes.push(`${m.age}歳にこの月(${m.reached_on})に到達します。${m.effect} がこの月から適用されます。`);
   if (ltcEnded && !pensionEnded)
-    notes.push('From 65 the long-term care premium is billed by the municipality, not deducted from salary.');
+    notes.push('65歳からは介護保険料が市区町村から直接請求されます。給与からは引きません。');
 
   return {
     birth_date: iso(birth),

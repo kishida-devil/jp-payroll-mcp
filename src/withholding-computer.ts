@@ -87,7 +87,7 @@ export function computerMethod(
     deductions: { employment_income: employment, spouse, dependants: deps, basic, total },
     monthly_taxable_income: b,
     tax,
-    formula: { rate, subtract, rounding: 'tax rounded to the nearest 10 yen' },
+    formula: { rate, subtract, rounding: '税額を10円単位に丸める' },
   };
 }
 
@@ -101,5 +101,5 @@ export const COMPUTER_ATTRIBUTION = {
   warning_ja: COMPUTER_META.warning_ja,
   applies_to: COMPUTER_META.applies_to,
   note:
-    'The 甲 column only. Results differ slightly from the monthly table by design; the difference is settled at the year-end adjustment. Do not mix the two methods within a year.',
+    '甲欄だけです。月額表とは設計上わずかに結果が異なり、その差は年末調整で精算されます。同じ年のうちに両方の方式を混ぜないでください。',
 };
