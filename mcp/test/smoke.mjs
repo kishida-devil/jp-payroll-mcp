@@ -650,6 +650,30 @@ for (const [name, args, check] of [
   ok(!batch.isError && /"succeeded":\s*2/.test(bText), 'the batch runs both rows', bText.slice(0, 70));
   ok(/"run_id"/.test(bText), 'and carries the run id a retry can be checked against');
 }
+{
+  // READMEは商品棚。載っていない機能は、無いのと同じ。
+  //
+  // 公開判断のために数えたら、READMEは「17 tools」のままで11本が未掲載だった。
+  // 未掲載だったのは割増賃金・有給・被保険者区分・国保国年・労災・バッチ・消費税で、
+  // **いちばん人が探しているもの**が並んで抜けていた。ツールを足すたびに書き足す、
+  // という運用は3回続けて守られていない。だから数える。
+  const source = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
+  const names = [...source.matchAll(/registerTool\('([\w_]+)'/g)].map((m) => m[1]);
+  for (const f of ['README.md', 'README.ja.md']) {
+    const txt = await readFile(new URL(`../${f}`, import.meta.url), 'utf8');
+    const missing = names.filter((n) => !txt.includes(n));
+    ok(missing.length === 0, `${f} lists every tool that exists`, missing.join(', ') || 'none');
+    // 逆向きも見る。消したツールの説明が残ると、動かないものを宣伝することになる。
+    const advertised = [...txt.matchAll(/`([a-z][a-z0-9_]{6,})`/g)].map((m) => m[1])
+      .filter((w) => /_/.test(w) && !names.includes(w));
+    const ghosts = [...new Set(advertised)].filter((w) => /^(calculate|judge|decide|check|get|list|lookup|validate|business|national|commuting|consumption)_/.test(w));
+    ok(ghosts.length === 0, `${f} advertises nothing that was removed`, ghosts.join(', ') || 'none');
+    const claimed = /(\d+) tools|ツール一覧\((\d+)\)/.exec(txt);
+    ok(claimed && Number(claimed[1] ?? claimed[2]) === names.length,
+       `${f} states the right count`, `says ${claimed?.[1] ?? claimed?.[2]}, has ${names.length}`);
+  }
+}
+
 
 
 

@@ -56,15 +56,19 @@ claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 
 Node 18 以降が必要です。
 
-## ツール一覧(16)
+## ツール一覧(28)
 
 **給与・賞与**
 
 | ツール | 内容 |
 |---|---|
 | `calculate_payslip` | 月次の控除内訳と手取り。事業主負担分も返します |
+| `calculate_payroll_batch` | 全社員分を1回で。合計と run_id つき |
 | `calculate_bonus` | 賞与の保険料(2種類の上限に対応)。源泉所得税も同時に |
+| `calculate_overtime_pay` | 割増賃金 — 時間外25%、月60時間超50%、法定休日35%、深夜はさらに25%(労基法37条) |
 | `calculate_withholding_tax` | 源泉徴収税額表 — 月額表・日額表(丙欄含む)・電算機計算の特例 |
+| `commuting_allowance_exemption` | 通勤手当の非課税限度額。社会保険は全額算入、所得税は限度超過分のみ |
+| `calculate_annual_cost` | 1人を1年雇う費用。事業主負担を含めた総額 |
 
 **標準報酬月額**
 
@@ -72,28 +76,35 @@ Node 18 以降が必要です。
 |---|---|
 | `judge_monthly_revision` | 随時改定(月額変更届)の要否。健保と厚年を別々に判定 |
 | `decide_regular_remuneration` | 定時決定(算定基礎届)を4〜6月の報酬から |
-| `judge_leave_end_revision` | 産休・育休終了時改定。1等級差で改定できます |
-| `judge_annual_average` | 年間平均による保険者算定(季節変動がある場合) |
-| `lookup_standard_remuneration` | 報酬月額から等級を照会 |
+| `decide_regular_remuneration_batch` | 同じ判定を事業所全員分。6月は全員が一斉に決まる |
+| `judge_leave_end_revision` | 産休・育休からの復帰時改定。1等級差で足ります |
+| `judge_annual_average` | 年間平均による保険者算定(季節的な業務) |
+| `lookup_standard_remuneration` | 金額から等級を引く。省略すれば50等級の表そのもの |
 
 **資格・休業・年齢**
 
 | ツール | 内容 |
 |---|---|
-| `check_insurance_eligibility` | 入社月・退社月に保険料が発生するか |
-| `check_leave_exemption` | 産休・育休で免除される月 |
-| `get_age_milestones` | 40/65/70/75歳の到達日と、それぞれ何が変わるか |
+| `judge_worker_type` | 被保険者になるか。四分の三基準と20時間/88,000円/学生/51人 |
+| `check_insurance_eligibility` | 入社月・退職月に保険料がかかるか |
+| `check_leave_exemption` | 産休・育休がどの月を免除するか |
+| `judge_annual_leave` | 年次有給休暇の付与日数。短時間労働者の比例付与も |
+| `get_age_milestones` | 40・65・70・75歳の到達日と、そのとき変わるもの |
 
-**参照データ**
+**参照**
 
 | ツール | 内容 |
 |---|---|
-| `get_insurance_rates` | 47都道府県の保険料率、雇用保険料率 |
-| `get_minimum_wage` | 指定日時点の最低賃金(平成14年度まで遡及可) |
-| `business_days` | 祝日(1955〜2027)、営業日計算、銀行カレンダー |
-| `validate_corporate_number` | 法人番号・インボイス登録番号のチェックディジット |
-| `get_statute_text` | 他のツールが引用した条文の本文。健保法43条・厚年法81条の2 など実務の略記で引けます |
-| `check_data_freshness` | 各データの対象期間と次回改定予定 |
+| `get_insurance_rates` | 47都道府県の料率と雇用保険料率 |
+| `list_workers_compensation_rates` | 労災保険率(事業の種類別)。全額事業主負担、1,000分の2.5〜88 |
+| `national_insurance` | 国民年金の額と、国民健康保険に全国一律の額が存在しない理由 |
+| `get_minimum_wage` | ある日に効力を持つ最低賃金(平成14年度まで遡及) |
+| `consumption_tax` | 日付指定の税率、軽減8%、1989年以降の改定履歴 |
+| `business_days` | 1955〜2027年の祝日、営業日計算、銀行カレンダー |
+| `validate_corporate_number` | 法人番号・登録番号のチェックディジット。12桁から13桁の算出も |
+| `validate_invoice_numbers_batch` | 登録番号をまとめて形式検査(登録状況は国税庁サイトで) |
+| `get_statute_text` | 他のツールが引用する条文の本文 |
+| `check_data_freshness` | 各データの収録範囲と、次に変わる時期 |
 
 ## 使用例
 

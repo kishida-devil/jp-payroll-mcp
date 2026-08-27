@@ -1,6 +1,6 @@
 # jp-payroll-mcp
 
-MCP server for Japanese payroll and labour law. Gives an AI assistant 17 tools for
+MCP server for Japanese payroll and labour law. Gives an AI assistant 28 tools for
 social insurance premiums, withholding income tax, standard remuneration decisions
 and revisions, leave premium exemptions, minimum wage and business-day arithmetic.
 
@@ -64,8 +64,12 @@ Requires Node 18 or later.
 | Tool | What it does |
 |---|---|
 | `calculate_payslip` | Full monthly deductions and net pay, employee and employer share |
+| `calculate_payroll_batch` | A whole payroll in one call, with run totals and a run id |
 | `calculate_bonus` | Bonus premiums with both caps, optionally with withholding tax |
+| `calculate_overtime_pay` | 割増賃金 — 25% overtime, 50% past 60 hours, 35% holiday, 25% night on top (労基法37条) |
 | `calculate_withholding_tax` | 源泉徴収税額表 — monthly, daily (incl. the 丙 column), or the formula method |
+| `commuting_allowance_exemption` | The non-taxable ceiling: counted in full for social insurance, taxed only above the limit |
+| `calculate_annual_cost` | What a year of employing someone costs, including the employer share |
 
 **Standard remuneration (標準報酬月額)**
 
@@ -73,16 +77,19 @@ Requires Node 18 or later.
 |---|---|
 | `judge_monthly_revision` | Is a 随時改定 (月額変更届) due? Judges health and pension separately |
 | `decide_regular_remuneration` | Annual 定時決定 (算定基礎届) from April–June pay |
+| `decide_regular_remuneration_batch` | The same for a whole office — June decides everyone at once |
 | `judge_leave_end_revision` | Revision on returning from maternity or childcare leave — one grade is enough |
 | `judge_annual_average` | 年間平均による保険者算定, for seasonal work |
-| `lookup_standard_remuneration` | Grade for an amount |
+| `lookup_standard_remuneration` | Grade for an amount, or the whole 50-grade table |
 
 **Eligibility, leave and age**
 
 | Tool | What it does |
 |---|---|
+| `judge_worker_type` | Insured or not: the three-quarters test, and 20 hours / ¥88,000 / student / 51 staff |
 | `check_insurance_eligibility` | Is a premium due in a joining or leaving month? |
 | `check_leave_exemption` | Which months a maternity or childcare leave exempts |
+| `judge_annual_leave` | 年次有給休暇 — days granted, including the proportional table for part-timers |
 | `get_age_milestones` | When 40, 65, 70 and 75 are reached, and what each changes |
 
 **Reference**
@@ -90,9 +97,13 @@ Requires Node 18 or later.
 | Tool | What it does |
 |---|---|
 | `get_insurance_rates` | Rates for any of the 47 prefectures, plus employment insurance |
+| `list_workers_compensation_rates` | 労災保険率 by trade — 2.5 to 88 per 1,000, entirely on the employer |
+| `national_insurance` | 国民年金 for people outside employee insurance, and why 国民健康保険 has no national figure |
 | `get_minimum_wage` | Minimum wage in effect on a date, back to FY2002 |
+| `consumption_tax` | The rate in force on a date, the reduced 8%, and every change since 1989 |
 | `business_days` | Holidays 1955–2027, business-day counting and shifting, banking calendar |
-| `validate_corporate_number` | 法人番号 and invoice registration number check digits |
+| `validate_corporate_number` | 法人番号 and invoice registration check digits, or the digit for a 12-digit base |
+| `validate_invoice_numbers_batch` | Many registration numbers at once — form only; registration needs the NTA site |
 | `get_statute_text` | Full text of any provision the other tools cite |
 | `check_data_freshness` | What each dataset covers and when it changes next |
 

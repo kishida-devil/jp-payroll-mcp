@@ -1,7 +1,7 @@
 {
   "name": "jp-payroll-mcp",
-  "version": "0.3.0",
-  "description": "MCP server for Japanese payroll, social insurance and labour law (社労士・労務): premiums for all 47 prefectures, withholding tax, standard remuneration decisions and revisions (定時決定・随時改定), leave premium exemptions, minimum wage, plus the full text of every statute it cites from e-Gov. Verified cell by cell against the official 協会けんぽ and 国税庁 tables.",
+  "version": "0.4.0",
+  "description": "MCP server for Japanese payroll, social insurance and labour law (社労士・労務): premiums for all 47 prefectures, withholding tax, overtime (割増賃金), annual leave (年次有給休暇), standard remuneration decisions and revisions (定時決定・随時改定), leave premium exemptions, minimum wage, consumption tax by date, plus the full text of every statute it cites from e-Gov. Verified cell by cell against the official 協会けんぽ and 国税庁 tables.",
   "type": "module",
   "bin": {
     "jp-payroll-mcp": "src/index.mjs"
@@ -50,7 +50,12 @@
     "社労士",
     "労務",
     "年金",
-    "法令"
+    "法令",
+    "overtime",
+    "annual-leave",
+    "consumption-tax",
+    "invoice",
+    "corporate-number"
   ],
   "author": "tsumugi",
   "license": "MIT",
