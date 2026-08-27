@@ -863,6 +863,22 @@ zero.' : '.')` — 英語のときから「0以上の数 greater than zero」と
 ほか)と、残骸1件が出た。`…その月は1か月分がかかります joined.` — **空白を挟んで
 いたため、かな+小文字の規則では見つからない形**だった。
 
+**本番実測。**
+
+`7fdd5a16` と `3cfe0fc2` を配備し、本番URLに対して同じ掃引をかけた
+(`Cache-Control: no-cache` / `User-Agent: tsumugi-loop-verify/19`)。
+**44パス×128パラメータのうち151件が4xxで拒否され、そのすべてが和文。**英語は0件。
+
+    該当する都道府県がありません: 「大阪県」
+      hint: 「大阪府」の間違いではありませんか。都道府県の接尾辞は1つしか正しくありません
+    該当する workers_comp_type がありません: 「zz」
+      hint: GET /v1/workers-compensation の事業の種類の番号を使ってください
+    2026-10-01 時点で効力を持つ最低賃金は、このデータセットに収録されていません。
+      code: out_of_coverage
+
+`code` は `unknown_prefecture` `out_of_coverage` のまま。読む人のための文と、
+分岐に使う値は別物という第18反復の線引きを変えていない。
+
 **掃引の途中で別の欠陥が出た。**
 
 `GET /v1/worker-type?weekly_hours=` が 400 ではなく **200 を返す**。`Number('')` が 0 に
