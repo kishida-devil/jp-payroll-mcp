@@ -3812,6 +3812,26 @@ for (const [p, want, label] of [
     for (const w of src.replace(STR, ' ').matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) allowed.add(w[0]);
   }
 
+  // 12文字の下限が `Not found`(9文字)を落としていた。404と500という、
+  // **迷った人がいちばん最初に見る2つ**が英語のまま残っていた。
+  // error / hint / bad( / fail( の直後だけは、短くても見る。
+  const SHORT = /(?:error:|hint:|bad\(c,|fail\()\s*['"]([^'"\n]{4,24})['"]/g;
+  const shortEnglish = [];
+  for (const [name, text] of sources) {
+    for (const [i, line] of text.split(String.fromCharCode(10)).entries()) {
+      const st = line.trim();
+      if (st.startsWith('*') || st.startsWith('//') || st.startsWith('/*')) continue;
+      for (const m of line.matchAll(SHORT)) {
+        const t = m[1];
+        if (JA.test(t)) continue;
+        const stray = (t.match(/[A-Za-z][A-Za-z0-9_]{2,}/g) ?? []).filter((w) => !allowed.has(w));
+        if (stray.length) shortEnglish.push(`src/${name}:${i + 1} "${t}"`);
+      }
+    }
+  }
+  ok(shortEnglish.length === 0, 'including the short ones a length threshold would skip',
+     shortEnglish.slice(0, 4).join(' | ') || 'none');
+
   const english = [], prose = [], frag = [];
   for (const [name, src] of sources) {
     for (const [i, line] of src.split('\n').entries()) {

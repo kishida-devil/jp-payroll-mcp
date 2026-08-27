@@ -114,6 +114,14 @@ function channelOf(c: any): 'mcp' | 'rapidapi' | 'direct' {
 const FREE_TIER = {
   requests_per_minute: 300,
   batch_rows: 10,
+  // 実測して書き直した箇所。同時20接続で1,200回投げると、429は6件しか返らない。
+  // Cloudflareのレート制限は**拠点ごとに**数えるため、接続が散ると各拠点の計数も散る。
+  // 「1分300回」と言い切ると、守られない約束をすることになる。
+  // 確実に効くのは batch_rows のほうで、こちらは1件の差で拒否できる(10は通り11は落ちる)。
+  enforcement:
+    'requests_per_minute は目安です。Cloudflareの拠点ごとに数えるため、同時接続が多いと'
+    + 'この数を超えて通ることがあります(実測: 同時20接続で1,200回中1,194回が通過)。'
+    + '確実な境界は batch_rows のほうで、こちらは1件の差で拒否します。',
 };
 
 const UPGRADE = {
@@ -167,12 +175,18 @@ app.use('*', async (c, next) => {
   const local = isLocal(c);
   // RapidAPI traffic is metered on their side; limiting it again here would just
   // break something a customer already paid for.
+  // 効いているかどうかを観測できるようにしておく。900回投げても429が出ないという
+  // 状態が、設定漏れなのか判定漏れなのか、ログを見なければ切り分けられなかった。
+  let rl: 'off' | 'skip' | 'pass' | 'block' = 'off';
+  if (channel === 'rapidapi' || local) rl = 'skip';
+  else if (!c.env?.FREE_TIER) rl = 'off';
   if (channel !== 'rapidapi' && !local && c.env?.FREE_TIER) {
     const key = c.req.header('cf-connecting-ip') ?? 'anonymous';
     const { success } = await c.env.FREE_TIER.limit({ key });
+    rl = success ? 'pass' : 'block';
     if (!success)
       return c.json({
-        error: `無料枠の上限に達しました。1分あたり ${FREE_TIER.requests_per_minute} 回までです。`,
+        error: `無料枠の上限に達しました。1分あたり ${FREE_TIER.requests_per_minute} 回が目安です。`,
         code: 'rate_limited',
         hint: '直接呼ぶ場合とMCP経由に適用されます。本番の量を扱うなら RapidAPI の出品を見てください。'
           + UPGRADE.what,
@@ -253,6 +267,8 @@ app.use('*', async (c, next) => {
     console.log(JSON.stringify({
       channel, path: new URL(c.req.url).pathname, status: c.res.status,
       plan: ent.plan,
+      // off = バインディングが無い、skip = 課金経路かローカル、pass/block = 判定した
+      rl,
       // Flags requests whose entitlement could not be checked because
       // RAPIDAPI_PROXY_SECRET is not set. Filter on this to confirm the gap is
       // closed after configuring it.
@@ -2946,7 +2962,7 @@ app.get('/v1/data-freshness', (c) => {
   return (
   c.json(freshnessReport(new Date())));
 });
-app.notFound((c) => c.json({ error: 'Not found', code: 'not_found', hint: 'エンドポイントの一覧は GET / を見てください。' }, 404));
-app.onError((e, c) => c.json({ error: 'Internal error', code: 'internal_error', detail: String(e?.message ?? e) }, 500));
+app.notFound((c) => c.json({ error: 'そのエンドポイントはありません。', code: 'not_found', hint: 'エンドポイントの一覧は GET / を見てください。' }, 404));
+app.onError((e, c) => c.json({ error: 'サーバ側で処理に失敗しました。', code: 'internal_error', detail: String(e?.message ?? e) }, 500));
 
 export default app;
