@@ -127,7 +127,7 @@ export function eligibilityFor(args: {
     employment_insurance_due: true,
     reason: joinedThisMonth
       ? `Eligibility begins on ${iso(joined!)}; the premium is due for the whole month regardless of the day joined.`
-      : 'An ordinary month of employment.',
+      : '通常の在籍月です。',
   };
 }
 
@@ -144,7 +144,7 @@ export const ELIGIBILITY_ATTRIBUTION = {
   ],
   licence: '公共データ利用規約(第1.0版)',
   note:
-    'Social insurance is charged for the month eligibility begins and every month up to but not including the month it is lost. Employment insurance follows the wages actually paid, so it is judged separately.',
+    '社会保険料は、資格を取得した月から、資格を喪失した月の前月までかかります。喪失した月自体はかかりません。 Employment insurance follows the wages actually paid, so it is judged separately.',
 };
 
 export { parseDate };

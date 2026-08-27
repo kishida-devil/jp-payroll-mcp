@@ -152,7 +152,7 @@ export function computePayslip(input: PayslipInput) {
       employment_insurance: eiInsured,
       basis: status
         ? 'Determined from the birth date using the statutory milestones.'
-        : 'Only the 40-64 long-term care band could be applied; pass birth_date for the 65, 70 and 75 milestones.',
+        : '介護保険の40〜64歳の区分だけを当てはめました。65歳・70歳・75歳の到達を正確に見るには birth_date を渡してください。',
     },
     standard_remuneration: {
       health_grade: grade.health_grade, health: smr,

@@ -154,12 +154,12 @@ export function validateInvoiceNumber(input: string): InvoiceNumberResult {
 export const INVOICE_NUMBER_ATTRIBUTION = {
   source: '国税庁 適格請求書発行事業者公表サイト「登録番号とは」',
   source_url: 'https://www.invoice-kohyo.nta.go.jp/about-toroku/index.html',
-  note: 'Structural check only. Whether a business is currently registered can change at any time and must be confirmed against the NTA publication site.',
+  note: '形式の検査だけです。いま登録されているかどうかはいつでも変わりうるので、国税庁の公表サイトで確かめてください。',
 };
 
 export const CORPORATE_NUMBER_ATTRIBUTION = {
   source: '国税庁 法人番号公表サイト「チェックデジットの計算」',
   source_url: 'https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf',
   peppol_scheme: '0188 (Corporate Number of Japan, ISO 6523 ICD)',
-  note: 'This validates the structure of the number only. It does not confirm that the corporation exists or is currently registered.',
+  note: '番号の形式だけを確かめます。その法人が実在するか、いま登録されているかは確かめていません。',
 };

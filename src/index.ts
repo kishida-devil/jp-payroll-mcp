@@ -118,7 +118,7 @@ const FREE_TIER = {
 
 const UPGRADE = {
   where: 'https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants',
-  what: 'Higher limits and full-size batches, with billing, keys and quotas handled there.',
+  what: '上限の引き上げと本来のサイズのバッチが使えます。課金・鍵・割当はそちら側で扱われます。',
 };
 
 /** Local development is exempt: a test suite is not a customer. */
@@ -374,7 +374,7 @@ app.get('/', (c) => {
   return c.json({
     name: 'Japan Payroll and Labor Constants API',
     description:
-      'Japanese statutory reference data in one API — social and employment insurance rates for all 47 prefectures, the 50-grade standard remuneration table, 24 years of minimum wage history, public holidays with business-day arithmetic, consumption tax since 1989, and corporate/invoice number validation. Extracted programmatically from government open data and verified against the published figures.',
+      '日本の給与・社会保険・労働法の公表データを1つのAPIに。47都道府県の社会保険料率と雇用保険料率、50等級の標準報酬月額表、24年分の最低賃金、祝日と営業日計算、1989年以降の消費税率、法人番号とインボイス登録番号の検査。すべて政府の公開データから機械的に抽出し、公表されている数字と突き合わせて確認しています。',
     version: '2.10.0',
     endpoints: {
       'GET /v1/prefectures': 'All 47 prefectures with JIS codes and Japanese names',
@@ -426,7 +426,7 @@ app.get('/', (c) => {
     },
     free_tier: {
       ...FREE_TIER,
-      applies_to: 'Direct and MCP access, and the free BASIC plan on RapidAPI. Paid RapidAPI plans are metered by RapidAPI instead.',
+      applies_to: '直接呼ぶ場合とMCP経由、およびRapidAPIの無料BASICプランに適用されます。RapidAPIの有料プランはRapidAPI側で計測されます。',
       entitlement_verified: !!c.env?.RAPIDAPI_PROXY_SECRET,
       upgrade: UPGRADE.where,
       note: UPGRADE.what,
@@ -468,8 +468,8 @@ app.get('/v1/statute/index', (c) => {
     laws: STATUTE_LAWS,
     provisions: STATUTE_INDEX,
     note:
-      'Every provision this API cites, with its text. Add ?include=statute_text to a judgement ' +
-      'endpoint to have the text of whatever it cited attached to the answer.',
+      'このAPIが引用している条項をすべて、本文つきで並べています。判定エンドポイントに '
+      + '?include=statute_text を付けると、答えに本文が添えられます。',
     attribution: STATUTE_ATTRIBUTION,
   }));
 });
@@ -861,7 +861,7 @@ app.get('/v1/payroll', (c) => {
         basis: slip.income_tax.basis,
         ...(slip.income_tax.dependants_over_seven
           ? { dependants_over_seven: slip.income_tax.dependants_over_seven } : {}),
-        note: 'Charged on pay after social insurance, not on gross pay.',
+        note: '社会保険料を引いたあとの額にかかります。総支給額にかかるのではありません。',
       },
     } : {}),
     totals: {
@@ -874,7 +874,7 @@ app.get('/v1/payroll', (c) => {
     },
     notes: {
       rounding: insurance.meta.rounding,
-      basis: 'Statutory premiums use the standard monthly remuneration; employment insurance and income tax use actual pay.',
+      basis: '社会保険料は標準報酬月額にかかります。雇用保険料と源泉所得税は実際の支給額にかかります。',
       income_tax: withTax
         ? 'Income tax is computed from pay after social insurance, which this endpoint derives for you. Pass income_tax=false to omit it.'
         : 'Income tax omitted. Pass income_tax=true to include it.',
@@ -2838,7 +2838,7 @@ app.get('/v1/enums', (c) => {
   if (unknownQ) return unknownQ;
   return (
   c.json({
-    note: 'Every closed set of values this API accepts, so they can be read at build time rather than discovered from a 400.',
+    note: 'このAPIが受け付ける値の集合をすべて並べています。400を返されてから知るのではなく、作るときに読めるようにするためのものです。',
     business_type: Object.entries(empins.business_types).map(([k, v]: [string, any]) => ({
       value: k, label_ja: v.label_ja,
     })),
@@ -2850,7 +2850,7 @@ app.get('/v1/enums', (c) => {
     daily_column: [
       { value: 'kou', label_ja: '甲欄', description: 'A 扶養控除等申告書 was filed.' },
       { value: 'otsu', label_ja: '乙欄', description: 'No 扶養控除等申告書 was filed.' },
-      { value: 'hei', label_ja: '丙欄', description: 'Engaged by the day. No dependant adjustment applies.' },
+      { value: 'hei', label_ja: '丙欄', description: '日々雇い入れられる人。扶養親族等の控除はありません。' },
     ],
     worker_type: [
       { value: 'general', label_ja: '一般の被保険者', payment_basis_days: 17 },
@@ -2865,8 +2865,8 @@ app.get('/v1/enums', (c) => {
       },
     ],
     fixed_pay_change: [
-      { value: 'increase', label_ja: '昇給', description: 'Fixed pay rose.' },
-      { value: 'decrease', label_ja: '降給', description: 'Fixed pay fell.' },
+      { value: 'increase', label_ja: '昇給', description: '固定的賃金が上がった。' },
+      { value: 'decrease', label_ja: '降給', description: '固定的賃金が下がった。' },
       { value: 'none', label_ja: '変動なし', description: 'Only non-fixed pay moved. Never triggers a 随時改定.' },
     ],
     leave_kind: [
@@ -2874,33 +2874,33 @@ app.get('/v1/enums', (c) => {
       { value: 'childcare', label_ja: '育児休業等' },
     ],
     annual_average_type: [
-      { value: 'regular', label_ja: '定時決定の年間平均', description: 'Compares April-June with the twelve months to June.' },
-      { value: 'revision', label_ja: '随時改定の年間平均', description: 'Three-month fixed pay plus twelve-month non-fixed pay.' },
+      { value: 'regular', label_ja: '定時決定の年間平均', description: '4〜6月と、6月までの12か月を比べます。' },
+      { value: 'revision', label_ja: '随時改定の年間平均', description: '3か月の固定的賃金に、12か月の非固定的賃金を足します。' },
     ],
     detail: [
-      { value: 'full', description: 'Every line of every payslip.' },
-      { value: 'compact', description: 'Payout figures only, roughly a tenth the size.' },
+      { value: 'full', description: '給与明細の全項目。' },
+      { value: 'compact', description: '支払額のみ。おおよそ10分の1の大きさになります。' },
     ],
     include: [
       {
         value: 'statute_text',
         description:
-          'Attach the full text of every provision the response cites, under `statute_text`. ' +
-          'Works on any endpoint. Off by default because most callers want the answer, not the Act.',
+          'レスポンスが引用している条項の本文を `statute_text` に添えます。どのエンドポイントでも '
+          + '使えます。既定では付きません。多くの利用者が欲しいのは答えであって条文本文ではないためです。',
       },
     ],
     calendar: [
-      { value: 'standard', description: 'Weekends and public holidays.' },
+      { value: 'standard', description: '土日と祝日。' },
       { value: 'bank', description: 'Also closed 12/31-1/3, per 銀行法施行令第5条.' },
     ],
     error_codes: [
-      { value: 'invalid_request', description: 'A parameter was missing, malformed or out of range.' },
-      { value: 'missing_parameter', description: 'A required parameter was absent.' },
-      { value: 'unknown_prefecture', description: 'The prefecture could not be resolved.' },
-      { value: 'unknown_parameter', description: 'A query parameter this endpoint does not accept. Rejected rather than ignored, because a silently dropped parameter produces a plausible wrong figure.' },
-      { value: 'out_of_coverage', description: 'Valid input, but outside the range this API publishes.' },
-      { value: 'not_found', description: 'No such endpoint.' },
-      { value: 'internal_error', description: 'Unexpected failure.' },
+      { value: 'invalid_request', description: 'パラメータが欠けている、形式が違う、または範囲外です。' },
+      { value: 'missing_parameter', description: '必須のパラメータが渡されていません。' },
+      { value: 'unknown_prefecture', description: '都道府県を特定できませんでした。' },
+      { value: 'unknown_parameter', description: 'このエンドポイントが受け付けないクエリパラメータです。黙って捨てずに拒否します。捨てられたパラメータは、もっともらしい誤った数字を生むためです。' },
+      { value: 'out_of_coverage', description: '入力は正しいものの、このAPIが公表している範囲の外です。' },
+      { value: 'not_found', description: 'そのエンドポイントはありません。' },
+      { value: 'internal_error', description: '想定していない失敗です。' },
     ],
     prefectures: 'See GET /v1/prefectures for all 47.',
   }));

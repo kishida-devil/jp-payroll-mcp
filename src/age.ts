@@ -105,7 +105,7 @@ export function ageStatus(birth: Date, on: Date): AgeStatus {
   const notes: string[] = [];
   if (birth.getUTCDate() === 1)
     notes.push(
-      'Born on the 1st: each milestone falls on the last day of the previous month, so the change takes effect a month earlier than the birthday month.',
+      '1日生まれの人は、各到達日が前月の末日になります。誕生月より1か月早く切り替わります。',
     );
   const thisMonth = milestones.filter((m) => m.applies_from_month === iso(on).slice(0, 7));
   for (const m of thisMonth)

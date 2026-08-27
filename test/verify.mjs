@@ -577,7 +577,10 @@ for (const [p, want, label] of [
   const mw = byKey.minimum_wage;
   ok(mw.next_revision_expected === '2026-10-01', 'minimum wage revision date is October 2026',
      mw.next_revision_expected);
-  ok(!!mw.note && /October 2026/.test(mw.note), 'minimum wage carries an explicit warning note');
+  // 文言を和文に揃えたので、照合も和文にする。見たいのは「10月の改定に触れているか」で
+  // あって、英語で書かれていることではない。
+  ok(!!mw.note && /2026年10月/.test(mw.note), 'minimum wage carries an explicit warning note',
+     mw.note?.slice(0, 60));
 
   // Data responses must surface their own freshness, not only the dedicated endpoint.
   const wage = await get('/v1/minimum-wage?prefecture=Tokyo');
@@ -1017,7 +1020,8 @@ for (const [p, want, label] of [
   ok(first.long_term_care === true && second.long_term_care === false,
      'one day of birth date shifts the LTC start by a month',
      `${first.long_term_care} vs ${second.long_term_care}`);
-  ok(first.notes.some((n) => /Born on the 1st/.test(n)), 'the 1st-of-month case is called out');
+  ok(first.notes.some((n) => /1日生まれ/.test(n)), 'the 1st-of-month case is called out',
+     JSON.stringify(first.notes).slice(0, 80));
 
   // 29 February births resolve in non-leap years.
   const leap = (await a('birth_date=2000-02-29&as_of=2040-03-01')).body;
@@ -3627,6 +3631,86 @@ for (const [p, want, label] of [
   ok((await get(`${P}&detail=brief`)).status === 400,
      'an unrecognised detail is refused rather than silently served in full');
 }
+// ---- 61. 実務者が読む文言の言語が揃っていること (F-14) ----
+// 記録は「レスポンスが全部英語」だったが、実測すると全体の62%は和文だった。
+// 日本語で書いたエンドポイントを足してきた分で、記録のほうが古い。
+//
+// **本当の欠陥は不統一のほう。**同じフィールド名が、エンドポイントによって和文
+// だったり欧文だったりする — note は和25/欧12、description は和8/欧17、basis は
+// 和17/欧2。どちらで来るか予測できないので、これを読んで画面が作れない。
+// 実測時点で 37 件 / 12 エンドポイントが欧文だった。
+//
+// 対象読者は日本の経理担当と社労士なので、**人が読む文言は和文に寄せる**。
+// 機械が読むもの(key, code, value, url, law_id)は英字のままでよい。
+{
+  const spec = (await get('/openapi.json')).body;
+  const JA = /[ぁ-んァ-ヶ一-龥]/;
+
+  // 人が読む文言のフィールド。機械可読なものは含めない。
+  // rule は入れない。fourteen_days_in_one_month のような識別子で、分岐に使うもの。
+  // 人が読む文言だけを対象にする。
+  const PROSE = new Set(['note', 'notes', 'description', 'basis', 'reason', 'summary',
+                         'label', 'caption', 'caveat', 'covers', 'applies_to',
+                         'why', 'how_to_get', 'hint', 'meaning', 'where_to_check',
+                         'where_to_look', 'not_visible_here', 'determined_by']);
+
+  const walk = function* (o, path = '') {
+    if (Array.isArray(o)) { for (const v of o) yield* walk(v, path + '[]'); return; }
+    if (o && typeof o === 'object') {
+      for (const [k, v] of Object.entries(o)) yield* walk(v, path ? `${path}.${k}` : k);
+      return;
+    }
+    if (typeof o === 'string' && o.length > 12) yield [path, o];
+  };
+
+  const sample = (p) => {
+    const ex = p.example ?? p.schema?.example;
+    if (ex !== undefined && ex !== null && ex !== '') return String(ex);
+    const t = p.schema?.type;
+    return (t === 'integer' || t === 'number') ? '1' : t === 'boolean' ? 'false' : 'x';
+  };
+
+  const english = [];
+  let checked = 0;
+  for (const [path, ops] of Object.entries(spec.paths ?? {})) {
+    if (!ops.get || path.includes('{')) continue;
+    const qs = new URLSearchParams();
+    for (const p of (ops.get.parameters ?? []).filter((x) => x.required)) qs.set(p.name, sample(p));
+    const r = await get(`${path}?${qs}`);
+    if (r.status !== 200) continue;
+    for (const [fp, txt] of walk(r.body)) {
+      const leaf = fp.split('.').pop().replace(/\[\]/g, '');
+      if (!PROSE.has(leaf)) continue;
+      checked++;
+      if (!JA.test(txt)) english.push(`${path} ${fp}: ${txt.slice(0, 40)}`);
+    }
+  }
+
+  ok(checked > 100, 'the sweep looked at enough prose to mean something', `${checked} strings`);
+  ok(english.length === 0,
+     'every string a person reads is in Japanese, so a client can rely on which language it gets',
+     english.slice(0, 6).join(' | ') || 'none');
+
+  // 機械が読むものは英字のまま。和文に寄せるのは人が読むものだけで、
+  // code や key まで日本語にすると分岐が書けなくなる。
+  const bad = await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&zzz=1');
+  ok(bad.body.code === 'unknown_parameter',
+     'while the error code stays machine-readable', bad.body.code);
+  const enums = (await get('/v1/enums')).body;
+  ok((enums.column ?? []).every((v) => /^[a-z_]+$/.test(v.value)),
+     'and so do the enum values themselves',
+     JSON.stringify((enums.column ?? []).map((v) => v.value)));
+
+  // 判定の理由は、判定と同じ言語で返ること。片方だけ英語だと読み手が切り替わる。
+  const elig = (await get('/v1/eligibility?month=2026-03&left_on=2026-03-30')).body;
+  ok(JA.test(elig.reason ?? ''), 'a judgement explains itself in Japanese', elig.reason);
+
+  // 出典の注記も同じ。数字の根拠を確かめる人が読むところ。
+  const inv = (await get('/v1/invoice-number/validate?number=T8700110005901')).body;
+  ok(JA.test(inv.attribution?.note ?? ''),
+     'and so does the caveat on a source', inv.attribution?.note?.slice(0, 50));
+}
+
 
 
 

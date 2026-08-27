@@ -57,7 +57,7 @@ export function freshnessReport(today: Date) {
     counts: { total: datasets.length, overdue: overdue.length, due_soon: soon.length },
     datasets,
     note:
-      'Japanese statutory figures change on fixed dates. This reports how each dataset stands against its next known revision, so a stale figure is visible rather than silent.',
+      '日本の法定の数字は決まった時期に変わります。各データが次の改定に対してどの位置にあるかを示します。古い数字が黙って残るのではなく、見えるようにするためのものです。',
   };
 }
 

@@ -116,5 +116,5 @@ export const BONUS_ATTRIBUTION = {
   attribution_ja: BONUS_META.attribution_ja,
   method_ja: BONUS_META.method,
   note:
-    'The rate comes from last month’s pay after social insurance; the tax is that rate applied to this bonus after its own social insurance. Three cases fall outside the table entirely and are reported rather than approximated.',
+    '税率は前月の社会保険料控除後の給与から決まります。税額は、その率をこの賞与の社会保険料控除後の額に掛けたものです。 Three cases fall outside the table entirely and are reported rather than approximated.',
 };
