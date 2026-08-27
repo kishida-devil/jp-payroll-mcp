@@ -3784,35 +3784,60 @@ for (const [p, want, label] of [
   // 語長ではなく機能語で数える。ただしパラメータ名・URL・ヘッダ値は数えない。
   // そこを数えたせいで「No.2585」「from=&to=」が英文と誤判定されていた。
   const FUNC = /\b(the|is|are|was|an|of|in|on|to|and|for|not|this|that|it|be|with|from|only|when|must|needs?|cannot|its|but|by|or|at|you|your|has|have|does|do|so|if|any|all|each|per|than|then|there|here|which|what|why|how|into|over|under|between|because|rather|instead|whether|while|would|should|could|may|can|will|use|pass|got|see|add)\b/gi;
-  const NOISE = /https?:\/\/\S+|\b[a-z][a-z_-]*=\S*|No\.\d+|\$\{[^}]*\}|\/v1\/[\w/-]+|[「"][a-z_]+[」"]/g;
+  const NOISE = /https?:\/\/\S+|\$\{[^}]*\}?|\/v1\/[\w/-]+|\b[a-z][a-z_-]*=\S*|No\.\d+|\b[A-Z]\d{6,}\b|[「"][a-z_]+[」"]/g;
   const JA = /[ぁ-んァ-ヶ一-龥]/;
   const KANA = /[ぁ-んァ-ヶ]/;
-  // Peppol の 0188 は登録された識別子の正式名称で、訳すと別物を指す。
-  const KEEP = ['0188 (Corporate Number of Japan, ISO 6523 ICD)'];
+  const STR = /'[^'\n]*'|`[^`\n]*`|"[^"\n]*"/g;
+  // Peppol の 0188 は登録された識別子の正式名称で、訳すと別のものを指す。
+  const KEEP_WHOLE = ['0188 (Corporate Number of Japan, ISO 6523 ICD)'];
+  // 散文に出て当たり前の固有名詞・頭字語・HTTPの status phrase。
+  const KEEP_WORDS = new Set(`YYYY MM DD ISO ICD Peppol Gov API Web BASIC RapidAPI MCP JIS NTA
+    PDL UTC GET POST Japan Public Data License Tokyo Conflict Unprocessable Content`.split(/\s+/));
 
   const dir = new URL('../src/', import.meta.url);
-  const names = (await readdir(dir, { recursive: true })).filter((n) => n.endsWith('.ts'));
-  const english = [], mixed = [], frag = [];
-  for (const name of names) {
-    const src = await readFile(new URL(name.replace(/\\/g, '/'), dir), 'utf8');
+  const names = (await readdir(dir, { recursive: true }))
+    .filter((n) => n.endsWith('.ts')).map((n) => n.replace(/\\/g, '/'));
+  const sources = new Map();
+  for (const n of names) sources.set(n, await readFile(new URL(n, dir), 'utf8'));
+
+  // 許可語は手で並べない。**コードに識別子として在る語**と、列挙値として単独で
+  // 現れる語を許可する。フィールドを増やせば許可も自動で増える。手書きの一覧は
+  // 私が思い付いた分しか載らず、それがこの周回で三度漏れた原因だった。
+  const allowed = new Set(KEEP_WORDS);
+  for (const src of sources.values()) {
+    for (const m of src.matchAll(STR)) {
+      const v = m[0].slice(1, -1);
+      if (/^[a-z][a-z0-9_]*$/.test(v)) allowed.add(v);
+    }
+    for (const w of src.replace(STR, ' ').matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) allowed.add(w[0]);
+  }
+
+  const english = [], prose = [], frag = [];
+  for (const [name, src] of sources) {
     for (const [i, line] of src.split('\n').entries()) {
       const st = line.trim();
       if (st.startsWith('*') || st.startsWith('//') || st.startsWith('/*')) continue;
       for (const m of line.matchAll(/['`]([^'`\n]{12,})['`]/g)) {
         const t = m[1];
-        if (KEEP.includes(t)) continue;
-        const at = `src/${name.replace(/\\/g, '/')}:${i + 1} ${t.slice(0, 40)}`;
+        if (KEEP_WHOLE.includes(t)) continue;
+        const at = `src/${name}:${i + 1} ${t.slice(0, 40)}`;
         // かなの直後に小文字ラテン = 部分置換の残骸。正しい並びは API や YYYY で大文字。
         if (/[ぁ-んァ-ヶ][a-z]/.test(t)) frag.push(at);
-        if ((t.replace(NOISE, ' ').match(FUNC) ?? []).length < 1) continue;
-        if (!JA.test(t)) english.push(at);
-        else if (KANA.test(t)) mixed.push(at);
+        const clean = t.replace(NOISE, ' ');
+        if (!JA.test(t)) {
+          if ((clean.match(FUNC) ?? []).length >= 1) english.push(at);
+        } else if (KANA.test(t)) {
+          // 和文に混じる英字は、識別子か列挙値でなければ散文の残り。
+          const stray = (clean.match(/[A-Za-z][A-Za-z0-9_]{2,}/g) ?? []).filter((w) => !allowed.has(w));
+          if (stray.length) prose.push(`${at} → ${stray.slice(0, 3).join(',')}`);
+        }
       }
     }
   }
   ok(names.length >= 20, 'the sweep reads every module under src/, not a list I keep up to date', `${names.length} files`);
+  ok(allowed.size >= 1500, 'and the allow-list is built from the code, so new fields need no edit here', `${allowed.size} tokens`);
   ok(english.length === 0, 'no sentence is left in English, however short', english.slice(0, 4).join(' | ') || 'none');
-  ok(mixed.length === 0, 'and none is half in each', mixed.slice(0, 4).join(' | ') || 'none');
+  ok(prose.length === 0, 'no English survives inside a Japanese one either', prose.slice(0, 4).join(' | ') || 'none');
   ok(frag.length === 0, 'and no partial replace left the tail of the original behind', frag.slice(0, 4).join(' | ') || 'none');
 
   // 入力を間違えた瞬間に言語が切り替わらないこと。ここが本体。

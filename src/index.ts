@@ -392,12 +392,12 @@ app.get('/', (c) => {
       'calendar=bank': '営業日系のエンドポイントに &calendar=bank を付けると銀行の休日(銀行法施行令第5条)になります。12月31日から1月3日も休みです',
       'GET /v1/consumption-tax?date=2015-01-01&amount=1000': 'その時点で有効な消費税率。金額を渡せば適用した額も返す',
       'GET /v1/consumption-tax/history': '1989年以降のすべての税率改定',
-      'GET /v1/corporate-number/validate?number=8700110005901': 'Validate a 法人番号 check digit (Peppol ICD 0188)',
+      'GET /v1/corporate-number/validate?number=8700110005901': '法人番号のチェックディジットを検査する(Peppol ICD 0188)',
       'GET /v1/corporate-number/check-digit?base=700110005901': '12桁の基礎番号からチェックディジットを計算する',
       'GET /v1/invoice-number/validate?number=T8700110005901': '適格請求書発行事業者の登録番号を検査する',
       'POST /v1/invoice-number/validate/batch': '登録番号をまとめて形式検査 — 分かるのは形式だけで、登録・取消・失効は国税庁の公表サイトでしか分からない',
-      'GET /v1/withholding-tax?taxable_amount=300000&dependants=2': 'Monthly withholding income tax (源泉徴収税額表 月額表)',
-      'GET /v1/withholding-tax/daily?taxable_amount=12000&column=hei': 'Daily withholding table (日額表), including the 丙 column',
+      'GET /v1/withholding-tax?taxable_amount=300000&dependants=2': '源泉徴収税額表(月額表)による所得税',
+      'GET /v1/withholding-tax/daily?taxable_amount=12000&column=hei': '日額表による源泉所得税。丙欄を含む',
       'GET /v1/withholding-tax/computer?taxable_amount=300000&dependants=2': '同じ税額を電算機計算の特例で求める',
       'POST /v1/payroll/batch': `1回の呼び出しで最大 ${MAX_BATCH} 人分の給与明細と合計を返します(無料枠は1回 ${FREE_TIER.batch_rows} 人まで)`,
       'GET /v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-03-28': '産休・育休がどの月の社会保険料を免除するか',
@@ -413,7 +413,7 @@ app.get('/', (c) => {
       'GET /v1/workers-compensation?business_type=98&wage_total=3600000': '労災保険料 — 全額が事業主負担。率は事業の種類によって1,000分の2.5から88まで開く',
       'GET /v1/commuting-allowance?amount=12000&distance_km=12&parking=3000': '通勤手当の非課税限度額 — 社会保険は全額を報酬に算入し、所得税は限度額を超えた分にだけかかる。この表は12か月で2度、うち1度は遡って改定された',
       'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': '随時改定(月額変更)に当たるかを判定する。健康保険と厚生年金を別々に見る',
-      'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': 'Annual 定時決定 (算定基礎) from April-June pay',
+      'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': '4〜6月の給与から定時決定(算定基礎)を求める',
       'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': '産休・育休からの復帰時の改定(1等級差で足りる)',
       'POST /v1/standard-remuneration/regular/batch': '算定基礎届を全従業員まとめて1回で。6月は全員が一斉に決まる唯一の月です(健保法41条)',
       'POST /v1/standard-remuneration/annual-average': '季節的な業務 — どちらの決定でも年間平均による保険者算定を使う',
@@ -904,7 +904,7 @@ const HOLIDAY_ATTRIBUTION = {
   source: HOLIDAY_META.source,
   source_url: HOLIDAY_META.source_url,
   coverage: COVERAGE,
-  note: 'Substitute holidays (振替休日) and citizens\' holidays (国民の休日) are recorded by the Cabinet Office under the single name 休日; the "substitute" flag marks them.',
+  note: '振替休日と国民の休日は、内閣府の公表では区別されず「休日」の一語で記録されています。substitute のフラグでその2つを示します。',
 };
 
 /** ?calendar=standard|bank — bank adds 12/31-1/3 per 銀行法施行令第5条. */
@@ -1110,7 +1110,7 @@ app.get('/v1/corporate-number/validate', (c) => {
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('number');
-  if (!raw) return bad(c, 'クエリパラメータ「number」は必須です。', 'A 13-digit 法人番号, e.g. 8700110005901.');
+  if (!raw) return bad(c, 'クエリパラメータ「number」は必須です。', '13桁の法人番号です。例: 8700110005901');
   const r = validateCorporateNumber(raw);
   return c.json({ input: raw, ...r, attribution: CORPORATE_NUMBER_ATTRIBUTION });
 });
@@ -1120,7 +1120,7 @@ app.get('/v1/corporate-number/check-digit', (c) => {
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('base');
-  if (!raw) return bad(c, 'クエリパラメータ「base」は必須です。', 'A 12-digit 会社法人等番号, e.g. 700110005901.');
+  if (!raw) return bad(c, 'クエリパラメータ「base」は必須です。', '12桁の会社法人等番号です。例: 700110005901');
   const r = fromBaseNumber(raw);
   if (!r.ok) return bad(c, r.reason);
   return c.json({
@@ -1511,7 +1511,7 @@ app.get('/v1/leave-exemption', (c) => {
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
     return bad(c, `該当する kind がありません: 「${kindRaw}」`,
-      'Use "maternity" (産前産後休業) or "childcare" (育児休業等).');
+      '産前産後休業は「maternity」、育児休業等は「childcare」です。');
 
   const start = parseDate(c.req.query('start'));
   if (!start)
@@ -1588,7 +1588,7 @@ app.get('/v1/standard-remuneration/revision', (c) => {
 
   const months = parseMonths(c.req.query('months'));
   if (typeof months === 'string')
-    return bad(c, months, 'Format: months=350000:31,352000:30,349000:31 (報酬月額:支払基礎日数).');
+    return bad(c, months, '形式: months=350000:31,352000:30,349000:31 (報酬月額:支払基礎日数)');
 
   const workerType = parseWorkerType(c.req.query('worker_type'));
   if (workerType === null) return badWorkerType(c, c.req.query('worker_type'));
@@ -1879,7 +1879,7 @@ app.get('/v1/standard-remuneration/leave-end', (c) => {
   const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
     return bad(c, `該当する kind がありません: 「${kindRaw}」`,
-      'Use "maternity" (産前産後休業終了時改定) or "childcare" (育児休業等終了時改定).');
+      '産前産後休業終了時改定は「maternity」、育児休業等終了時改定は「childcare」です。');
 
   const current = Number(c.req.query('current_remuneration'));
   if (!Number.isFinite(current) || current < 0)

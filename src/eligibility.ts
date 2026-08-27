@@ -125,7 +125,7 @@ export function eligibilityFor(args: {
     social_insurance_due: true,
     employment_insurance_due: true,
     reason: joinedThisMonth
-      ? `${iso(joined!)} に資格を取得します。日付にかかわらず、その月は1か月分がかかります joined.`
+      ? `${iso(joined!)} に資格を取得します。日付にかかわらず、その月は1か月分がかかります。`
       : '通常の在籍月です。',
   };
 }
