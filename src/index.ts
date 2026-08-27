@@ -1327,6 +1327,14 @@ app.get('/v1/withholding-tax/daily', (c) => {
   });
 });
 
+/**
+ * 月額表との差が目立ち始める水準。
+ *
+ * 実測: 課税支給額850,000円・扶養2人で1,839円、1,200,000円・扶養4人で16,893円、
+ * 2,000,000円・扶養4人で26,006円。扶養が0人ならどの水準でも差は数百円に収まる。
+ */
+const COMPUTER_DIVERGENCE = { from_amount: 850000 };
+
 app.get('/v1/withholding-tax/computer', (c) => {
   const unknownQ = rejectBadQuery(c, ['amount', 'dependants', 'include', 'spouse', 'taxable_amount'] as const);
   if (unknownQ) return unknownQ;
@@ -1348,9 +1356,22 @@ app.get('/v1/withholding-tax/computer', (c) => {
     return bad(c, '「dependants」は0から50の整数で渡してください。',
       '源泉控除対象親族の数です。本人が障害者・寡婦・ひとり親・勤労学生に当たる場合、それぞれ1人として数えます。');
 
+  const result = computerMethod(amount, hasSpouse, dependants);
   return c.json({
-    ...computerMethod(amount, hasSpouse, dependants),
+    ...result,
     method: 'computer',
+    // 「月額表とわずかに異なる」では足りない。実測した差を出しておく。
+    // 高額かつ扶養が多いと月2万円以上ちがい、それは毎月の手取りに出る。
+    notes: [
+      '甲欄だけに使えます。乙欄・丙欄と日額表にこの方式はありません。',
+      '月額表とは結果が一致しません。差は年末調整で精算されるので、'
+        + '同じ年のうちに両方式を混ぜないでください。',
+      amount >= COMPUTER_DIVERGENCE.from_amount && dependants + (hasSpouse ? 1 : 0) > 0
+        ? `この水準では差が大きくなります。実測で、課税支給額2,000,000円・扶養4人のとき`
+          + `月額表より26,006円低くなりました。月額表は上限を超えた分を45.945%で伸ばし、`
+          + `この方式は所得から控除するため税率区分をまたぐためです。`
+        : `課税支給額100万円未満・扶養3人以下では、実測した差は平均458円、最大6,997円でした。`,
+    ],
     attribution: COMPUTER_ATTRIBUTION,
   });
 });

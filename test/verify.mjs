@@ -4015,6 +4015,92 @@ for (const [p, want, label] of [
   ok(notPriced.length === 0, 'and every endpoint reaches the paid spec at all',
      notPriced.join(', ') || 'none');
 }
+{
+  // 電算機計算の特例に、正しさの検査が1本も無かった。
+  //
+  // 仕様書駆動の掃引はエラー経路しか踏まないので、税額そのものは誰も見ていなかった。
+  // 43本のうち、名指しで叩かれていない唯一のエンドポイントだった。
+  //
+  // 外部の真値は手元に無い。代わりに、転記ミスと実装ミスが必ず現れる3つを見る。
+  const spec = JSON.parse(await readFile(new URL('../src/data/withholding-computer-r8.json', import.meta.url), 'utf8'));
+  const tierFor = (tiers, v) => tiers.find((t) => t.to === null || v <= t.to) ?? tiers[tiers.length - 1];
+
+  // 1. 区分の境界で跳ばないこと。subtract を1桁打ち間違えれば、必ず不連続になる。
+  const t1 = (a) => {
+    const t = tierFor(spec.table1_employment_income_deduction.tiers, a);
+    return t.fixed !== undefined ? t.fixed : Math.ceil(a * (t.rate ?? 0) + (t.add ?? 0));
+  };
+  const t4 = (b) => {
+    if (b <= 0) return 0;
+    const t = tierFor(spec.table4_tax.tiers, b);
+    return Math.max(0, Math.round((b * (t.rate ?? 0) - (t.subtract ?? 0)) / 10) * 10);
+  };
+  for (const [label, tiers, f, slack] of [
+    ['第1表 給与所得控除', spec.table1_employment_income_deduction.tiers, t1, 1],
+    ['第4表 税額', spec.table4_tax.tiers, t4, 12],
+  ]) {
+    const jumps = tiers.filter((t) => t.to !== null)
+      .map((t) => [t.to, f(t.to + 1) - f(t.to)])
+      .filter(([, j]) => Math.abs(j) > slack);
+    ok(jumps.length === 0, `${label} は区分の境界で跳ばない`,
+       jumps.map(([b, j]) => `${b}: ${j}`).join(', ') || 'continuous');
+  }
+
+  // 2. 独立に組み直した式と一致すること。丸めの向きや控除の順序を取り違えれば割れる。
+  //    ここは API の実装を読まずに、告示の手順そのままに書く。
+  const byHand = (amount, spouse, deps) => {
+    const afterEmployment = amount - t1(amount);
+    const personal = spec.table2_spouse_and_dependants.spouse_deduction * (spouse ? 1 : 0)
+      + spec.table2_spouse_and_dependants.dependant_deduction_per_person * deps;
+    const basic = tierFor(spec.table3_basic_deduction.tiers, amount).fixed ?? 0;
+    return t4(Math.max(0, afterEmployment - personal - basic));
+  };
+  const mismatches = [];
+  for (const amount of [88000, 150000, 250000, 300000, 500000, 708330, 708331, 850000,
+                        1000000, 1200000, 1710000, 2000000, 2120833, 2245834]) {
+    for (const [spouse, deps] of [[false, 0], [false, 2], [true, 0], [true, 3], [false, 7]]) {
+      const r = await get(`/v1/withholding-tax/computer?taxable_amount=${amount}`
+        + `&spouse=${spouse}&dependants=${deps}`);
+      const want = byHand(amount, spouse, deps);
+      if (r.body.tax !== want) mismatches.push(`${amount}/${spouse}/${deps}: ${r.body.tax} vs ${want}`);
+    }
+  }
+  ok(mismatches.length === 0, 'the endpoint matches the notice worked through independently',
+     mismatches.slice(0, 4).join(' | ') || 'none');
+
+  // 3. 単調性。金額が増えて税が減る、扶養が増えて税が増えるのは、どんな表でも誤り。
+  let prev = -1, monotone = true;
+  for (let a = 100000; a <= 2000000; a += 50000) {
+    const t = (await get(`/v1/withholding-tax/computer?taxable_amount=${a}&dependants=1`)).body.tax;
+    if (t < prev) monotone = false;
+    prev = t;
+  }
+  ok(monotone, 'tax never falls as pay rises');
+  const dep = [];
+  for (const d of [0, 1, 2, 3, 4]) {
+    dep.push((await get(`/v1/withholding-tax/computer?taxable_amount=500000&dependants=${d}`)).body.tax);
+  }
+  ok(dep.every((t, i) => i === 0 || t <= dep[i - 1]), 'and never rises as dependants are added', dep.join(' > '));
+  ok(dep[0] > dep[4], 'while dependants actually change the figure', `${dep[0]} vs ${dep[4]}`);
+
+  // 4. 使えない場面は断ること。日額表と乙欄にこの方式は存在しない。
+  const daily = await get('/v1/withholding-tax/daily?taxable_amount=12000&method=computer');
+  ok(daily.status >= 400, '日額表に電算機計算の特例は無いので断る', `${daily.status}`);
+
+  // 5. 差の申告が実測と合っていること。「わずかに異なる」としか書いていなかったので
+  //    実測値を載せた。載せた数字が本当かを、ここで毎回確かめる。
+  const big = await get('/v1/withholding-tax/computer?taxable_amount=2000000&dependants=4');
+  const table = await get('/v1/withholding-tax?taxable_amount=2000000&dependants=4');
+  const gap = table.body.tax - big.body.tax;
+  ok(gap === 26006, 'the gap the response advertises is the gap it produces', `${gap}`);
+  ok(big.body.notes.some((n) => n.includes('26,006')), 'and the response says so where a person will read it');
+  const small = await get('/v1/withholding-tax/computer?taxable_amount=300000&dependants=2');
+  const smallTable = await get('/v1/withholding-tax?taxable_amount=300000&dependants=2');
+  ok(Math.abs(smallTable.body.tax - small.body.tax) < 100,
+     'while ordinary pay stays within a few tens of yen',
+     `${smallTable.body.tax - small.body.tax}`);
+}
+
 
 
 
