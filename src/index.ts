@@ -4,6 +4,7 @@ import {
   insurance, minwage, empins,
   resolvePrefecture, roundEmployeeShare, findGrade,
   pensionStandardRemuneration, isLtcInsured, minimumWageAt,
+  PREFECTURE_FULL_JA, suggestPrefecture,
   latestMinimumWageEffectiveFrom,
   ATTRIBUTION, type PrefKey,
 } from './lib';
@@ -307,9 +308,14 @@ const needPref = (c: any) => {
   const raw = c.req.query('prefecture') ?? c.req.query('pref');
   const pref = resolvePrefecture(raw ?? null);
   if (!pref) {
+    // 接尾辞だけが違うなら、正しい形を示す。「大阪県」と書いた人が知りたいのは
+    // 「そんな県は無い」ではなく「大阪府と書けばよい」のほう。
+    const meant = suggestPrefecture(raw ?? null);
     return {
       err: bad(c, raw ? `Unknown prefecture: "${raw}"` : 'Missing required query parameter: prefecture',
-        'Accepts English name ("Tokyo"), Japanese ("東京" / "東京都"), or JIS code 1-47. See /v1/prefectures.',
+        meant
+          ? `Did you mean "${meant}"? 都道府県の接尾辞は1つしか正しくありません — 都は東京、道は北海道、府は京都と大阪、残る43が県です。`
+          : 'Accepts English name ("Tokyo"), Japanese ("東京" / "東京都"), or JIS code 1-47. See /v1/prefectures.',
         raw ? 'unknown_prefecture' : 'missing_parameter'),
     };
   }
@@ -433,6 +439,7 @@ app.get('/v1/prefectures', (c) => {
     count: 47,
     prefectures: Object.entries(insurance.prefectures).map(([en, v]) => ({
       name: en, name_ja: v.prefecture_ja, code: v.code,
+          prefecture_ja_full: PREFECTURE_FULL_JA[(v as any).prefecture_ja],
     })),
   }));
 });

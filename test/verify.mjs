@@ -3300,6 +3300,77 @@ for (const [p, want, label] of [
      'and an oversized run is refused with its own code',
      `${tooMany.status} ${tooMany.body.code}`);
 }
+// ---- 57. 存在しない行政区画を受け付けないこと (F-12) ----
+// バー: 公職選挙法 (e-Gov 325AC1000000100) の本文 1,722,869 字を照合し、47件すべての
+// 接尾辞が一意に決まった — 都1(東京)、道1(北海道)、府2(京都・大阪)、県43。
+// 「東京府」「大阪県」「京都県」「北海道県」はいずれも本文に一度も現れない。
+//
+// 解決関数が末尾1文字を /[都道府県]$/ で無条件に落としていたため、「東京府」から
+// 「府」を剥がすと「東京」に一致してしまい、存在しない行政区画に平然と答えていた。
+// 金額を返すAPIで地名を取り違えるのは、料率がまるごと別の県のものになるということ。
+{
+  const rate = (p) => get(`/v1/insurance-rates?prefecture=${encodeURIComponent(p)}`);
+
+  // 正しい接尾辞は通る。
+  for (const [name, code] of [['東京都', 13], ['北海道', 1], ['大阪府', 27], ['京都府', 26],
+                              ['青森県', 2], ['沖縄県', 47]]) {
+    const r = await rate(name);
+    ok(r.status === 200 && r.body.code === code,
+       `${name} resolves to JIS ${code}`, `${r.status} / ${r.body.code}`);
+  }
+
+  // 接尾辞なしも通る。実務では「東京」と書く。
+  for (const [name, code] of [['東京', 13], ['大阪', 27], ['沖縄', 47]]) {
+    const r = await rate(name);
+    ok(r.status === 200 && r.body.code === code, `${name} without a suffix still resolves`,
+       `${r.status} / ${r.body.code}`);
+  }
+
+  // 誤った接尾辞は拒む。ここが今回の本体。
+  for (const wrong of ['東京府', '東京県', '大阪県', '京都県', '北海道県', '北海道府',
+                       '青森府', '青森都', '沖縄都', '神奈川府']) {
+    const r = await rate(wrong);
+    ok(r.status === 400, `${wrong} is refused — no such administrative division`,
+       `${r.status} ${r.body.code ?? ''}`);
+    ok(r.body.code === 'unknown_prefecture', 'with a code a client can branch on', r.body.code);
+  }
+
+  // 正しい名前を示すこと。拒むだけでは直せない。
+  const hint = (await rate('東京府')).body.hint ?? '';
+  ok(/東京都/.test(hint), 'and the refusal names the form that would have worked', hint);
+
+  // 英語名と JIS コードは従来どおり。
+  ok((await rate('Tokyo')).body.code === 13, 'the English name still works');
+  const byCode = await get('/v1/insurance-rates?prefecture=13');
+  ok(byCode.status === 200 && byCode.body.code === 13, 'and so does the JIS code');
+
+  // 存在しない地名は当然拒む。
+  for (const nonsense of ['Atlantis', '武蔵国', '東京市', '']) {
+    const r = await rate(nonsense);
+    ok(r.status === 400, `${nonsense || '(empty)'} is refused`, `${r.status}`);
+  }
+
+  // 都道府県を取る他のエンドポイントでも同じ扱いであること。1本だけ直しても意味がない。
+  for (const path of ['/v1/minimum-wage', '/v1/payroll?monthly_salary=300000&age=40',
+                      '/v1/bonus-insurance?bonus=500000&age=40']) {
+    const sep = path.includes('?') ? '&' : '?';
+    const r = await get(`${path}${sep}prefecture=${encodeURIComponent('大阪県')}`);
+    ok(r.status === 400 && r.body.code === 'unknown_prefecture',
+       `${path.split('?')[0]} refuses it too`, `${r.status} ${r.body.code ?? ''}`);
+  }
+
+  // 参照一覧が正式名称を持っていること。利用者がどう書けばよいか分かる。
+  const prefs = (await get('/v1/prefectures')).body;
+  ok(prefs.count === 47, 'the reference list still carries all forty-seven', `${prefs.count}`);
+  const tokyo = (prefs.prefectures ?? []).find((p) => p.code === 13);
+  ok(tokyo?.prefecture_ja_full === '東京都',
+     'and gives the full official name, not just the bare one',
+     JSON.stringify(tokyo));
+  const suffixes = new Set((prefs.prefectures ?? []).map((p) => (p.prefecture_ja_full ?? '').slice(-1)));
+  ok(suffixes.has('都') && suffixes.has('道') && suffixes.has('府') && suffixes.has('県'),
+     'covering all four kinds of division', [...suffixes].join(''));
+}
+
 
 
 

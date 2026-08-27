@@ -23,10 +23,84 @@ export function resolvePrefecture(input: string | null): PrefKey | null {
   const hit = entries.find(([en]) => en.toLowerCase() === lower);
   if (hit) return hit[0];
 
-  // Japanese, with or without the 都/道/府/県 suffix
-  const ja = q.replace(/[都道府県]$/, '');
-  const jaHit = entries.find(([, v]) => v.prefecture_ja === ja);
-  return jaHit ? jaHit[0] : null;
+  // 接尾辞は1つしか正しくない。末尾を無条件に落とすと「東京府」が「東京」に
+  // 一致してしまい、存在しない行政区画に料率を返すことになる。
+  //
+  // 北海道は名前そのものに「道」を含むので、剥がすと「北海」になって一致しない。
+  // 剥がした形と剥がさない形の両方で当たりを探す。
+  const stripped = q.replace(/[都道府県]$/, '');
+  const jaHit = entries.find(([, v]) => v.prefecture_ja === q)
+    ?? entries.find(([, v]) => v.prefecture_ja === stripped);
+  if (!jaHit) return null;
+  // 接尾辞なし、または正しい接尾辞のときだけ通す。
+  const full = PREFECTURE_FULL_JA[jaHit[1].prefecture_ja];
+  return q === jaHit[1].prefecture_ja || q === full ? jaHit[0] : null;
+}
+
+/**
+ * 正式名称。接尾辞は1つしか正しくない。
+ *
+ * 公職選挙法 (e-Gov 325AC1000000100) の本文 1,722,869 字を照合して確定した。
+ * 47件すべてが一意に決まり、都1(東京)・道1(北海道)・府2(京都・大阪)・県43。
+ * 「東京府」「大阪県」「京都県」「北海道県」はいずれも本文に一度も現れない。
+ *
+ * 北海道は名前そのものに「道」を含むので、接尾辞を足さない。
+ */
+export const PREFECTURE_FULL_JA: Record<string, string> = {
+  '北海道': '北海道',
+  '青森': '青森県',
+  '岩手': '岩手県',
+  '宮城': '宮城県',
+  '秋田': '秋田県',
+  '山形': '山形県',
+  '福島': '福島県',
+  '茨城': '茨城県',
+  '栃木': '栃木県',
+  '群馬': '群馬県',
+  '埼玉': '埼玉県',
+  '千葉': '千葉県',
+  '東京': '東京都',
+  '神奈川': '神奈川県',
+  '新潟': '新潟県',
+  '富山': '富山県',
+  '石川': '石川県',
+  '福井': '福井県',
+  '山梨': '山梨県',
+  '長野': '長野県',
+  '岐阜': '岐阜県',
+  '静岡': '静岡県',
+  '愛知': '愛知県',
+  '三重': '三重県',
+  '滋賀': '滋賀県',
+  '京都': '京都府',
+  '大阪': '大阪府',
+  '兵庫': '兵庫県',
+  '奈良': '奈良県',
+  '和歌山': '和歌山県',
+  '鳥取': '鳥取県',
+  '島根': '島根県',
+  '岡山': '岡山県',
+  '広島': '広島県',
+  '山口': '山口県',
+  '徳島': '徳島県',
+  '香川': '香川県',
+  '愛媛': '愛媛県',
+  '高知': '高知県',
+  '福岡': '福岡県',
+  '佐賀': '佐賀県',
+  '長崎': '長崎県',
+  '熊本': '熊本県',
+  '大分': '大分県',
+  '宮崎': '宮崎県',
+  '鹿児島': '鹿児島県',
+  '沖縄': '沖縄県',
+};
+
+/** 誤った接尾辞を指摘するために、正しい書き方を返す。拒むだけでは直せない。 */
+export function suggestPrefecture(input: string | null): string | null {
+  if (!input) return null;
+  const q = String(input).trim();
+  return PREFECTURE_FULL_JA[q] ?? PREFECTURE_FULL_JA[q.replace(/[都道府県]$/, '')] ?? null;
 }
 
 /**
