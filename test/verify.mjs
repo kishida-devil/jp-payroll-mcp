@@ -3370,6 +3370,117 @@ for (const [p, want, label] of [
   ok(suffixes.has('都') && suffixes.has('道') && suffixes.has('府') && suffixes.has('県'),
      'covering all four kinds of division', [...suffixes].join(''));
 }
+// ---- 58. 再送しても二重計上にならないと言えること (F-13) ----
+// バー: draft-ietf-httpapi-idempotency-key-header-07 (2025-10-15)。
+//   「Idempotency-Key is an Item Structured Header [RFC8941]. Its value MUST be a String」
+//   「It is RECOMMENDED that a UUID [RFC4122] or a similar random identifier be used」
+//   同じキーで同じ内容 → 前回の結果を返す / 異なる内容 → 422 / 処理中 → 409
+//
+// ただしこの仕様は**副作用のある操作**のためのもの。ここのバッチは計算して返すだけで
+// 何も記録しないので、再送しても二重計上のしようがない。409 も 422 も起きえない。
+// 保存を持たないまま「前回の結果を返す」を装うのは嘘になる。
+//
+// 利用者が本当に困るのは「ネットワークが切れた。同じ実行か、別の実行か」。それには
+// 入力から決まる run_id があれば足りる。同じ入力なら必ず同じ id が返るので、
+// 自分の台帳と突き合わせられる。
+{
+  const post = async (path, body, headers = {}) => {
+    const r = await tryFetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+
+  const run = {
+    defaults: { prefecture: 'Tokyo', age: 40 },
+    employees: [{ id: 'a', monthly_salary: 300000 }, { id: 'b', monthly_salary: 280000 }],
+  };
+
+  const first = await post('/v1/payroll/batch', run);
+  ok(first.status === 200, 'the batch runs', `${first.status}`);
+  ok(typeof first.body.run_id === 'string' && first.body.run_id.length >= 16,
+     'and returns an id derived from what was sent', `${first.body.run_id}`);
+
+  // 同じ入力なら必ず同じ id。ここが成り立たないと台帳と突き合わせられない。
+  const again = await post('/v1/payroll/batch', run);
+  ok(again.body.run_id === first.body.run_id,
+     'the same input always yields the same id, so a retry is recognisable',
+     `${first.body.run_id} vs ${again.body.run_id}`);
+
+  // キーの順序が違うだけでは変わらない。JSONの書き方で id が動くと使えない。
+  const reordered = await post('/v1/payroll/batch', {
+    employees: [{ monthly_salary: 300000, id: 'a' }, { monthly_salary: 280000, id: 'b' }],
+    defaults: { age: 40, prefecture: 'Tokyo' },
+  });
+  ok(reordered.body.run_id === first.body.run_id,
+     'and key order does not change it', `${reordered.body.run_id}`);
+
+  // 中身が1円でも違えば別の id。
+  const changed = await post('/v1/payroll/batch', {
+    defaults: { prefecture: 'Tokyo', age: 40 },
+    employees: [{ id: 'a', monthly_salary: 300001 }, { id: 'b', monthly_salary: 280000 }],
+  });
+  ok(changed.body.run_id !== first.body.run_id,
+     'while a single yen of difference makes a different run',
+     `${changed.body.run_id}`);
+
+  // 人の並び順が違えば別の実行。給与の台帳では順序も意味を持つ。
+  const swapped = await post('/v1/payroll/batch', {
+    defaults: { prefecture: 'Tokyo', age: 40 },
+    employees: [{ id: 'b', monthly_salary: 280000 }, { id: 'a', monthly_salary: 300000 }],
+  });
+  ok(swapped.body.run_id !== first.body.run_id,
+     'and so does a different order of employees', `${swapped.body.run_id}`);
+
+  // Idempotency-Key は受け取って返す。クライアントが自動で付けることがある。
+  const key = '8e03978e-40d5-43e8-bc93-6894a57f9324';
+  const withKey = await post('/v1/payroll/batch', run, { 'idempotency-key': key });
+  ok(withKey.body.idempotency?.key === key,
+     'a supplied Idempotency-Key comes back', JSON.stringify(withKey.body.idempotency));
+  ok(withKey.body.run_id === first.body.run_id,
+     'and does not change the run id, which comes from the body alone',
+     `${withKey.body.run_id}`);
+
+  // 同じキーで違う内容を送っても 422 にはならない。保存していないので検出しようがなく、
+  // 検出したふりをするより「起きえない」と言うほうが正しい。
+  const keyDifferent = await post('/v1/payroll/batch', changed.body ? {
+    defaults: { prefecture: 'Tokyo', age: 40 },
+    employees: [{ id: 'a', monthly_salary: 999999 }],
+  } : run, { 'idempotency-key': key });
+  ok(keyDifferent.status === 200,
+     'the same key with a different body is not a 422 here, because nothing was stored',
+     `${keyDifferent.status}`);
+
+  // なぜ 409/422 が起きないのかを、返り値の中で述べること。
+  const idem = first.body.idempotency ?? {};
+  ok(idem.safe_to_retry === true,
+     'the response states that retrying is safe', JSON.stringify(idem));
+  ok(/副作用|記録しません|stateless/i.test(JSON.stringify(idem)),
+     'and says why — nothing is recorded', JSON.stringify(idem).slice(0, 140));
+  ok(/draft-ietf-httpapi-idempotency-key-header/.test(JSON.stringify(idem)),
+     'citing the draft it is answering', JSON.stringify(idem).slice(0, 200));
+
+  // POST は他にもある。1本だけ直すのは、この周回で4度やった形。
+  for (const [path, body] of [
+    ['/v1/standard-remuneration/regular/batch', {
+      employees: [{ id: 'x', months: [
+        { remuneration: 300000, payment_basis_days: 30 },
+        { remuneration: 300000, payment_basis_days: 30 },
+        { remuneration: 300000, payment_basis_days: 30 }] }],
+    }],
+    ['/v1/invoice-number/validate/batch', { numbers: ['T8700110005901'] }],
+  ]) {
+    const a = await post(path, body);
+    const b = await post(path, body);
+    ok(typeof a.body.run_id === 'string' && a.body.run_id === b.body.run_id,
+       `${path} carries the same kind of id`, `${a.body.run_id}`);
+    ok(a.body.idempotency?.safe_to_retry === true,
+       `${path} says a retry is safe too`, JSON.stringify(a.body.idempotency));
+  }
+}
+
 
 
 

@@ -1143,6 +1143,8 @@ app.post('/v1/invoice-number/validate/batch', async (c) => {
   const passed = results.filter((r) => r.check_digit_valid).length;
 
   return c.json({
+    run_id: await runId(payload),
+    idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: results.length,
     summary: {
       check_digit_valid: passed,
@@ -1253,6 +1255,57 @@ app.get('/v1/withholding-tax/computer', (c) => {
   });
 });
 
+/**
+ * 入力から決まる実行ID。
+ *
+ * バッチは計算して返すだけで、何も記録しない。だから再送しても二重計上は起きない。
+ * 起きないことを利用者が確かめられないのが問題だった。同じ入力なら必ず同じ id が
+ * 返るようにしておけば、切れた通信のあとで「同じ実行か、別の実行か」を自分の台帳と
+ * 突き合わせて決められる。
+ *
+ * キーの順序では変わらないよう正規化する。JSONの書き方で id が動くと使えない。
+ * ただし配列の順序は保つ — 給与の台帳では並び順も意味を持つ。
+ */
+function canonicalise(v: any): any {
+  if (Array.isArray(v)) return v.map(canonicalise);
+  if (v && typeof v === 'object')
+    return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonicalise(v[k])]));
+  return v;
+}
+
+async function runId(payload: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(canonicalise(payload)));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].slice(0, 16)
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 冪等性についての申告。
+ *
+ * draft-ietf-httpapi-idempotency-key-header-07 は、同じキーで内容が違えば 422、
+ * 処理中の重複なら 409 を返せと定める。ここではどちらも起きない。保存していないので
+ * 検出しようがなく、**検出したふりをするより「起きえない」と言うほうが正しい。**
+ * Idempotency-Key は受け取って返す — クライアントが自動で付けることがあるため。
+ */
+function idempotencyNote(key: string | undefined) {
+  return {
+    ...(key !== undefined ? { key } : {}),
+    safe_to_retry: true,
+    deterministic_run_id: true,
+    why:
+      'この呼び出しは計算して返すだけで、何も記録しません。副作用が無いので、再送しても' +
+      '二重計上は起きません。run_id は送った内容だけから決まるので、同じ内容なら必ず同じ値に' +
+      'なります。通信が切れたときは、返ってきた run_id を自分の台帳と突き合わせてください。',
+    not_applicable: [
+      '409 Conflict — 処理中の重複を検出するには保存が要ります。持っていないので起きません。',
+      '422 Unprocessable Content — 同じキーで異なる内容を検出するにも保存が要ります。同じ理由で起きません。',
+    ],
+    reference: 'draft-ietf-httpapi-idempotency-key-header-07 (2025-10-15)',
+    reference_url: 'https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/',
+  };
+}
+
 app.post('/v1/payroll/batch', async (c) => {
   let payload: { employees?: unknown; defaults?: unknown };
   try {
@@ -1296,6 +1349,8 @@ app.post('/v1/payroll/batch', async (c) => {
 
   const { results, errors, summary } = runBatch(rows as BatchRow[], defaults, detailRaw as Detail);
   return c.json({
+    run_id: await runId(payload),
+    idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: rows.length,
     detail: detailRaw,
     succeeded: results.length,
@@ -1714,6 +1769,8 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
 
   const decidedRows = results.filter((r) => r.changed !== null);
   return c.json({
+    run_id: await runId(payload),
+    idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: rows.length,
     succeeded: results.length,
     failed: errors.length,
@@ -1840,6 +1897,8 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
 
   if (type === 'regular')
     return c.json({
+      run_id: await runId(body),
+      idempotency: idempotencyNote(c.req.header('idempotency-key')),
       type,
       ...annualAverageRegular({
         months, worker_type: workerType,
@@ -1857,6 +1916,8 @@ app.post('/v1/standard-remuneration/annual-average', async (c) => {
       'The annual-average route exists only where fixed pay actually changed; "none" can never qualify.');
 
   return c.json({
+    run_id: await runId(body),
+    idempotency: idempotencyNote(c.req.header('idempotency-key')),
     type,
     ...annualAverageRevision({
       months, current_remuneration: current,
