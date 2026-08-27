@@ -3537,6 +3537,97 @@ for (const [p, want, label] of [
   ok((await get('/openapi.json?profile=full')).status === 200,
      'and "full" is accepted explicitly');
 }
+// ---- 60. 毎回同じ文言を運ばずに済むこと (F-15) ----
+// バー: 実測。全38本のGETで 114,695 バイト、うち attribution / notes / guidance /
+// statutes が 44,892 バイト (39%)。判定系ほど比率が高く、
+// /v1/standard-remuneration/revision は 6,776 バイト中 6,028 バイト (88%) が
+// 呼ぶたびに同じ文言だった。/v1/payroll も 5,249 中 3,487 (66%)。
+//
+// バッチには detail=compact があったが、単発には無かった。500人を1人ずつ呼ぶ利用者が
+// いちばん払っている。出典を消すのではなく、**要らないと言えるようにする** —
+// 既定は従来どおり全部返す。
+{
+  const P = '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40';
+
+  const full = await get(P);
+  const compact = await get(`${P}&detail=compact`);
+  ok(full.status === 200 && compact.status === 200, 'both details answer',
+     `${full.status} / ${compact.status}`);
+
+  // 数字は1つも変わらないこと。軽くする代わりに答えが変わるなら使えない。
+  ok(JSON.stringify(compact.body.totals) === JSON.stringify(full.body.totals),
+     'the figures are identical either way',
+     `${JSON.stringify(compact.body.totals).slice(0, 60)}`);
+  ok(JSON.stringify(compact.body.deductions) === JSON.stringify(full.body.deductions),
+     'and so is every deduction');
+
+  // 定型が落ちること。
+  ok(full.body.attribution !== undefined && compact.body.attribution === undefined,
+     'attribution is carried by default and dropped on request',
+     `${full.body.attribution !== undefined} / ${compact.body.attribution === undefined}`);
+  ok(full.body.notes !== undefined && compact.body.notes === undefined,
+     'and so are the notes');
+
+  // 消したなら、どこにあるかを示すこと。黙って消えると出典を追えなくなる。
+  ok(typeof compact.body.omitted === 'object' && compact.body.omitted !== null,
+     'the compact response says what it left out', JSON.stringify(compact.body.omitted));
+  ok(/detail=full|detail を外/.test(JSON.stringify(compact.body.omitted ?? {})),
+     'and how to get it back', JSON.stringify(compact.body.omitted));
+  ok((compact.body.omitted?.fields ?? []).includes('attribution'),
+     'naming the fields by name', JSON.stringify(compact.body.omitted?.fields));
+
+  // 実際に小さくなること。効かない対策を入れても意味がない。
+  const fullBytes = new TextEncoder().encode(JSON.stringify(full.body)).length;
+  const compactBytes = new TextEncoder().encode(JSON.stringify(compact.body)).length;
+  ok(compactBytes < fullBytes * 0.6,
+     'and the response is meaningfully smaller, not nominally',
+     `${fullBytes} -> ${compactBytes} bytes (${Math.round(compactBytes * 100 / fullBytes)}%)`);
+
+  // 定型の比率が高い判定系でこそ効くこと。
+  const rev = '/v1/standard-remuneration/revision?current_remuneration=300000'
+    + '&months=350000:31,352000:30,349000:31&fixed_pay_change=increase';
+  const revFull = await get(rev);
+  const revCompact = await get(`${rev}&detail=compact`);
+  const rf = new TextEncoder().encode(JSON.stringify(revFull.body)).length;
+  const rc = new TextEncoder().encode(JSON.stringify(revCompact.body)).length;
+  ok(rc < rf * 0.35,
+     'the judgement endpoints, where the boilerplate ran to 88 per cent, shrink most',
+     `${rf} -> ${rc} bytes (${Math.round(rc * 100 / rf)}%)`);
+  // 判定そのものは残ること。理由を消しては判定が使えない。
+  ok(revCompact.body.decision !== undefined || revCompact.body.schemes !== undefined
+       || revCompact.body.required !== undefined,
+     'while the judgement itself survives', Object.keys(revCompact.body).join(','));
+
+  // 既定は変えない。既存の利用者のレスポンスが黙って変わるのは避ける。
+  ok(full.body.attribution !== undefined,
+     'omitting the parameter changes nothing for anyone already integrated');
+
+  // 全GETで受け付けること。1本だけ直すのは、この周回で何度もやった形。
+  const spec = (await get('/openapi.json')).body;
+  const notAccepted = [];
+  for (const [path, ops] of Object.entries(spec.paths ?? {})) {
+    if (!ops.get || path.includes('{')) continue;
+    const required = (ops.get.parameters ?? []).filter((p) => p.required);
+    const qs = new URLSearchParams();
+    for (const p of required) {
+      const ex = p.example ?? p.schema?.example;
+      qs.set(p.name, ex != null ? String(ex)
+        : (p.schema?.type === 'integer' || p.schema?.type === 'number') ? '1' : 'x');
+    }
+    const base = await get(`${path}?${qs}`);
+    if (base.status >= 400) continue;
+    qs.set('detail', 'compact');
+    const r = await get(`${path}?${qs}`);
+    if (r.status === 400 && r.body.code === 'unknown_parameter') notAccepted.push(path);
+  }
+  ok(notAccepted.length === 0, 'every GET accepts detail=compact',
+     notAccepted.join(', ') || 'none');
+
+  // 綴り間違いは拒む。黙って全部返すと、軽くしたつもりで軽くなっていない。
+  ok((await get(`${P}&detail=brief`)).status === 400,
+     'an unrecognised detail is refused rather than silently served in full');
+}
+
 
 
 

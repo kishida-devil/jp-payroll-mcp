@@ -189,6 +189,49 @@ app.use('*', async (c, next) => {
   //
   // 既定で足さないのは、レスポンスが既に大きく、判定結果だけを見たい呼び出しでは
   // 条文本文が純粋なノイズになるため。
+  // detail=compact — 毎回同じ文言を運ばずに済むようにする。
+  //
+  // 実測で、全GETの39%が attribution / notes / guidance / statutes だった。判定系ほど
+  // 比率が高く、随時改定は88%が定型。出典を消すのではなく「要らない」と言えるように
+  // する。既定は従来どおり全部返すので、いま繋いでいる利用者のレスポンスは変わらない。
+  //
+  // 消したことは黙らない。何を落としたか、どう取り戻すかを omitted に書く。
+  // 出典が黙って消えると、数字の根拠を追えなくなる。
+  // 綴り間違いで全部返ると、軽くしたつもりで軽くなっていない。
+  const detailRaw = c.req.query('detail');
+  if (detailRaw !== undefined && detailRaw !== 'compact' && detailRaw !== 'full'
+      && c.res.status === 200) {
+    c.res = new Response(JSON.stringify({
+      error: `Unknown detail: "${detailRaw}"`,
+      code: 'invalid_request',
+      hint: 'Use "compact" to leave out the fields that are identical on every call, or "full" (the default) for everything.',
+    }), { status: 400, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    return;
+  }
+
+  if (c.req.query('detail') === 'compact' && c.res.status === 200) {
+    const type = c.res.headers.get('content-type') ?? '';
+    if (type.includes('application/json')) {
+      const body: any = await c.res.clone().json();
+      const DROP = ['attribution', 'notes', 'guidance', 'statutes', 'notice',
+                    'not_required_for', 'excludable_allowances', 'reference',
+                    'headcount_schedule', 'revisions', 'idempotency'];
+      const dropped = DROP.filter((k) => body[k] !== undefined);
+      if (dropped.length) {
+        for (const k of dropped) delete body[k];
+        body.omitted = {
+          fields: dropped,
+          why: '毎回同じ内容なので省いています。数字と判定は省いていません。',
+          how_to_get: 'detail を外すか detail=full を付けると、すべて返ります。',
+        };
+        c.res = new Response(JSON.stringify(body), {
+          status: c.res.status,
+          headers: c.res.headers,
+        });
+      }
+    }
+  }
+
   if (c.req.query('include') === 'statute_text' && c.res.status === 200) {
     const body = await c.res.clone().json().catch(() => null);
     if (body && typeof body === 'object') {
@@ -235,8 +278,10 @@ app.use('*', async (c, next) => {
  * はるかに高くつく。
  */
 function rejectUnknownQuery(c: any, allowed: readonly string[]) {
+  // detail はどのエンドポイントでも受ける。個別の許可リストに足していく形にすると、
+  // 定数で持っている4本を取りこぼしたように、次に足す人がまた漏らす。
   const seen = Object.keys(c.req.query());
-  const unknown = seen.filter((k) => !allowed.includes(k));
+  const unknown = seen.filter((k) => k !== 'detail' && !allowed.includes(k));
   if (!unknown.length) return null;
   const near = (k: string) =>
     allowed.find((a) => a.startsWith(k.slice(0, 4)) || k.startsWith(a.slice(0, 4)));
@@ -1607,8 +1652,7 @@ function parseSubmissionQuery(c: any): { value: any } | { err: any } {
 
 app.get('/v1/standard-remuneration/regular', (c) => {
   // 未知パラメータを黙って捨てると、acquired_on の綴り間違いが「対象」に化ける。
-  const unknownQ = rejectUnknownQuery(c, [
-    'months', 'worker_type', 'previous_remuneration', 'acquired_month',
+  const unknownQ = rejectUnknownQuery(c, ['months', 'worker_type', 'previous_remuneration', 'acquired_month',
     'year', 'acquired_on', 'left_on', 'revision_month',
   ] as const);
   if (unknownQ) return unknownQ;
@@ -2053,8 +2097,7 @@ app.get('/v1/national-insurance', (c) => {
 });
 
 app.get('/v1/annual-cost', (c) => {
-  const unknownQ = rejectUnknownQuery(c, [
-    'prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',
+  const unknownQ = rejectUnknownQuery(c, ['prefecture', 'pref', 'monthly_salary', 'standard_remuneration', 'age', 'birth_date',
     'business_type', 'column', 'dependants', 'income_tax', 'resident_tax',
     'employment_type', 'workers_comp_type', 'bonuses', 'fiscal_year', 'as_of', 'include',
   ] as const);
@@ -2238,8 +2281,7 @@ app.get('/v1/annual-cost', (c) => {
 });
 
 app.get('/v1/annual-leave', (c) => {
-  const unknownQ = rejectUnknownQuery(c, [
-    'hired_on', 'as_of', 'attendance_rate', 'weekly_days', 'weekly_hours',
+  const unknownQ = rejectUnknownQuery(c, ['hired_on', 'as_of', 'attendance_rate', 'weekly_days', 'weekly_hours',
     'annual_days', 'days_taken', 'include',
   ] as const);
   if (unknownQ) return unknownQ;
@@ -2325,8 +2367,7 @@ app.get('/v1/annual-leave', (c) => {
 });
 
 app.get('/v1/worker-type', (c) => {
-  const unknownQ = rejectUnknownQuery(c, [
-    'weekly_hours', 'normal_weekly_hours', 'monthly_days', 'normal_monthly_days',
+  const unknownQ = rejectUnknownQuery(c, ['weekly_hours', 'normal_weekly_hours', 'monthly_days', 'normal_monthly_days',
     'monthly_wage', 'is_student', 'workplace_insured_count', 'employment_months',
   ] as const);
   if (unknownQ) return unknownQ;
