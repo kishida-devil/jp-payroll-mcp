@@ -174,8 +174,8 @@ app.use('*', async (c, next) => {
       return c.json({
         error: `Free tier limit reached: ${FREE_TIER.requests_per_minute} requests per minute.`,
         code: 'rate_limited',
-        hint: 'This applies to direct and MCP access. For production volume, see the ' +
-          'RapidAPI listing. ' + UPGRADE.what,
+        hint: '直接呼ぶ場合とMCP経由に適用されます。本番の量を扱うなら RapidAPI の出品を見てください。'
+          + UPGRADE.what,
         free_tier: FREE_TIER,
         upgrade: UPGRADE.where,
       }, 429);
@@ -204,7 +204,7 @@ app.use('*', async (c, next) => {
     c.res = new Response(JSON.stringify({
       error: `Unknown detail: "${detailRaw}"`,
       code: 'invalid_request',
-      hint: 'Use "compact" to leave out the fields that are identical on every call, or "full" (the default) for everything.',
+      hint: '毎回同じ内容のフィールドを省くなら「compact」、すべて返すなら「full」(既定)を指定してください。',
     }), { status: 400, headers: { 'content-type': 'application/json; charset=utf-8' } });
     return;
   }
@@ -920,7 +920,7 @@ const outOfCoverage = (c: any, iso: string) =>
     error: `Date ${iso} is outside the published range.`,
     code: 'out_of_coverage',
     coverage: COVERAGE,
-    hint: 'The Cabinet Office publishes holidays for this range only. Future years are added each February.',
+    hint: '内閣府が公表しているのはこの範囲だけです。先の年は毎年2月に追加されます。',
   }, 422);
 
 app.get('/v1/holidays', (c) => {
@@ -1048,7 +1048,7 @@ app.get('/v1/consumption-tax', (c) => {
     return c.json({
       error: `No consumption tax was in force on ${on}.`,
       code: 'out_of_coverage',
-      hint: 'Japan introduced consumption tax on 1989-04-01.',
+      hint: '日本の消費税は1989年4月1日に導入されました。',
       introduced: ctax.history[0].effective_from,
     }, 422);
 
@@ -2856,8 +2856,8 @@ app.get('/v1/enums', (c) => {
       { value: 'general', label_ja: '一般の被保険者', payment_basis_days: 17 },
       {
         value: 'part_time_short_hours', label_ja: '短時間就労者 (パート等)', payment_basis_days: 17,
-        description: 'Works shorter hours than a regular employee but meets the three-quarters test. ' +
-          'In 定時決定 only, months of 15-16 days can be used when no month reaches 17.',
+        description: '通常の労働者より短い時間で働くものの、四分の三基準は満たす人。'
+          + '定時決定に限り、17日以上の月が無いときは15〜16日の月を使えます。',
       },
       {
         value: 'short_time_insured', label_ja: '特定適用事業所の短時間労働者', payment_basis_days: 11,
@@ -2911,7 +2911,7 @@ app.get('/v1/data-freshness', (c) => {
   return (
   c.json(freshnessReport(new Date())));
 });
-app.notFound((c) => c.json({ error: 'Not found', code: 'not_found', hint: 'See GET / for the endpoint list.' }, 404));
+app.notFound((c) => c.json({ error: 'Not found', code: 'not_found', hint: 'エンドポイントの一覧は GET / を見てください。' }, 404));
 app.onError((e, c) => c.json({ error: 'Internal error', code: 'internal_error', detail: String(e?.message ?? e) }, 500));
 
 export default app;

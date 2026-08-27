@@ -2,6 +2,7 @@
 // 協会けんぽ 令和8年度保険料額表 workbook, plus boundary and rule checks.
 import fixture from './official-fixture.json' with { type: 'json' };
 import freshness from '../src/data/freshness.json' with { type: 'json' };
+import { readFile } from 'node:fs/promises';
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:8799';
 
@@ -3710,6 +3711,64 @@ for (const [p, want, label] of [
   ok(JA.test(inv.attribution?.note ?? ''),
      'and so does the caveat on a source', inv.attribution?.note?.slice(0, 50));
 }
+{
+  // API を叩く掃引だけでは足りなかった。
+  //
+  // 前のブロックの掃引は「人が読む文言 138 件、欧文 0」と報告したが、left_on を
+  // 渡したときの eligibility は英語のままだった。掃引が必須パラメータだけで呼ぶので、
+  // 分岐に入る文言に届かない。第6反復で見つけたのと同じ偏り —
+  // **自動の網から漏れるのは、条件が多い＝重要な経路のほう。**
+  //
+  // ソースを直接読めば、呼ばれ方によらず全部見える。API 側の掃引と両方置く。
+  const files = [
+    'index.ts', 'lib.ts', 'eligibility.ts', 'holidays.ts', 'corporate-number.ts',
+    'payslip.ts', 'age.ts', 'freshness.ts', 'leave-exemption.ts', 'bonus.ts',
+    'bonus-insurance.ts', 'remuneration-revision.ts', 'worker-type.ts',
+    'annual-leave.ts', 'national-insurance.ts', 'allowances.ts', 'overtime.ts',
+    'workers-comp.ts', 'statutes.ts', 'withholding.ts', 'batch.ts',
+  ];
+  const JA = /[ぁ-んァ-ヶ一-龥]/;
+  // 人が読むキー。code / key / value / url は機械が読むので入れない。
+  const KEY = /(reason|note|basis|summary|description|caveat|hint|why|meaning|label|applies_to|covers)\s*:\s*\n?\s*['`]([^'`]{20,})['`]/g;
+
+  const leftovers = [];
+  let scanned = 0;
+  for (const name of files) {
+    let src;
+    try {
+      src = await readFile(new URL(`../src/${name}`, import.meta.url), 'utf8');
+    } catch { continue; }
+    scanned++;
+    for (const m of src.matchAll(KEY)) {
+      if (!JA.test(m[2])) leftovers.push(`src/${name}: ${m[1]} = ${m[2].slice(0, 40)}`);
+    }
+  }
+  ok(scanned >= 15, 'the source sweep covers the modules that carry prose', `${scanned} files`);
+  ok(leftovers.length === 0,
+     'and no branch left in English, including the ones a parameter sweep never reaches',
+     leftovers.slice(0, 5).join(' | ') || 'none');
+
+  // 掃引が届かない分岐を名指しで確かめる。網の目からこぼれた先こそ見る。
+  for (const [q, label] of [
+    ['month=2026-03&left_on=2026-03-30', '喪失月'],
+    ['month=2026-03&left_on=2026-03-31', '月末退職'],
+    ['month=2026-03&joined_on=2026-04-01', '入社前'],
+    ['month=2026-03&joined_on=2026-03-05&left_on=2026-03-20', '同月得喪'],
+  ]) {
+    const r = (await get(`/v1/eligibility?${q}`)).body;
+    ok(JA.test(r.reason ?? '') && !/[A-Za-z]{5,}/.test(r.reason ?? ''),
+       `${label} の理由が和文で返る`, r.reason?.slice(0, 46));
+  }
+  for (const [path, label] of [
+    ['/v1/corporate-number/validate?number=abc', '法人番号 非数字'],
+    ['/v1/corporate-number/validate?number=123', '法人番号 桁不足'],
+    ['/v1/invoice-number/validate?number=X123', '登録番号 先頭違い'],
+  ]) {
+    const r = (await get(path)).body;
+    ok(JA.test(r.reason ?? ''), `${label} の理由が和文で返る`, r.reason?.slice(0, 40));
+  }
+}
+
 
 
 

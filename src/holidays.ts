@@ -48,7 +48,7 @@ export const BANK_CALENDAR = {
   statute: '銀行法第15条第1項 / 銀行法施行令第5条',
   statute_url: 'https://laws.e-gov.go.jp/law/357CO0000000040',
   note:
-    'Article 15(1) says bank holidays are "limited to" Sunday and the days the Cabinet Order specifies, so every other day is a banking day. This is distinct from the Zengin system\'s non-operating days.',
+    '銀行法施行令第15条第1項は休日を日曜日と政令が定める日に「限る」としているので、それ以外の日は銀行の営業日です。全銀システム\の非稼働日とは別のものです。',
 };
 
 /** 12/31–1/3, the year-end and new-year closure in 銀行法施行令第5条第2号. */

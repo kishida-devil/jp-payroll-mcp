@@ -41,9 +41,9 @@ export type CorporateNumberResult =
 export function validateCorporateNumber(input: string): CorporateNumberResult {
   const cleaned = input.replace(/[-\s　]/g, '');
   if (!DIGITS.test(cleaned))
-    return { valid: false, reason: 'Corporate numbers contain digits only (hyphens and spaces are ignored).' };
+    return { valid: false, reason: '法人番号は数字だけです(ハイフンと空白は無視します)。' };
   if (cleaned.length !== 13)
-    return { valid: false, reason: `A corporate number is 13 digits; got ${cleaned.length}.` };
+    return { valid: false, reason: `法人番号は13桁です。渡されたのは ${cleaned.length} 桁でした。` };
 
   const base = cleaned.slice(1);
   const given = cleaned.charCodeAt(0) - 48;
@@ -52,7 +52,7 @@ export function validateCorporateNumber(input: string): CorporateNumberResult {
   if (given !== expected)
     return {
       valid: false,
-      reason: 'Check digit does not match the base number.',
+      reason: 'チェックディジットが基礎番号と一致しません。',
       expected_check_digit: expected,
       corporate_number: cleaned,
     };
@@ -66,7 +66,7 @@ export function fromBaseNumber(input: string):
   | { ok: false; reason: string } {
   const cleaned = input.replace(/[-\s　]/g, '');
   if (!DIGITS.test(cleaned))
-    return { ok: false, reason: 'Base numbers contain digits only (hyphens and spaces are ignored).' };
+    return { ok: false, reason: '基礎番号は数字だけです(ハイフンと空白は無視します)。' };
   if (cleaned.length !== 12)
     return { ok: false, reason: `A base number (会社法人等番号) is 12 digits; got ${cleaned.length}.` };
   const cd = checkDigitFor(cleaned);
@@ -127,10 +127,10 @@ export function validateInvoiceNumber(input: string): InvoiceNumberResult {
   } as const;
 
   if (!cleaned.startsWith('T'))
-    return { ...base, reason: 'A registration number starts with "T".' };
+    return { ...base, reason: '登録番号は「T」で始まります。' };
   const digits = cleaned.slice(1);
   if (!DIGITS.test(digits) || digits.length !== 13)
-    return { ...base, reason: `"T" must be followed by exactly 13 digits; got ${digits.length}.` };
+    return { ...base, reason: `「T」のあとは13桁でなければなりません。渡されたのは ${digits.length} 桁でした。` };
 
   const given = digits.charCodeAt(0) - 48;
   const expected = checkDigitFor(digits.slice(1));

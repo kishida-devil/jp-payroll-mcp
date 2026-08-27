@@ -67,7 +67,7 @@ export function eligibilityFor(args: {
   if (joined && monthKey(joined) > m)
     return {
       ...base, social_insurance_due: false, employment_insurance_due: false,
-      reason: 'Employment had not started in this month.',
+      reason: 'この月にはまだ在籍していません。',
     };
 
   // Already gone: eligibility was lost in an earlier month.
@@ -75,7 +75,7 @@ export function eligibilityFor(args: {
     return {
       ...base, social_insurance_due: false,
       employment_insurance_due: false,
-      reason: 'Eligibility was lost before this month.',
+      reason: 'この月より前に資格を喪失しています。',
     };
 
   // 同月得喪 — joined and left inside the same month.
@@ -99,11 +99,10 @@ export function eligibilityFor(args: {
       same_month_acquisition_and_loss: true,
       employment_insurance_due: true,
       reason:
-        `Joined on ${iso(joined)} and lost eligibility on ${iso(lostOn)}, both in this month. ` +
-        '健康保険法第156条第3項 exempts the loss month only for someone insured continuously ' +
-        'from the previous month (「前月から引き続き被保険者である者」), which does not describe ' +
-        'someone who joined the same month. A full month is charged, and 厚生年金保険法第19条第2項 ' +
-        'counts it as one month of insured period.',
+        `${iso(joined)} に資格を取得し、${iso(lostOn)} に喪失しています。どちらもこの月です。`
+        + '健康保険法第156条第3項が喪失月を免除するのは「前月から引き続き被保険者である者」に'
+        + '限られ、同じ月に入った人はこれに当たりません。よって1か月分がかかり、'
+        + '厚生年金保険法第19条第2項はこれを被保険者期間1か月として数えます。',
     };
 
   // The month eligibility is lost: no premium (156条3項).
@@ -113,10 +112,10 @@ export function eligibilityFor(args: {
       // Wages for the final days worked are still wages.
       employment_insurance_due: !!left && monthKey(left) === m,
       reason:
-        `Eligibility is lost on ${iso(lostOn)}, which falls in this month, so no social insurance premium is assessed (健康保険法第156条第3項). ` +
+        `${iso(lostOn)} に資格を喪失し、その日はこの月に属するため、社会保険料はかかりません(健康保険法第156条第3項)。` +
         (left && left.getUTCDate() === lastDayOfMonth(left)
-          ? 'Note: leaving on the last day of a month pushes the loss into the next month, which is why the previous month is still payable.'
-          : 'Leaving one day later, on the last day of the month, would have made this month payable.'),
+          ? 'なお、月末日に退職すると喪失日が翌月にずれるので、その場合は前月分まで徴収されます。'
+          : 'あと1日遅く、月末日に退職していれば、この月は徴収対象になっていました。'),
     };
 
   // Joined this month, or an ordinary month in between.
