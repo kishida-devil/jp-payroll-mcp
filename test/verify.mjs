@@ -3955,6 +3955,47 @@ for (const [p, want, label] of [
   const again = await postJson('/v1/payroll/batch', body);
   ok(a.body.run_id === again.body.run_id, 'while the same call is still the same run', again.body.run_id);
 }
+{
+  // 課金側の商品棚。買う人が読むのは説明ページで、そこに無い機能は無いのと同じ。
+  //
+  // Endpointsタブは仕様書から自動生成されるので43本とも呼べる状態にはある。
+  // 抜けていたのは購入判断に使われるほうで、割増賃金・年次有給休暇・被保険者区分・
+  // 労災保険率・国民年金・通勤手当・年額コスト・消費税の8領域が載っていなかった。
+  // **第1〜第2反復で「臨界経路の穴」と呼んで塞いだものが、買い手に見えていなかった。**
+  const doc = await readFile(new URL('../recipes/jp-payroll/rapidapi-docs.md', import.meta.url), 'utf8');
+  const spec = (await get('/openapi.json')).body;
+  const n = Object.keys(spec.paths).filter((p) => p.startsWith('/v1/')).length;
+
+  // 機能領域は、その領域を実装しているエンドポイントの存在から導く。
+  // 手で並べた一覧だと、次に足す領域がまた抜ける。
+  const AREAS = [
+    ['/v1/overtime-pay', '割増賃金'],
+    ['/v1/annual-leave', '年次有給休暇'],
+    ['/v1/worker-type', '被保険者区分'],
+    ['/v1/workers-compensation', '労災保険率'],
+    ['/v1/national-insurance', '国民年金'],
+    ['/v1/commuting-allowance', 'commuting allowance'],
+    ['/v1/annual-cost', 'a year of employing'],
+    ['/v1/consumption-tax', 'Consumption tax'],
+    ['/v1/statute', 'e-Gov'],
+    ['/v1/minimum-wage', 'Minimum wage'],
+  ];
+  const live = AREAS.filter(([p]) => p in spec.paths);
+  ok(live.length === AREAS.length, 'every area named here still has an endpoint behind it',
+     AREAS.filter(([p]) => !(p in spec.paths)).map(([p]) => p).join(', ') || 'none');
+  const unsold = live.filter(([, phrase]) => !doc.includes(phrase)).map(([p]) => p);
+  ok(unsold.length === 0, 'and the page a buyer reads mentions each of them',
+     unsold.join(', ') || 'none');
+  ok(doc.includes(`${n} endpoints`),
+     'while the count it advertises matches what is deployed', `spec has ${n}`);
+
+  // 課金仕様そのものも実態に追いつくこと。ここが遅れると、作った機能に課金できない。
+  const recipe = await readFile(new URL('../recipes/jp-payroll/recipe.py', import.meta.url), 'utf8');
+  const notPriced = Object.keys(spec.paths).filter((p) => p.startsWith('/v1/') && !recipe.includes(p));
+  ok(notPriced.length === 0, 'and every endpoint reaches the paid spec at all',
+     notPriced.join(', ') || 'none');
+}
+
 
 
 

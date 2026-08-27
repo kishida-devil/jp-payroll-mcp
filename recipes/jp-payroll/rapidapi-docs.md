@@ -54,18 +54,28 @@ caps at 1,500,000 yen *per payment*. `GET /v1/bonus-insurance` applies both.
 
 | Group | Endpoints |
 |---|---|
-| **Payroll** | Monthly payslip, bonus premiums, leave exemptions, joining/leaving months, age milestones, batch |
-| **Standard remuneration** | 定時決定, 随時改定, leave-end revision, annual-average 保険者算定, grade lookup |
+| **Payroll** | Monthly payslip, bonus premiums, overtime (割増賃金), commuting allowance, leave exemptions, joining/leaving months, age milestones, batch |
+| **Standard remuneration** | 定時決定, 随時改定, leave-end revision, annual-average 保険者算定, grade lookup, the 50-grade table, batch |
 | **Withholding tax** | 月額表, 日額表 (including the 丙 column), 電算機計算の特例, bonus rate table |
-| **Rates** | Social insurance for all 47 prefectures, employment insurance by business type |
+| **Rates** | Social insurance for all 47 prefectures, employment insurance by business type, 労災保険率 for 54 trades |
+| **Eligibility** | 被保険者区分 (the three-quarters test and the 20 hours / ¥88,000 / student / 51-staff route), 年次有給休暇 including the proportional table |
+| **Cost** | What a year of employing someone costs, employer share included |
+| **Outside employee insurance** | 国民年金, and why 国民健康保険 has no national figure to return |
 | **Minimum wage** | Point-in-time rate for any date back to FY2002 |
+| **Consumption tax** | The rate in force on a date, the reduced 8%, every change since 1989 |
 | **Calendar** | Public holidays 1955–2027, business-day arithmetic, the statutory banking calendar |
-| **Corporate number** | 法人番号 and qualified invoice number check digits (Peppol ICD 0188) |
+| **Numbers** | 法人番号 and qualified invoice number check digits (Peppol ICD 0188), bulk validation, check-digit computation |
+| **Statutes** | The full text of every provision the answers cite, from e-Gov |
 | **Meta** | Enum reference, dataset freshness |
 
-Full schemas are on the Endpoints tab, and the OpenAPI 3.0 spec is served live at
-`https://japan-payroll-api.tsumugi.workers.dev/openapi.json` if you would rather
-generate a client.
+43 endpoints. Full schemas are on the Endpoints tab, and the OpenAPI 3.0 spec is
+served live at `https://japan-payroll-api.tsumugi.workers.dev/openapi.json` if you
+would rather generate a client.
+
+**Every answer can be made smaller.** Add `?detail=compact` to any endpoint to drop
+the attribution, notes and statutory citations and keep the figures — roughly a
+tenth the size on a batch run. What was dropped, and how to get it back, is listed
+in `omitted` rather than silently removed.
 
 ## Judgement endpoints answer "no" usefully
 
