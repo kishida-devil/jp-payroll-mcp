@@ -3,6 +3,7 @@
 import fixture from './official-fixture.json' with { type: 'json' };
 import freshness from '../src/data/freshness.json' with { type: 'json' };
 import { readFile, readdir } from 'node:fs/promises';
+import { request as httpRequest } from 'node:http';
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:8799';
 
@@ -4514,6 +4515,102 @@ for (const [p, want, label] of [
        `${why}: 受け付けない`, `${r.status} ${r.body.code}`);
   }
 }
+{
+  // 誰が有料枠を使えるかの判定。**収益がここに乗っている。**
+  //
+  // それなのに検査が1件も無かった。理由は仕組みのほうにあって、`isLocal` が
+  // localhost を丸ごと免除するので、テストがどう叩いても課金の経路を通らない。
+  // Host ヘッダを付ければ非ローカルとして扱われるので、そこから入る。
+  //
+  // 鍵が設定されていない環境では「未設定時のフォールバック」経路しか無い。
+  // その場合も検査は成立させる — 何を確かめられないかを言えるようにするため。
+  // fetch は Host を禁止ヘッダとして黙って落とす。落ちれば 127.0.0.1 のまま送られ、
+  // `isLocal` の免除に入って全部通る。**課金経路のつもりで localhost を測ることになる。**
+  // 生の http で送るしかない。
+  const nonLocal = (path, headers = {}, body) => new Promise((resolve, reject) => {
+    const payload = body === undefined ? null : JSON.stringify(body);
+    const u = new URL(BASE + path);
+    const req = httpRequest({
+      hostname: u.hostname, port: u.port, path: u.pathname + u.search,
+      method: payload === null ? 'GET' : 'POST',
+      headers: {
+        Host: 'example.com',
+        ...(payload === null ? {} : { 'content-type': 'application/json',
+                                      'content-length': Buffer.byteLength(payload) }),
+        ...headers,
+      },
+    }, (res) => {
+      let text = '';
+      res.on('data', (d) => { text += d; });
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(text) }); }
+        catch { resolve({ status: res.statusCode, body: {} }); }
+      });
+    });
+    req.on('error', reject);
+    if (payload !== null) req.write(payload);
+    req.end();
+  });
+  const rows = (n) => ({ employees: Array.from({ length: n }, () => ({ monthly_salary: 300000, age: 40 })),
+                         defaults: { prefecture: 'Tokyo' } });
+
+  const root = await nonLocal('/');
+  const verified = root.body?.free_tier?.entitlement_verified === true;
+  ok(typeof root.body?.free_tier?.entitlement_verified === 'boolean',
+     'the API says whether it can actually check who is paying',
+     `${root.body?.free_tier?.entitlement_verified}`);
+
+  // 無料枠の境界は1件の差で効くこと。ここが本当の課金の線(第23反復)。
+  ok((await nonLocal('/v1/payroll/batch', {}, rows(10))).status === 200,
+     '無料枠は10人まで通る');
+  const over = await nonLocal('/v1/payroll/batch', {}, rows(11));
+  ok(over.status === 400 && over.body.code === 'batch_too_large',
+     'そして11人で断られる', `${over.status} ${over.body.code}`);
+  ok(/RapidAPI|rapidapi/.test(JSON.stringify(over.body)),
+     'and the refusal points at where the larger batch is sold',
+     JSON.stringify(over.body.upgrade ?? over.body.hint ?? '').slice(0, 60));
+
+  // ヘッダは誰でも付けられる。判定をヘッダに置いたら課金は成立しない。
+  const forged = await nonLocal('/v1/payroll/batch', {
+    'x-rapidapi-host': 'japan-payroll-api.p.rapidapi.com',
+    'x-rapidapi-subscription': 'PRO',
+  }, rows(11));
+  if (verified) {
+    ok(forged.status === 400,
+       'setting the RapidAPI headers by hand does not buy a paid plan',
+       `${forged.status} ${forged.body.code}`);
+    const wrong = await nonLocal('/v1/payroll/batch', {
+      'x-rapidapi-proxy-secret': 'wrong', 'x-rapidapi-subscription': 'PRO' }, rows(11));
+    ok(wrong.status === 400, 'nor does a wrong secret', `${wrong.status}`);
+  } else {
+    // 鍵が無い環境では旧来の挙動を残している。出品が鍵の設定待ちで壊れないため。
+    // せめて「確かめられていない」ことが応答に出ていること。
+    ok(root.body.free_tier.entitlement_verified === false,
+       'without the secret the API admits it cannot verify, rather than pretending');
+  }
+
+  // 鍵を持っているときだけ通る道。ローカルの .dev.vars に置いた値で試す。
+  // 無ければこの節は飛ばす — 鍵を検査に埋め込むわけにはいかない。
+  let devSecret = null;
+  try {
+    const vars = await readFile(new URL('../.dev.vars', import.meta.url), 'utf8');
+    devSecret = /RAPIDAPI_PROXY_SECRET=(.+)/.exec(vars)?.[1]?.trim() ?? null;
+  } catch { /* 無ければ飛ばす */ }
+  if (devSecret && verified) {
+    const withPlan = async (plan) => (await nonLocal('/v1/payroll/batch', {
+      'x-rapidapi-proxy-secret': devSecret,
+      ...(plan ? { 'x-rapidapi-subscription': plan } : {}),
+    }, rows(11))).status;
+    ok(await withPlan('PRO') === 200, '正しい鍵 + PRO なら大きなバッチが通る');
+    ok(await withPlan('ULTRA') === 200, 'ULTRA も同じ');
+    // BASIC は RapidAPI の**無料**プラン。ここを有料扱いすると、無料の人に有料枠を配る。
+    ok(await withPlan('BASIC') === 400, 'BASIC は RapidAPI の無料プランなので有料扱いしない');
+    ok(await withPlan(null) === 400, 'プランの申告が無ければ有料扱いしない');
+  } else {
+    ok(true, `鍵が無いので有料経路は試していない (verified=${verified})`);
+  }
+}
+
 
 
 
