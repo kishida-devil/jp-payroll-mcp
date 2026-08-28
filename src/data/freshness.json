@@ -23,7 +23,7 @@
   },
   "minimum_wage": {
    "label": "地域別最低賃金",
-   "covers": "令和7年度 (FY2025), 47 prefectures x 24 years",
+   "covers": "令和7年度(FY2025)。47都道府県×24年分",
    "effective_from": "2025-10-01",
    "next_revision_expected": "2026-10-01",
    "revision_cadence": "毎年改定。答申は8月下旬から公表され、発効日は都道府県ごとに異なる(10月から)",
@@ -64,7 +64,7 @@
   },
   "pension_grade_table": {
    "label": "厚生年金保険 標準報酬月額の等級区分",
-   "covers": "32 grades, up to 650,000 yen (令和2年政令第246号による第32級)",
+   "covers": "32等級、上限650,000円(令和2年政令第246号による第32級)",
    "effective_from": "2020-09-01",
    "next_revision_expected": "2027-09-01",
    "revision_cadence": "法改正済み。令和7年法律第74号が上限を3段階で引き上げる",

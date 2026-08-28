@@ -4198,7 +4198,8 @@ for (const [p, want, label] of [
   // 見るのは「文」— 空白区切りで2語以上あり、識別子でないもの。
   const spec = (await get('/openapi.json')).body;
   const VALUE_KEYS = /^(code|kind|rule|method|detail|weekday|calendar|column|plan|channel|law_id|id|type|worker_type|status|profile|scheme|peppol_scheme|source_url|url|licence|license|name_en|effective_from|effective_to|from|to|date|month|version)$/;
-  const SENTENCE = /[A-Za-z][A-Za-z'’-]{2,}(\s+[A-Za-z][A-Za-z'’-]{1,}){1,}/;
+  // `47 prefectures x 24 years` が抜けた。間に1文字語や数字が入ると文が切れる。
+  const SENTENCE = /[A-Za-z][A-Za-z'’-]{2,}(\s+[\dxX×+-]+)?\s+[A-Za-z][A-Za-z'’-]{2,}/;
   const JA = /[ぁ-んァ-ヶ一-龥]/;
   const found = [];
   const walk = (node, path, where) => {
@@ -4276,7 +4277,7 @@ for (const [p, want, label] of [
   const dataDir = new URL('../src/data/', import.meta.url);
   const dataFiles = (await readdir(dataDir)).filter((n) => n.endsWith('.json') && !n.includes('openapi'));
   const VALUE_KEY = /^(name_en|source_url|url|licence|license|id|law_id|code|key|kind|type|from|to|date|prefecture|column|scheme|_comment)$/;
-  const SENT = /[A-Za-z][A-Za-z'’-]{2,}(\s+[A-Za-z][A-Za-z'’-]{1,}){1,}/;
+  const SENT = /[A-Za-z][A-Za-z'’-]{2,}(\s+[\dxX×+-]+)?\s+[A-Za-z][A-Za-z'’-]{2,}/;
   const JA2 = /[ぁ-んァ-ヶ一-龥]/;
   const dataEnglish = [];
   const dig = (node, path, file) => {
