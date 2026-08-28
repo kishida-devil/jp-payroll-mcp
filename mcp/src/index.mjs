@@ -27,6 +27,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import pkg from '../package.json' with { type: 'json' };
 import { ja } from 'zod/locales';
 
 // スキーマ検証の文言も日本語にする。
@@ -43,7 +44,9 @@ z.config(ja());
 // mistyped setting.
 const BASE = (process.env.JP_PAYROLL_API_URL ?? 'https://japan-payroll-api.tsumugi.workers.dev')
   .replace(/\/+$/, '');
-const VERSION = '0.3.0';
+// package.json から引く。2箇所に書くと必ずずれる — 実際 package.json が 0.4.0 の間、
+// サーバは 0.3.0 と名乗っていた。利用者が版を確かめる唯一の手段がこれなのに。
+const VERSION = pkg.version;
 
 // A floor of 1000ms: a timeout shorter than a round trip fails every call, and
 // the resulting "the API did not respond" is a confusing way to learn that.
@@ -257,6 +260,10 @@ server.registerTool('calculate_payslip', {
       'One-way distance for a car or bicycle commute. The exempt ceiling then comes from the ' +
       'distance table (国税庁 No.2585) rather than the 150,000 transit ceiling; under 2 km ' +
       'nothing is exempt.'),
+    commuting_parking: z.number().optional().describe(
+      'Monthly parking the employee pays for a car or bicycle commute, in yen. Added to the '
+      + 'distance band up to 5,000 a month. Needs commuting_distance_km — there is no band '
+      + 'to add it to for someone who commutes only by train.'),
     commuting_fare: z.number().optional().describe(
       'Reasonable fare or toll paid on top of a car or bicycle commute. With ' +
       'commuting_distance_km the ceiling is the distance band plus this, capped at 150,000.'),
@@ -321,6 +328,13 @@ server.registerTool('calculate_bonus', {
     age: z.number().optional().describe(
       'Age in years. Either this or birth_date is required. Prefer birth_date.'),
     birth_date: birthDate,
+    as_of: z.string().optional().describe(
+      'YYYY-MM-DD. Which rate table to use. Rates change every March, so a bonus paid in a '
+      + 'previous year needs the table that was in force then; the call is refused rather '
+      + 'than answered with today\'s rates.'),
+    column: z.enum(['kou', 'otsu']).optional().describe(
+      'Withholding column for the tax half: 甲 when a 扶養控除等申告書 was filed (the normal '
+      + 'case), 乙 when it was not. 乙 has its own rate table. Defaults to 甲.'),
     include_tax: z.boolean().optional().describe(
       'Also compute withholding tax. Requires previous_month_pay.'),
     previous_month_pay: z.number().optional().describe(
@@ -340,6 +354,7 @@ server.registerTool('calculate_bonus', {
                 '年齢は誕生日の前日に達するので、1日生まれの人は保険料が1か月早く変わります。',
                 'missing_parameter');
   const insurance = await call('/v1/bonus-insurance' + qs({
+    as_of: a.as_of,
     prefecture: a.prefecture, bonus: a.bonus, fiscal_year_to_date: a.fiscal_year_to_date,
     age: a.age, birth_date: a.birth_date,
   }));
@@ -356,6 +371,7 @@ server.registerTool('calculate_bonus', {
     bonus: a.bonus, bonus_insurance: insuranceBody.totals?.employee ?? 0,
     previous_month_pay: a.previous_month_pay,
     previous_month_insurance: a.previous_month_insurance, dependants: a.dependants,
+    column: a.column,
   }));
   if (tax.isError) return tax;
   return ok({
@@ -378,6 +394,10 @@ server.registerTool('calculate_withholding_tax', {
     period: z.enum(['monthly', 'daily']).optional().describe('Defaults to monthly.'),
     column: z.enum(['kou', 'otsu', 'hei']).optional().describe(
       '甲/乙, plus 丙 for the daily table only. Defaults to 甲.'),
+    spouse: z.boolean().optional().describe(
+      'Only for method "computer": whether a 源泉控除対象配偶者 is claimed. The formula method '
+      + 'deducts 31,667 yen a month for one, which the monthly table folds into its columns '
+      + 'instead. Ignored by the table methods.'),
     dependants: z.number().optional(),
     method: z.enum(['table', 'computer']).optional().describe(
       '"computer" selects the statutory formula method. Monthly only. Defaults to table.'),
@@ -392,6 +412,9 @@ server.registerTool('calculate_withholding_tax', {
     : '/v1/withholding-tax';
   return call(path + qs({
     taxable_amount: a.taxable_amount, column: a.column, dependants: a.dependants,
+    // spouse は電算機計算の特例だけが読む。月額表は配偶者を列に畳み込んでいるので、
+    // そちらに渡しても未知パラメータとして拒否される。
+    ...(a.method === 'computer' ? { spouse: a.spouse } : {}),
   }));
 });
 

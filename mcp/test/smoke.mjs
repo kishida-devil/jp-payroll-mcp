@@ -673,6 +673,88 @@ for (const [name, args, check] of [
        `${f} states the right count`, `says ${claimed?.[1] ?? claimed?.[2]}, has ${names.length}`);
   }
 }
+{
+  // ツールのスキーマに無い引数は、MCP利用者にとって存在しない。
+  //
+  // エンドポイントの網羅は第21反復で数えたが、**引数の粒度では見ていなかった。**
+  // 数えたら4件あった — 通勤の駐車場代、賞与の as_of と乙欄、電算の配偶者控除。
+  // どれも REST では使えて MCP では使えない、という状態だった。
+  const toolSrc = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
+  const specBase = process.env.JP_PAYROLL_API_URL
+    ?? /\?\?\s*'([^']+)'/.exec(toolSrc.slice(toolSrc.indexOf('const BASE')))?.[1];
+  const apiSpec = JSON.parse(await (await fetch(`${specBase}/openapi.json`)).text());
+
+  // 露出しないと決めたものは理由つきで挙げる。書いていない例外は例外でない。
+  const NOT_EXPOSED = {
+    'calculate_bonus:/v1/bonus-tax:bonus_insurance':
+      'ツールが賞与の社会保険料を先に計算して渡す。呼び手に渡させると、既定0で'
+      + '50万円の賞与に3,063円の過大な税額が出た事故に戻る',
+  };
+  const CROSS = new Set(['detail', 'include', 'pref', 'amount', 'start', 'end']);
+  const blocks = toolSrc.split("server.registerTool('").slice(1);
+  const gaps = [], staleReasons = [];
+  const { tools: liveTools } = await client.listTools();
+  for (const b of blocks) {
+    const name = b.slice(0, b.indexOf("'"));
+    const tool = liveTools.find((x) => x.name === name);
+    if (!tool) continue;
+    const props = new Set(Object.keys(tool.inputSchema?.properties ?? {}));
+    for (const path of new Set([...b.matchAll(/['"`](\/v1\/[\w/-]+)/g)].map((m) => m[1]))) {
+      const op = apiSpec.paths[path]?.get;
+      if (!op) continue;
+      for (const p of (op.parameters ?? []).map((x) => x.name)) {
+        if (CROSS.has(p) || props.has(p)) continue;
+        const key = `${name}:${path}:${p}`;
+        if (!(key in NOT_EXPOSED)) gaps.push(key);
+      }
+    }
+  }
+  for (const key of Object.keys(NOT_EXPOSED)) {
+    const [n, path, p] = key.split(':');
+    const op = apiSpec.paths[path]?.get;
+    if (!op || !(op.parameters ?? []).some((x) => x.name === p)) staleReasons.push(key);
+  }
+  ok(blocks.length >= 25, 'every tool is compared against the endpoint behind it', `${blocks.length}`);
+
+  // 版番号は1箇所から。2つ持てばずれる — 実際 package.json が 0.4.0 の間、
+  // サーバは 0.3.0 と名乗っていた。利用者が版を確かめる唯一の手段がこれなのに。
+  const pkgJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  ok(client.getServerVersion?.()?.version === pkgJson.version,
+     'the server announces the version the package declares',
+     `${client.getServerVersion?.()?.version} vs ${pkgJson.version}`);
+  ok(!/const VERSION = '\d/.test(toolSrc),
+     'and does not keep a second copy of it in the source');
+  ok(gaps.length === 0,
+     'and exposes every parameter that endpoint takes, or says why not',
+     gaps.slice(0, 5).join(' | ') || 'none');
+  ok(staleReasons.length === 0,
+     'while the exemptions still name parameters that exist',
+     staleReasons.join(' | ') || 'none');
+
+  // 足した4つが実際に効くこと。スキーマにあって届かない、が最悪。
+  const text = async (n, a) => {
+    const r = await client.callTool({ name: n, arguments: a });
+    return r.content.map((x) => x.text).join('');
+  };
+  const commute = { prefecture: 'Tokyo', monthly_salary: 300000, age: 40,
+                    commuting_allowance: 12000, commuting_distance_km: 12 };
+  ok(await text('calculate_payslip', commute)
+     !== await text('calculate_payslip', { ...commute, commuting_parking: 3000 }),
+     '駐車場代が非課税限度額を動かす');
+
+  const comp = { taxable_amount: 300000, method: 'computer', dependants: 0 };
+  const noSpouse = JSON.parse(await text('calculate_withholding_tax', comp));
+  const withSpouse = JSON.parse(await text('calculate_withholding_tax', { ...comp, spouse: true }));
+  ok(withSpouse.tax < noSpouse.tax,
+     '配偶者控除が電算機計算の特例で効く(月31,667円の控除)',
+     `${noSpouse.tax} → ${withSpouse.tax}`);
+
+  const bonus = { prefecture: 'Tokyo', bonus: 500000, age: 40, include_tax: true,
+                  previous_month_pay: 350000, previous_month_insurance: 55750, dependants: 2 };
+  ok(await text('calculate_bonus', bonus) !== await text('calculate_bonus', { ...bonus, column: 'otsu' }),
+     '乙欄は賞与の税率表が別');
+}
+
 
 
 
