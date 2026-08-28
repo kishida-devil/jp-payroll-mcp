@@ -501,7 +501,7 @@ for (const [p, want, label] of [
     const bank = await get(`/v1/holidays/check?date=${d}&calendar=bank`);
     ok(std.body.is_business_day === true, `${d} is an ordinary business day`);
     ok(bank.body.is_open === false, `${d} is NOT a banking day`, `got ${bank.body.is_open}`);
-    ok(/year-end/.test((bank.body.closed_because ?? []).join(',')),
+    ok(/年末年始/.test((bank.body.closed_because ?? []).join(',')),
        `${d} closure reason names the year-end rule`, JSON.stringify(bank.body.closed_because));
   }
   // 1/1 is both a public holiday and inside the closure window
@@ -4100,6 +4100,209 @@ for (const [p, want, label] of [
      'while ordinary pay stays within a few tens of yen',
      `${smallTable.body.tax - small.body.tax}`);
 }
+{
+  // 休業免除の判定に、検査が1件も無かった。
+  //
+  // 4,184件のうちこのエンドポイントを叩いていたのは1回だけで、それも
+  // `include=statute_text` が付くかを見ていた。判定そのものは誰も見ていない。
+  // **月給30万円なら、免除される月とされない月で労使合計約9.5万円ちがう。**
+  //
+  // ケースは条文から作る。e-Gov の 健康保険法第159条第1項 を読むと、こう書いてある。
+  //   括弧書き 「その育児休業等の期間が一月以下である者については、
+  //             標準報酬月額に係る保険料に限る」
+  //   第一号   開始日の属する月と終了日の翌日が属する月とが異なる場合
+  //            → 開始月から、終了日の翌日が属する月の前月まで
+  //   第二号   同一であり、かつ当該月の育児休業等の日数が十四日以上である場合
+  //            → 当該月
+  const le = (q) => get(`/v1/leave-exemption?${q}`);
+  const months = (b) => (b.exempt_months ?? []).join(',');
+
+  // --- 第一号。終了日ではなく「翌日が属する月の前月」まで。
+  for (const [start, end, want, why] of [
+    ['2026-03-15', '2026-04-20', '2026-03', '翌日は4/21で4月。その前月までなので3月だけ'],
+    ['2026-03-15', '2026-04-30', '2026-03,2026-04', '翌日は5/1で5月。3月と4月'],
+    ['2026-03-01', '2026-03-31', '2026-03', '月末終了は翌日が翌月になるので第一号に落ちる'],
+    ['2026-12-20', '2027-01-05', '2026-12', '年をまたいでも規則は同じ'],
+  ]) {
+    const b = (await le(`kind=childcare&start=${start}&end=${end}`)).body;
+    ok(months(b) === want, `${why}`, `${start}〜${end} → ${months(b)}`);
+    ok(b.rule === 'spans_months', 'and it is decided under 第一号', b.rule);
+  }
+
+  // --- 第二号。同一月なら14日以上。13日と14日の間に9万円の差がある。
+  for (const [end, days, exempt] of [
+    ['2026-03-27', 13, false], ['2026-03-28', 14, true], ['2026-03-29', 15, true],
+  ]) {
+    const b = (await le(`kind=childcare&start=2026-03-15&end=${end}`)).body;
+    ok(b.days_in_month === days, `同一月の日数を ${days} と数える`, `${b.days_in_month}`);
+    ok((months(b) !== '') === exempt,
+       `${days}日は${exempt ? '免除される' : '免除されない'}`, `${months(b) || '免除なし'}`);
+    if (exempt) ok(b.rule === 'fourteen_days_in_one_month', 'and names 第二号', b.rule);
+  }
+
+  // 出生時育児休業で就業した日は日数から引く。14日ちょうどが1日の就業で崩れる。
+  const worked = (await le('kind=childcare&start=2026-03-15&end=2026-03-28&worked_days=1')).body;
+  ok(worked.days_in_month === 13, '就業した日を引くと13日', `${worked.days_in_month}`);
+  ok(months(worked) === '', 'そして免除されない', months(worked) || '免除なし');
+
+  // --- 括弧書き。一月以下なら賞与保険料は免除されない。
+  // 一月の数え方は民法143条2項(翌月の応当日の前日をもって一月)。
+  for (const [start, end, over, why] of [
+    ['2026-03-05', '2026-04-03', false, '一月に1日足りない'],
+    ['2026-03-05', '2026-04-04', false, 'ちょうど一月。「一月以下」なので賞与は免除されない'],
+    ['2026-03-05', '2026-04-05', true, '一月を1日超えると賞与も免除される'],
+    ['2026-01-31', '2026-02-28', false, '応当日が無い月は末日。1/31〜2/28 でちょうど一月'],
+  ]) {
+    const b = (await le(`kind=childcare&start=${start}&end=${end}`)).body;
+    ok(b.exceeds_one_month === over, why, `${start}〜${end} → exceeds=${b.exceeds_one_month}`);
+    ok(b.bonus_premium_exempt === over,
+       '賞与保険料の可否は、その一月の判定と一致する', `${b.bonus_premium_exempt}`);
+  }
+
+  // --- 産前産後休業には日数要件が無い(健保法159条の3)。
+  const tanki = (await le('kind=maternity&start=2026-03-15&end=2026-03-28')).body;
+  ok(months(tanki) === '', '産休は同一月内なら免除される月が無い', months(tanki) || '免除なし');
+  const mat = (await le('kind=maternity&start=2026-03-15&end=2026-05-10')).body;
+  ok(months(mat) === '2026-03,2026-04', '月をまたげば第一号と同じ数え方', months(mat));
+  ok(!/十四日|14日|要件は14日/.test(mat.explanation ?? ''),
+     'and no day-count rule is quoted at a maternity leave', mat.explanation?.slice(0, 40));
+
+  // --- 免除されないものを、免除されるものと同じ強さで言うこと。
+  const any = (await le('kind=childcare&start=2026-03-15&end=2026-04-30')).body;
+  ok((any.exempt_premiums ?? []).length >= 4, '免除される保険料を並べる', `${any.exempt_premiums?.length}`);
+  ok((any.not_exempt ?? []).some((x) => /雇用保険/.test(x)),
+     '雇用保険料は免除されないと明記する', (any.not_exempt ?? []).join(' '));
+  ok((any.statutes ?? []).some((s) => /159/.test(s)), 'and cites 159条', (any.statutes ?? []).join(', '));
+  ok(/159条の3|産前産後/.test(JSON.stringify(any.notes ?? {})),
+     '産休が優先することも書く(159条1項が159条の3の適用者を除いている)');
+
+  // --- 入力の誤り。
+  for (const [q, why] of [
+    ['kind=childcare&start=2026-04-01&end=2026-03-01', '終了が開始より前'],
+    ['kind=nope&start=2026-03-01&end=2026-03-31', '知らない kind'],
+    ['start=2026-03-01&end=2026-03-31', 'kind が無い'],
+    ['kind=childcare&start=2026-03-01', 'end が無い'],
+  ]) {
+    const r = await le(q);
+    ok(r.status >= 400, `${why} は拒否される`, `${r.status}`);
+  }
+}
+{
+  // 応答そのものを走査する。ソースの走査は4回すり抜けた。
+  //
+  // `Sunday` も `year-end / new-year closure (12/31-1/3)` も、機能語を持たないので
+  // 機能語で数える検出器には永久に映らない。**出てきた値を見るしかない。**
+  // これは銀行の休業理由で、支払期日が動く理由として人が読む文だった。
+  //
+  // 判定に使う値(code、kind、weekday、enum)は英字のままでよいので、
+  // 見るのは「文」— 空白区切りで2語以上あり、識別子でないもの。
+  const spec = (await get('/openapi.json')).body;
+  const VALUE_KEYS = /^(code|kind|rule|method|detail|weekday|calendar|column|plan|channel|law_id|id|type|worker_type|status|profile|scheme|peppol_scheme|source_url|url|licence|license|name_en|effective_from|effective_to|from|to|date|month|version)$/;
+  const SENTENCE = /[A-Za-z][A-Za-z'’-]{2,}(\s+[A-Za-z][A-Za-z'’-]{1,}){1,}/;
+  const JA = /[ぁ-んァ-ヶ一-龥]/;
+  const found = [];
+  const walk = (node, path, where) => {
+    if (typeof node === 'string') {
+      const key = path[path.length - 1];
+      if (typeof key === 'string' && VALUE_KEYS.test(key)) return;
+      if (JA.test(node)) return;
+      if (/^https?:\/\//.test(node) || /^\/v1\//.test(node)) return;
+      if (!SENTENCE.test(node)) return;
+      found.push(`${where} ${path.join('.')} = ${node.slice(0, 46)}`);
+    } else if (Array.isArray(node)) {
+      node.forEach((v, i) => walk(v, [...path, i], where));
+    } else if (node && typeof node === 'object') {
+      for (const [k, v] of Object.entries(node)) walk(v, [...path, k], where);
+    }
+  };
+
+  // 成功したときの応答。エラー側は既に掃引している。
+  const PROBES = [
+    '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40',
+    '/v1/holidays/check?date=2026-01-02&calendar=bank',
+    '/v1/holidays/check?date=2026-05-03&calendar=bank',
+    '/v1/business-days?from=2026-01-01&to=2026-01-31&calendar=bank',
+    '/v1/leave-exemption?kind=childcare&start=2026-03-15&end=2026-04-30',
+    '/v1/leave-exemption?kind=maternity&start=2026-03-15&end=2026-05-10',
+    '/v1/eligibility?month=2026-03&left_on=2026-03-31',
+    '/v1/worker-type?weekly_hours=25&monthly_wage=100000&workplace_insured_count=51&employment_months=12',
+    '/v1/annual-leave?hired_on=2020-04-01&as_of=2026-04-01',
+    '/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=70&night_hours=5',
+    '/v1/consumption-tax?date=2015-06-01&amount=10000',
+    '/v1/corporate-number/validate?number=8700110005901',
+    '/v1/invoice-number/validate?number=T8700110005901',
+    '/v1/withholding-tax/computer?taxable_amount=2000000&dependants=4',
+    '/v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase',
+    '/v1/national-insurance?months=12',
+    '/v1/annual-cost?prefecture=Tokyo&monthly_salary=300000&age=40',
+    '/v1/commuting-allowance?amount=12000&distance_km=12&parking=3000',
+  ];
+  for (const p of PROBES) {
+    const r = await get(p);
+    if (r.status !== 200) { found.push(`${p} → ${r.status}`); continue; }
+    walk(r.body, [], p.split('?')[0]);
+  }
+  ok(PROBES.length >= 15, 'the probe set covers the answers people actually read', `${PROBES.length}`);
+  ok(found.length === 0,
+     'and no English sentence comes back in one of them, however few words',
+     found.slice(0, 5).join(' | ') || 'none');
+
+  // 銀行の休業理由。支払期日が動く理由なので、ここが英語だと調べ直しになる。
+  const bank = (await get('/v1/holidays/check?date=2026-01-02&calendar=bank')).body;
+  ok(bank.is_open === false, '1月2日は銀行が閉まっている(銀行法施行令第5条第2号)');
+  ok((bank.closed_because ?? []).every((r) => JA.test(r)),
+     'and says why in Japanese', (bank.closed_because ?? []).join(' / '));
+  const sun = (await get('/v1/holidays/check?date=2026-01-04&calendar=bank')).body;
+  ok((sun.closed_because ?? []).includes('日曜日'), '曜日も和文', (sun.closed_because ?? []).join(' / '));
+  const hol = (await get('/v1/holidays/check?date=2026-05-03&calendar=bank')).body;
+  ok((hol.closed_because ?? []).some((r) => r.includes('憲法記念日')),
+     'and a public holiday is named in Japanese, not by its English label',
+     (hol.closed_because ?? []).join(' / '));
+}
+{
+  // データファイルの中の文言も見る。
+  //
+  // `notes.rounding` が英語で残っていた。走査が src/**/*.ts しか見ておらず、
+  // `src/data/insurance-r8.json` の meta は範囲外だった。料率そのものは数値でも、
+  // **添えた説明は人が読む。**freshness.json も同じで、「いつ数字が古くなるか」を
+  // 答えるエンドポイントの中身が全部英語だった。
+  //
+  // openapi-*.json は除く。あれは開発者とコード生成器が読む仕様書で、
+  // ツール説明を訳さないのと同じ理由で英語のままにしている。
+  const dataDir = new URL('../src/data/', import.meta.url);
+  const dataFiles = (await readdir(dataDir)).filter((n) => n.endsWith('.json') && !n.includes('openapi'));
+  const VALUE_KEY = /^(name_en|source_url|url|licence|license|id|law_id|code|key|kind|type|from|to|date|prefecture|column|scheme|_comment)$/;
+  const SENT = /[A-Za-z][A-Za-z'’-]{2,}(\s+[A-Za-z][A-Za-z'’-]{1,}){1,}/;
+  const JA2 = /[ぁ-んァ-ヶ一-龥]/;
+  const dataEnglish = [];
+  const dig = (node, path, file) => {
+    if (typeof node === 'string') {
+      const k = path[path.length - 1];
+      if (typeof k === 'string' && VALUE_KEY.test(k)) return;
+      if (JA2.test(node) || node.startsWith('http') || node.startsWith('/v1/')) return;
+      if (SENT.test(node)) dataEnglish.push(`${file} ${path.join('.')} = ${node.slice(0, 44)}`);
+    } else if (Array.isArray(node)) {
+      node.forEach((v, i) => dig(v, [...path, i], file));
+    } else if (node && typeof node === 'object') {
+      for (const [k, v] of Object.entries(node)) dig(v, [...path, k], file);
+    }
+  };
+  for (const name of dataFiles) {
+    dig(JSON.parse(await readFile(new URL(name, dataDir), 'utf8')), [], name);
+  }
+  ok(dataFiles.length >= 5, 'the data files are read too, not only the modules', `${dataFiles.length} files`);
+  ok(dataEnglish.length === 0, 'and the prose attached to the figures is Japanese as well',
+     dataEnglish.slice(0, 4).join(' | ') || 'none');
+
+  // 数字が古くなる時期を答えるエンドポイント。ここを英語で返していた。
+  const fresh = (await get('/v1/data-freshness')).body;
+  const cadences = Object.values(fresh.datasets ?? {}).map((d) => d.revision_cadence).filter(Boolean);
+  ok(cadences.length >= 5, 'every dataset says when it next changes', `${cadences.length}`);
+  ok(cadences.every((c) => JA2.test(c)), 'in Japanese', cadences.find((c) => !JA2.test(c)) ?? 'all Japanese');
+}
+
+
+
 
 
 

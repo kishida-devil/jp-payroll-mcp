@@ -6,7 +6,7 @@
    "covers": "令和8年度 (FY2026)",
    "effective_from": "2026-03-01",
    "next_revision_expected": "2027-03-01",
-   "revision_cadence": "annual, effective with the March salary month",
+   "revision_cadence": "毎年改定。3月分の給与から適用",
    "source_url": "https://www.kyoukaikenpo.or.jp/g7/cat330/sb3150/",
    "watch_url": "https://www.kyoukaikenpo.or.jp/assets/r8ippan3.xlsx",
    "extractor": "scripts/extract-insurance.py"
@@ -19,14 +19,14 @@
    "revision_cadence": "毎年度。4月1日以後、最初の賃金締切日から適用されます。",
    "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
    "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
-   "extractor": "hand-entered from the ministry PDF"
+   "extractor": "厚生労働省のPDFから手入力"
   },
   "minimum_wage": {
    "label": "地域別最低賃金",
    "covers": "令和7年度 (FY2025), 47 prefectures x 24 years",
    "effective_from": "2025-10-01",
    "next_revision_expected": "2026-10-01",
-   "revision_cadence": "annual; answers published from late August, effective prefecture by prefecture from October",
+   "revision_cadence": "毎年改定。答申は8月下旬から公表され、発効日は都道府県ごとに異なる from October",
    "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
    "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
    "extractor": "scripts/extract-minimum-wage.py",
@@ -37,7 +37,7 @@
    "covers": "1955-2027",
    "effective_from": "1955-01-01",
    "next_revision_expected": "2027-02-01",
-   "revision_cadence": "the Cabinet Office publishes the following year each February",
+   "revision_cadence": "内閣府が毎年2月に翌年分を公表",
    "source_url": "https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html",
    "watch_url": "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv",
    "extractor": "scripts/extract-holidays.py"
@@ -47,17 +47,17 @@
    "covers": "1989年4月1日以降、4つの税率期間すべて",
    "effective_from": "2019-10-01",
    "next_revision_expected": null,
-   "revision_cadence": "only when the statutory rate changes; none scheduled",
+   "revision_cadence": "法定税率が変わったときだけ。現時点で予定なし",
    "source_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
    "watch_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
-   "extractor": "hand-entered from the NTA tax answer"
+   "extractor": "国税庁タックスアンサーから手入力"
   },
   "corporate_number": {
    "label": "法人番号チェックディジット",
    "covers": "アルゴリズムのみ。データセットは持ちません",
    "effective_from": null,
    "next_revision_expected": null,
-   "revision_cadence": "statutory algorithm; changes only if the ministerial ordinance changes",
+   "revision_cadence": "法令上の算式。省令が変わらないかぎり変わらない",
    "source_url": "https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf",
    "watch_url": null,
    "extractor": null

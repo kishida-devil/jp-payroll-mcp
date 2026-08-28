@@ -74,12 +74,14 @@ export function isOpenOn(d: Date, calendar: Calendar): boolean {
 export function closureReasons(d: Date, calendar: Calendar): string[] {
   const reasons: string[] = [];
   const day = d.getUTCDay();
-  if (day === 0) reasons.push('Sunday');
-  if (day === 6) reasons.push('Saturday');
+  // 支払期日が動く理由なので、読む人の言葉で返す。和名を持っているのに
+  // name_en を出していた。
+  if (day === 0) reasons.push('日曜日');
+  if (day === 6) reasons.push('土曜日');
   const h = BY_DATE.get(toISO(d));
-  if (h) reasons.push(`public holiday (${h.name_en})`);
+  if (h) reasons.push(`祝日(${h.name})`);
   if (calendar === 'bank' && isYearEndClosure(d))
-    reasons.push('year-end / new-year closure (12/31-1/3)');
+    reasons.push('年末年始の休業(12月31日〜1月3日、銀行法施行令第5条第2号)');
   return reasons;
 }
 

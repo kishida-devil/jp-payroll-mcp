@@ -1571,7 +1571,17 @@ app.get('/v1/leave-exemption', (c) => {
   const unknownQ = rejectBadQuery(c, ['end', 'include', 'kind', 'start', 'worked_days'] as const);
   if (unknownQ) return unknownQ;
 
-  const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
+  // 既定値を置かない。育休には14日要件があり産休には無いので、同じ日付でも
+  // 免除される月が変わる。書き忘れた人に「免除されます」と答えるのが、
+  // このAPIがいちばん避けたい形の誤り。
+  const kindGiven = c.req.query('kind');
+  if (kindGiven === undefined)
+    return bad(c, 'クエリパラメータ「kind」は必須です。',
+      '産前産後休業は「maternity」、育児休業等は「childcare」です。既定値を置いていません。'
+      + '育児休業には同一月14日以上という要件があり(健保法159条1項2号)、産前産後休業には'
+      + 'ありません。同じ日付でも免除される月が変わるため、どちらかを決めてもらう必要があります。',
+      'missing_parameter');
+  const kindRaw = kindGiven.toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
     return bad(c, `該当する kind がありません: 「${kindRaw}」`,
       '産前産後休業は「maternity」、育児休業等は「childcare」です。');
@@ -1943,7 +1953,15 @@ app.get('/v1/standard-remuneration/leave-end', (c) => {
   const unknownQ = rejectBadQuery(c, ['acquired_month', 'current_remuneration', 'include', 'kind', 'months', 'next_leave_starts_immediately', 'worker_type'] as const);
   if (unknownQ) return unknownQ;
 
-  const kindRaw = (c.req.query('kind') ?? 'childcare').toLowerCase();
+  // 既定値を置かない。数字は同じでも、引用する条文が 43条の2 と 43条の3 で変わる。
+  // 産休の判定に育休の条文が添えられていたら、出典に当たった人が別の条を読むことになる。
+  const kindGiven = c.req.query('kind');
+  if (kindGiven === undefined)
+    return bad(c, 'クエリパラメータ「kind」は必須です。',
+      '産前産後休業終了時改定は「maternity」(健保法43条の3)、育児休業等終了時改定は'
+      + '「childcare」(健保法43条の2)です。等級の判定は同じですが、根拠条文が変わります。',
+      'missing_parameter');
+  const kindRaw = kindGiven.toLowerCase();
   if (kindRaw !== 'maternity' && kindRaw !== 'childcare')
     return bad(c, `該当する kind がありません: 「${kindRaw}」`,
       '産前産後休業終了時改定は「maternity」、育児休業等終了時改定は「childcare」です。');

@@ -3,7 +3,7 @@
   "source": "国税庁 No.6303 消費税及び地方消費税の税率 / No.6102 消費税の軽減税率制度",
   "source_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
   "license": "公共データ利用規約(第1.0版)",
-  "note": "Rates are split into the national consumption tax and the local consumption tax; the headline rate is their sum."
+  "note": "税率は消費税(国税)と地方消費税に分かれます。表示している税率はその合計です。"
  },
  "reduced_rate_scope": {
   "since": "2019-10-01",
