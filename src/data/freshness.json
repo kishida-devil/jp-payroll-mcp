@@ -26,7 +26,7 @@
    "covers": "令和7年度 (FY2025), 47 prefectures x 24 years",
    "effective_from": "2025-10-01",
    "next_revision_expected": "2026-10-01",
-   "revision_cadence": "毎年改定。答申は8月下旬から公表され、発効日は都道府県ごとに異なる from October",
+   "revision_cadence": "毎年改定。答申は8月下旬から公表され、発効日は都道府県ごとに異なる(10月から)",
    "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
    "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
    "extractor": "scripts/extract-minimum-wage.py",
@@ -67,11 +67,11 @@
    "covers": "32 grades, up to 650,000 yen (令和2年政令第246号による第32級)",
    "effective_from": "2020-09-01",
    "next_revision_expected": "2027-09-01",
-   "revision_cadence": "legislated: 令和7年法律第74号 raises the ceiling in three steps",
+   "revision_cadence": "法改正済み。令和7年法律第74号が上限を3段階で引き上げる",
    "source_url": "https://laws.e-gov.go.jp/law/329AC0000000115",
    "watch_url": null,
-   "extractor": "scripts/extract-insurance.py (grades come from the 協会けんぽ workbook)",
-   "note": "Already legislated and visible in e-Gov's unenforced revisions: 第33級 680,000 from 2027-09-01, 第34級 710,000 from 2028-09-01, 第35級 750,000 from 2029-09-01. The 随時改定 exception thresholds in 昭和36年保発第4号 hard-code 第31級/第32級 and 665,000 yen, so those will need revising too."
+   "extractor": "scripts/extract-insurance.py(等級は協会けんぽの保険料額表から)",
+   "note": "法改正済みで、e-Gov の未施行改正として本文が読めます。第33級 680,000円 (2027-09-01)、第34級 710,000円 (2028-09-01)、第35級 750,000円 (2029-09-01)。昭和36年保発第4号の随時改定の例外は第31級・第32級と665,000円を直接指しているため、そちらも改められる必要があります。"
   }
  }
 }

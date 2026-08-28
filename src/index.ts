@@ -659,7 +659,25 @@ function minimumWageBeyondData(c: any, iso: string): any | null {
   return c.json({
     error: `${iso} 時点で効力を持つ最低賃金は、このデータセットに収録されていません。`,
     code: 'out_of_coverage',
-    coverage: { through: newest, covers: d.covers, next_revision_expected: due },
+    coverage: {
+      through: newest, covers: d.covers, next_revision_expected: due,
+      // 断るだけでは、利用者は自分で調べ直すことになる。改定の進み具合は
+      // freshness.json が持っているので、そのまま渡す。新しい事実は足さない —
+      // ここに数字を書けば、その数字自身が古びる。
+      // status と残り日数は freshnessReport が計算している。同じ計算を書き直すと
+      // 片方だけ直した状態が生まれるので、そちらの結果を引く。
+      ...(() => {
+        const row = freshnessReport(new Date()).datasets.find((x) => x.key === 'minimum_wage');
+        return row
+          ? {
+            status: row.status,
+            ...(row.days_until_revision !== undefined && row.days_until_revision !== null
+              ? { days_until_revision: row.days_until_revision } : {}),
+            ...((row as any).note ? { revision_status: (row as any).note } : {}),
+          }
+          : {};
+      })(),
+    },
     hint:
       '地域別最低賃金は毎年10月に改定されます。この日付以降の額はまだ収録されておらず、' +
       '直前の年度額を返せば、実際には下回っている賃金を「適法」と表示させることになります。' +

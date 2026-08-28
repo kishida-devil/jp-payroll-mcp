@@ -4205,7 +4205,11 @@ for (const [p, want, label] of [
     if (typeof node === 'string') {
       const key = path[path.length - 1];
       if (typeof key === 'string' && VALUE_KEYS.test(key)) return;
-      if (JA.test(node)) return;
+      // ライセンス名は正式名称。「公共データ利用規約(第1.0版) / Japan Public Data
+      // License v1.0」は両方で一つの名前で、Peppol の 0188 と同じく訳すと別物を指す。
+      if (path.some((p) => p === 'licence' || p === 'license')) return;
+      // 和文を含むから見ない、にすると半端に訳した文字列が素通りする。
+      // データ側で `…異なる from October` を見逃したのと同じ穴。
       if (/^https?:\/\//.test(node) || /^\/v1\//.test(node)) return;
       if (!SENTENCE.test(node)) return;
       found.push(`${where} ${path.join('.')} = ${node.slice(0, 46)}`);
@@ -4279,7 +4283,10 @@ for (const [p, want, label] of [
     if (typeof node === 'string') {
       const k = path[path.length - 1];
       if (typeof k === 'string' && VALUE_KEY.test(k)) return;
-      if (JA2.test(node) || node.startsWith('http') || node.startsWith('/v1/')) return;
+      if (node.startsWith('http') || node.startsWith('/v1/') || node.startsWith('scripts/')) return;
+      // 和文を含むから見ない、にすると**半端に訳した文字列が素通りする。**
+      // 実際 `…発効日は都道府県ごとに異なる from October` を見逃した。
+      // 和文でも英文でもないものは、どちらの検査にも掛からない。文があれば見る。
       if (SENT.test(node)) dataEnglish.push(`${file} ${path.join('.')} = ${node.slice(0, 44)}`);
     } else if (Array.isArray(node)) {
       node.forEach((v, i) => dig(v, [...path, i], file));
@@ -4300,6 +4307,48 @@ for (const [p, want, label] of [
   ok(cadences.length >= 5, 'every dataset says when it next changes', `${cadences.length}`);
   ok(cadences.every((c) => JA2.test(c)), 'in Japanese', cadences.find((c) => !JA2.test(c)) ?? 'all Japanese');
 }
+{
+  // 断るときこそ、持っている情報を渡す。
+  //
+  // 10月以降の最低賃金は422で断る。その判断は正しい — 直前の年度額を返せば、
+  // 実際には無効な賃金が「適法」と表示される(最低賃金法第4条)。
+  // だが「収録されていません」だけでは、利用者は自分で調べ直すことになる。
+  // freshness.json が改定の進み具合を持っているので、それを添える。
+  const beyond = await get('/v1/minimum-wage?prefecture=Tokyo&date=2026-10-01');
+  ok(beyond.status === 422, '改定後の日付は答えずに断る', `${beyond.status}`);
+  ok(beyond.body.code === 'out_of_coverage', 'with a code that says why', beyond.body.code);
+  const cov = beyond.body.coverage ?? {};
+  ok(cov.status === 'revision_due_soon' || cov.status === 'overdue',
+     'and says where the data stands against the next revision', cov.status);
+  ok(typeof cov.days_until_revision === 'number',
+     'with the number of days, not a vague "soon"', `${cov.days_until_revision}`);
+  ok(typeof cov.revision_status === 'string' && cov.revision_status.length > 20,
+     'and the specific state of this year’s revision', (cov.revision_status ?? '').slice(0, 40));
+  ok(cov.through && cov.through >= '2025-10-01',
+     'while naming the newest effective date actually carried', cov.through);
+
+  // 同じ判定を二か所で書かないこと。freshnessReport が出す status と一致すること。
+  const fresh = (await get('/v1/data-freshness')).body;
+  const row = (fresh.datasets ?? []).find((x) => x.key === 'minimum_wage');
+  ok(row && row.status === cov.status,
+     'the two endpoints agree, because one of them computes it',
+     `${row?.status} vs ${cov.status}`);
+  ok(row && row.days_until_revision === cov.days_until_revision,
+     'including the day count', `${row?.days_until_revision} vs ${cov.days_until_revision}`);
+
+  // 収録範囲内はこれまでどおり答える。断りが広がりすぎていないこと。
+  const inRange = await get('/v1/minimum-wage?prefecture=Tokyo&date=2026-08-01');
+  ok(inRange.status === 200, '収録範囲内の日付はこれまでどおり答える', `${inRange.status}`);
+  ok(inRange.body.hourly_wage > 0, 'with a figure', `${inRange.body.hourly_wage}`);
+
+  // 一部の県は令和7年度の引き上げを2026年3月まで遅らせた。その日付が実在すること。
+  // (「10月改定なのに3月発効があるのは誤り」と早合点しかけたので、事実を留めておく)
+  const akita = (await get('/v1/minimum-wage/history?prefecture=Akita')).body;
+  const late = (akita.history ?? []).some((h) => h.effective_from === '2026-03-31');
+  ok(late, '秋田の令和7年度改定は2026-03-31発効。10月とは限らない',
+     JSON.stringify((akita.history ?? []).slice(-1)));
+}
+
 
 
 

@@ -8,8 +8,8 @@
  "reduced_rate_scope": {
   "since": "2019-10-01",
   "applies_to": [
-   "Food and drink, excluding alcoholic drinks and dining out (酒類・外食を除く飲食料品)",
-   "Newspapers published at least twice a week under a subscription contract (定期購読契約の新聞)"
+   "酒類・外食を除く飲食料品",
+   "定期購読契約に基づく、週2回以上発行される新聞"
   ]
  },
  "history": [
