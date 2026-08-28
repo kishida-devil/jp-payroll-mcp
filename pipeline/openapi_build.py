@@ -71,9 +71,34 @@ def validate_recipe(recipe: dict[str, Any]) -> None:
                 raise RecipeError(f"{ep['path']} のパラメータに name がありません")
 
 
+# どのエンドポイントでも受けるもの。レシピ側に書くと足し忘れるので、ここで一度だけ付ける。
+# 受け付けるのに仕様書に無い状態は、機能が無いのと同じ — 読んだ人には見えない。
+CROSS_CUTTING = [
+    {
+        "name": "detail",
+        "enum": ["full", "compact"],
+        "description": (
+            "compact drops the attribution, notes and statutory citations and keeps the "
+            "figures — roughly a tenth the size on a batch run. What was dropped, and how "
+            "to get it back, is listed in `omitted` rather than silently removed. "
+            "Defaults to full."
+        ),
+    },
+    {
+        "name": "include",
+        "enum": ["statute_text"],
+        "description": (
+            "statute_text attaches the full text of every provision this answer cites, so a "
+            "figure can be checked against the words it rests on without a second call. Off "
+            "by default because the text is long."
+        ),
+    },
+]
+
+
 def _parameters(ep: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
-    for p in ep.get("params", []):
+    for p in [*ep.get("params", []), *CROSS_CUTTING]:
         schema: dict[str, Any] = {"type": p.get("type", "string")}
         if p.get("enum"):
             schema["enum"] = p["enum"]

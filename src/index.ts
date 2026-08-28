@@ -309,7 +309,10 @@ function rejectBadQuery(c: any, allowed: readonly string[]) {
       + 'テンプレートが空を吐いたときに、エラーではなくもっともらしい誤答が返ります。',
       'empty_parameter');
 
-  const unknown = seen.filter((k) => k !== 'detail' && !allowed.includes(k));
+  // detail と include はどのエンドポイントでも受ける。個別の許可リストに足していく形に
+  // すると、定数で持っている4本を取りこぼしたときと同じことが起きる。実際 include は
+  // 6本の許可リストから漏れており、仕様書に載せた途端そこだけ嘘になった。
+  const unknown = seen.filter((k) => k !== 'detail' && k !== 'include' && !allowed.includes(k));
   if (!unknown.length) return null;
   const near = (k: string) =>
     allowed.find((a) => a.startsWith(k.slice(0, 4)) || k.startsWith(a.slice(0, 4)));
@@ -588,7 +591,7 @@ app.get('/v1/standard-remuneration/table', (c) => {
   }));
 });
 app.get('/v1/standard-remuneration', (c) => {
-  const unknownQ = rejectBadQuery(c, ['include', 'monthly_salary', 'pref', 'prefecture', 'remuneration'] as const);
+  const unknownQ = rejectBadQuery(c, ['include', 'remuneration'] as const);
   if (unknownQ) return unknownQ;
 
   const raw = c.req.query('remuneration') ?? c.req.query('monthly_salary');
@@ -1533,6 +1536,14 @@ app.get('/v1/workers-compensation', (c) => {
 
   const raw = c.req.query('business_type');
   if (raw === undefined) {
+    // 賃金総額だけ渡されたら、料率表を返して黙って捨てるのではなく断る。
+    // 「賃金総額360万の保険料は」と聞いた人に一覧が返るのは、答えたことにならない。
+    // 率は事業の種類で35倍開くので、こちらで選ぶこともできない。
+    if (c.req.query('wage_total') !== undefined)
+      return bad(c, 'wage_total だけでは保険料を計算できません。business_type も渡してください。',
+        '労災保険率は事業の種類ごとに1,000分の2.5から88まで開くため、種類を決めずに'
+        + '保険料は出せません。事業の種類の番号は business_type を渡さずに呼べば一覧できます。',
+        'missing_parameter');
     return c.json({
       fiscal_year: WORKERS_COMP_META.fiscal_year,
       effective_from: WORKERS_COMP_META.effective_from,
@@ -1669,7 +1680,7 @@ const badWorkerType = (c: any, raw: unknown) =>
     '特定適用事業所の短時間労働者は11日です。');
 
 app.get('/v1/standard-remuneration/revision', (c) => {
-  const unknownQ = rejectBadQuery(c, ['current_remuneration', 'fixed_pay_change', 'include', 'months', 'revision_month', 'worker_type', 'year'] as const);
+  const unknownQ = rejectBadQuery(c, ['current_remuneration', 'fixed_pay_change', 'include', 'months', 'worker_type'] as const);
   if (unknownQ) return unknownQ;
 
   const current = Number(c.req.query('current_remuneration'));
@@ -1968,7 +1979,7 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
 });
 
 app.get('/v1/standard-remuneration/leave-end', (c) => {
-  const unknownQ = rejectBadQuery(c, ['acquired_month', 'current_remuneration', 'include', 'kind', 'months', 'next_leave_starts_immediately', 'worker_type'] as const);
+  const unknownQ = rejectBadQuery(c, ['current_remuneration', 'include', 'kind', 'months', 'next_leave_starts_immediately', 'worker_type'] as const);
   if (unknownQ) return unknownQ;
 
   // 既定値を置かない。数字は同じでも、引用する条文が 43条の2 と 43条の3 で変わる。
@@ -2255,6 +2266,13 @@ app.get('/v1/annual-cost', (c) => {
   if (residentRaw !== undefined && (!Number.isFinite(residentTax) || residentTax < 0))
     return bad(c, '「resident_tax」は0以上の数で渡してください。');
 
+  // 許可リストには載っていたが、computePayslip に true を直接渡していたので効かなかった。
+  // 事業主の負担だけを見たい呼び出しがあるので、payroll と同じように受ける。
+  const taxRaw = (c.req.query('income_tax') ?? 'true').toLowerCase();
+  if (!['true', 'false', '1', '0', 'yes', 'no'].includes(taxRaw))
+    return bad(c, `「income_tax」は真偽値で渡してください。渡されたのは「${taxRaw}」でした。`);
+  const wantIncomeTax = ['true', '1', 'yes'].includes(taxRaw);
+
   const smrRaw = c.req.query('standard_remuneration');
   const smr = smrRaw === undefined ? null : Number(smrRaw);
   if (smrRaw !== undefined && (!Number.isFinite(smr!) || smr! < 0))
@@ -2291,7 +2309,7 @@ app.get('/v1/annual-cost', (c) => {
     prefecture: r.pref, monthly_salary: salary, age, birth_date: birth, as_of: asOf!,
     business_type: btKey, employment_type: empRaw as any, standard_remuneration: smr,
     allowances: [], workers_comp_type: wcRaw ?? null,
-    column: colRaw as Column, dependants, income_tax: true, resident_tax: residentTax,
+    column: colRaw as Column, dependants, income_tax: wantIncomeTax, resident_tax: residentTax,
   });
 
   // 健保の枠は年度を通して積み上がる。渡された順に埋める。

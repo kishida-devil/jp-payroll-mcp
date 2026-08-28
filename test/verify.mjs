@@ -4349,6 +4349,173 @@ for (const [p, want, label] of [
   ok(late, '秋田の令和7年度改定は2026-03-31発効。10月とは限らない',
      JSON.stringify((akita.history ?? []).slice(-1)));
 }
+{
+  // 仕様書が「必須」と言うものと、APIが実際に拒否するものを突き合わせる。
+  //
+  // `kind` を必須にしたあと、生成された仕様書は `start` と `end` だけを必須と
+  // 言い続けていた。仕様の出所(recipe.py)を直していなかったため。
+  // **この仕様書に従って作られた Custom GPT は、必ず400を受け取る。**
+  // 気づいたのは手で見たからで、次は気づかない。
+  //
+  // 逆向きも同じだけ危ない。`age` を必須と書いていたが birth_date だけでも通る。
+  // このAPI自身が「birth_date のほうが正確」と言っているのに、仕様書が年齢を
+  // 要求すれば、**生年月日しか持っていない利用者に年齢を推測させる。**
+  const spec = (await get('/openapi.json')).body;
+
+  // OpenAPI の required は真偽値で、「どちらか一方」を表せない。
+  // 例外にするなら、説明文で伝わっていることまで確かめる。書いていない例外は例外でない。
+  const EITHER_OR = {
+    '/v1/payroll': ['age', 'birth_date'],
+    '/v1/annual-cost': ['age', 'birth_date'],
+    '/v1/bonus-insurance': ['age', 'birth_date'],
+  };
+
+  const ex = (p) => encodeURIComponent(String(p.example ?? '1'));
+  const understated = [], overstated = [], undocumented = [];
+  for (const [path, ops] of Object.entries(spec.paths)) {
+    if (!ops.get) continue;
+    const params = ops.get.parameters ?? [];
+    const required = params.filter((p) => p.required);
+    const query = required.map((p) => `${p.name}=${ex(p)}`).join('&');
+    const full = await get(query ? `${path}?${query}` : path);
+
+    const pair = EITHER_OR[path];
+    if (full.body?.code === 'missing_parameter') {
+      if (!pair) { understated.push(`${path}: ${full.body.error?.slice(0, 40)}`); continue; }
+      // 片方を足せば通ること。両方とも「もう一方」に触れていること。
+      for (const name of pair) {
+        const p = params.find((q) => q.name === name);
+        const r = await get(`${path}?${query}${query ? '&' : ''}${name}=${ex(p ?? {})}`);
+        if (r.body?.code === 'missing_parameter')
+          understated.push(`${path}: ${name} を足しても足りない`);
+        const other = pair.find((n) => n !== name);
+        if (!(p?.description ?? '').includes(other))
+          undocumented.push(`${path}.${name} が ${other} に触れていない`);
+      }
+    } else if (pair) {
+      // 例外に挙げたのに、実際にはどちらも要らなくなっていた。例外を残さない。
+      overstated.push(`${path}: どちらか一方の要件が消えている`);
+    }
+
+    // 必須と書いたものを1つ落としたら、必ず断られること。
+    for (const p of required) {
+      const without = required.filter((q) => q.name !== p.name).map((q) => `${q.name}=${ex(q)}`).join('&');
+      const extra = pair ? `${without ? '&' : ''}${pair[1]}=1986-04-01` : '';
+      const r = await get(`${path}${without || extra ? '?' : ''}${without}${extra}`);
+      if (r.status < 400) overstated.push(`${path}: ${p.name} は必須と書いてあるが無くても通る`);
+    }
+  }
+  ok(understated.length === 0,
+     'every parameter the API insists on is marked required, or is a documented either/or',
+     understated.slice(0, 4).join(' | ') || 'none');
+  ok(overstated.length === 0,
+     'and nothing is marked required that the API will answer without',
+     overstated.slice(0, 4).join(' | ') || 'none');
+  ok(undocumented.length === 0,
+     'while each either/or names its alternative where a client will read it',
+     undocumented.slice(0, 4).join(' | ') || 'none');
+
+  // 30オペレーションの上限。ここを超えると Custom GPT の読み込みが失敗し、
+  // 配布経路がまるごと止まる(第16反復)。
+  const gpt = (await get('/openapi.json?profile=gpt')).body;
+  const gptOps = Object.values(gpt.paths).reduce(
+    (n, v) => n + ['get', 'post', 'put', 'delete'].filter((m) => v[m]).length, 0);
+  ok(gptOps <= 30, 'the GPT profile stays inside the 30-operation ceiling', `${gptOps}`);
+  ok(gptOps >= 25, 'and is not silently shrinking', `${gptOps}`);
+
+  // 生成物ではなく出所が直っていること。src/data を手で直すと次の生成で消える。
+  const kindReq = (spec.paths['/v1/leave-exemption']?.get?.parameters ?? [])
+    .filter((p) => p.required).map((p) => p.name);
+  ok(kindReq.includes('kind'),
+     'the published spec knows kind is required, because the recipe knows',
+     kindReq.join(','));
+}
+{
+  // 受け付けるなら、効かなければならない。
+  //
+  // 許可リストに載っているのに何にも使われていない引数が7件あった。
+  // `/v1/annual-cost?income_tax=false` は所得税を含んだままの額を返し、
+  // `/v1/overtime-pay?round=true` は名前だけで丸めの実装が無かった。
+  // 利用者から見れば「渡したのに効かない」で、**黙って捨てられるのは
+  // 拒否されるより悪い**(F-04)。ここを見ていなかったので、7件が生き延びた。
+  //
+  // 受け付ける一覧は、未知の引数を投げたときのヒントが教えてくれる。
+  // 仕様書ではなく API 自身に聞く — 乖離していれば仕様書のほうが嘘になる。
+  const ALIAS = new Set(['pref', 'amount', 'start', 'end']);      // 正式名と同義
+  const PASSTHROUGH = new Set(['detail', 'include']);             // 形を変えるだけ。別に検査済み
+  const spec = (await get('/openapi.json')).body;
+  const inert = [];
+  for (const [path, ops] of Object.entries(spec.paths)) {
+    if (!ops.get) continue;
+    const probe = await get(`${path}?zzz_unknown_probe=1`);
+    const m = /ここで受け付けるのは (.+?) です/.exec(probe.body?.hint ?? '');
+    if (!m) continue;
+    const accepted = m[1].split('、').map((x) => x.trim())
+      .filter((x) => x && !ALIAS.has(x) && !PASSTHROUGH.has(x));
+    const declared = ops.get.parameters ?? [];
+    const required = declared.filter((p) => p.required)
+      .map((p) => `${p.name}=${encodeURIComponent(String(p.example ?? '1'))}`);
+    // 年齢か生年月日のどちらかが要る経路は、生年月日を足しておく
+    const seed = [...required];
+    if (accepted.includes('birth_date') && !required.some((q) => q.startsWith('age='))
+        && accepted.includes('age')) seed.push('birth_date=1986-04-01');
+    const baseQ = seed.join('&');
+    const base = await get(baseQ ? `${path}?${baseQ}` : path);
+    if (base.status !== 200) continue;
+    const baseline = JSON.stringify(base.body);
+
+    for (const name of accepted) {
+      if (seed.some((q) => q.startsWith(`${name}=`))) continue;
+      const p = declared.find((q) => q.name === name);
+      // 既定値と同じ値を渡しても差は出ない。enum なら別の値、真偽値なら反転させる。
+      // 既定値と同じ値を渡せば、当然なにも変わらない。それを「効かない」と読むと
+      // 実装のあるものまで外してしまう(`round` を一度そうやって消しかけた。
+      // 既定が true なので `round=1` では差が出なかった)。
+      // だから真偽値は両方、enum は例と違う値、数値は極端な値を試す。
+      const values = p?.schema?.enum?.length
+        ? p.schema.enum.filter((v) => String(v) !== String(p.schema.example))
+        : ['false', 'true', p?.example ?? '1', '1986-04-01'];
+      let moved = false, refused = false;
+      for (const v of values.slice(0, 4)) {
+        const r = await get(`${path}?${baseQ}${baseQ ? '&' : ''}${name}=${encodeURIComponent(String(v))}`);
+        if (r.status >= 400) { refused = true; break; }
+        if (JSON.stringify(r.body) !== baseline) { moved = true; break; }
+      }
+      if (!moved && !refused) inert.push(`${path}?${name}=`);
+    }
+  }
+  ok(inert.length === 0,
+     'no parameter is accepted and then ignored — it changes the answer or it is refused',
+     inert.slice(0, 6).join(' | ') || 'none');
+
+  // round は実装があった。私の走査が既定値と同じ値を渡したせいで「効かない」と出て、
+  // 危うく消すところだった。既存のテストが止めた。効くことをここでも押さえておく。
+  const rounded = (await get('/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=5&night_hours=5')).body;
+  const raw = (await get('/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=5&night_hours=5&round=false')).body;
+  ok(rounded.lines.night_premium.amount === 2344 && raw.lines.night_premium.amount === 2343.75,
+     'round=false leaves the fraction alone, which is why the parameter exists',
+     `${rounded.lines.night_premium.amount} / ${raw.lines.night_premium.amount}`);
+
+  // 見つけたものが本当に効いていること。
+  const withTax = (await get('/v1/annual-cost?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
+  const noTax = (await get('/v1/annual-cost?prefecture=Tokyo&monthly_salary=300000&age=40&income_tax=false')).body;
+  ok(withTax.annual.income_tax > 0, '年額に所得税が入っている', `${withTax.annual.income_tax}`);
+  ok(noTax.annual.income_tax === 0, 'income_tax=false で外れる', `${noTax.annual.income_tax}`);
+
+  // 写しで入っていた引数は拒否されること。名前だけあって中身が無い状態に戻さない。
+  for (const [q, why] of [
+    ['/v1/standard-remuneration?remuneration=305000&prefecture=Tokyo', '等級は全国一律'],
+    ['/v1/standard-remuneration?remuneration=305000&monthly_salary=305000', '入力は remuneration'],
+    ['/v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase&revision_month=8', '定時決定側の項目'],
+    ['/v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31&acquired_month=2026-06', '定時決定側の項目'],
+  ]) {
+    const r = await get(q);
+    ok(r.status === 400 && r.body.code === 'unknown_parameter',
+       `${why}: 受け付けない`, `${r.status} ${r.body.code}`);
+  }
+}
+
+
 
 
 

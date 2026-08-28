@@ -172,10 +172,26 @@ RECIPE = {
                  "description": "English name, Japanese, or JIS code 1-47."},
                 {"name": "monthly_salary", "required": True, "type": "integer", "example": 350000,
                  "description": "Actual monthly salary in yen."},
-                {"name": "age", "required": True, "type": "integer", "example": 40,
+                # required にしない。birth_date だけでも通るのに必須と書くと、
+                # 生年月日しか持っていない利用者に年齢を推測させることになる。
+                # このAPI自身が「birth_date のほうが正確」と書いている以上、
+                # 仕様書がその逆に誘導してはいけない。どちらか一方が要る点は説明文で言う。
+                {"name": "age", "type": "integer", "example": 40,
                  "description": "Age. Either this or birth_date is required: long-term care "
                                 "is charged only from 40 to 64 (介護保険法第9条), so without it "
                                 "the premium cannot be settled. Prefer birth_date."},
+                # 受け付けているのに書いていなかった。このAPI自身が「birth_date のほうが
+                # 正確」と言いながら、その入口を仕様書に載せていなかった。
+                {"name": "birth_date", "example": "1986-04-01",
+                 "description": "Birth date, YYYY-MM-DD. Either this or age is required, and "
+                                "this is the better one: 年齢計算ニ関スル法律 puts the attainment "
+                                "of an age on the day before the birthday, so someone born on "
+                                "the 1st crosses the 40, 65, 70 and 75 thresholds a month "
+                                "earlier than age alone would suggest."},
+                {"name": "commuting_parking", "type": "integer", "example": 3000,
+                 "description": "Monthly parking the employee pays for a car or bicycle "
+                                "commute. Added to the distance band, capped at 5,000 a month. "
+                                "Needs commuting_distance_km."},
                 {"name": "business_type", "example": "general",
                  "enum": ["general", "agriculture_forestry_fishery_sake", "construction"],
                  "description": "Business category for employment insurance."},
@@ -826,8 +842,12 @@ RECIPE = {
             ),
             "tags": ["Payroll"],
             "params": [
-                {"name": "kind", "example": "childcare", "enum": ["maternity", "childcare"],
-                 "description": "産前産後休業 or 育児休業等."},
+                {"name": "kind", "required": True, "example": "childcare",
+                 "enum": ["maternity", "childcare"],
+                 "description": ("産前産後休業 or 育児休業等. Required: there is no safe "
+                                 "default. The same dates exempt a month under childcare "
+                                 "leave and nothing under maternity leave, because the "
+                                 "14-day rule exists for one and not the other.")},
                 {"name": "start", "required": True, "example": "2026-03-15",
                  "description": "First day of leave."},
                 {"name": "end", "required": True, "example": "2026-03-28",
@@ -987,8 +1007,9 @@ RECIPE = {
                  "description": "Rates differ by prefecture."},
                 {"name": "monthly_salary", "required": True, "type": "integer", "example": 400000,
                  "description": "Gross monthly pay."},
-                {"name": "age", "required": True, "type": "integer", "example": 40,
-                 "description": "Either this or birth_date. Long-term care runs 40 to 64."},
+                {"name": "age", "type": "integer", "example": 40,
+                 "description": "Either this or birth_date is required. Long-term care runs "
+                                "40 to 64. Prefer birth_date."},
                 {"name": "birth_date", "example": "1986-04-01",
                  "description": "Preferred over age; applies the milestones to the day."},
                 {"name": "bonuses", "example": "800000,800000",

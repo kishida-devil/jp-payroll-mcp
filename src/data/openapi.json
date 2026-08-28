@@ -36,6 +36,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Meta"
     ]
@@ -61,6 +88,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Reference"
     ]
@@ -95,6 +149,31 @@
       "schema": {
        "type": "string",
        "example": "Tokyo"
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -133,6 +212,31 @@
        "type": "integer",
        "example": 350000
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -160,6 +264,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Rates"
     ]
@@ -199,6 +330,31 @@
         "construction"
        ],
        "example": "general"
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -247,6 +403,31 @@
        "type": "string",
        "example": "2020-01-01"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -283,6 +464,31 @@
       "schema": {
        "type": "string",
        "example": "Tokyo"
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -335,11 +541,31 @@
      {
       "name": "age",
       "in": "query",
-      "required": true,
+      "required": false,
       "description": "Age. Either this or birth_date is required: long-term care is charged only from 40 to 64 (介護保険法第9条), so without it the premium cannot be settled. Prefer birth_date.",
       "schema": {
        "type": "integer",
        "example": 40
+      }
+     },
+     {
+      "name": "birth_date",
+      "in": "query",
+      "required": false,
+      "description": "Birth date, YYYY-MM-DD. Either this or age is required, and this is the better one: 年齢計算ニ関スル法律 puts the attainment of an age on the day before the birthday, so someone born on the 1st crosses the 40, 65, 70 and 75 thresholds a month earlier than age alone would suggest.",
+      "schema": {
+       "type": "string",
+       "example": "1986-04-01"
+      }
+     },
+     {
+      "name": "commuting_parking",
+      "in": "query",
+      "required": false,
+      "description": "Monthly parking the employee pays for a car or bicycle commute. Added to the distance band, capped at 5,000 a month. Needs commuting_distance_km.",
+      "schema": {
+       "type": "integer",
+       "example": 3000
       }
      },
      {
@@ -475,6 +701,31 @@
        "type": "string",
        "example": "2026-06-01"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -532,6 +783,31 @@
        "type": "string",
        "example": "2026-06-01"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -559,6 +835,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Meta"
     ]
@@ -614,6 +917,31 @@
        "type": "string",
        "example": "2026-12-31"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -664,6 +992,31 @@
       "schema": {
        "type": "string",
        "example": "2026-01-01"
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -726,6 +1079,31 @@
        "type": "string",
        "example": "2026-03-31"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -787,6 +1165,31 @@
        "type": "integer",
        "example": 1
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -844,6 +1247,31 @@
        "type": "string",
        "example": "true"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -871,6 +1299,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Tax"
     ]
@@ -905,6 +1360,31 @@
       "schema": {
        "type": "string",
        "example": "8700110005901"
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -943,6 +1423,31 @@
        "type": "string",
        "example": "700110005901"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -979,6 +1484,31 @@
       "schema": {
        "type": "string",
        "example": "T8700110005901"
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -1041,6 +1571,31 @@
        "type": "integer",
        "example": 2
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -1097,6 +1652,31 @@
       "schema": {
        "type": "integer",
        "example": 2
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -1159,6 +1739,31 @@
       "schema": {
        "type": "integer",
        "example": 2
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -1251,6 +1856,31 @@
        ],
        "example": "kou"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -1338,6 +1968,31 @@
        "type": "string",
        "example": "2026-08-25"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -1378,6 +2033,31 @@
         "compact"
        ],
        "example": "full"
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -1573,6 +2253,31 @@
        ],
        "example": "general"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -1685,6 +2390,31 @@
        "type": "integer",
        "example": 3
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -1771,6 +2501,31 @@
        "type": "boolean",
        "example": false
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -1798,6 +2553,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Payroll"
     ],
@@ -1907,6 +2689,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Standard remuneration"
     ],
@@ -2093,8 +2902,8 @@
      {
       "name": "kind",
       "in": "query",
-      "required": false,
-      "description": "産前産後休業 or 育児休業等.",
+      "required": true,
+      "description": "産前産後休業 or 育児休業等. Required: there is no safe default. The same dates exempt a month under childcare leave and nothing under maternity leave, because the 14-day rule exists for one and not the other.",
       "schema": {
        "type": "string",
        "enum": [
@@ -2132,6 +2941,31 @@
       "schema": {
        "type": "integer",
        "example": 0
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -2220,6 +3054,31 @@
        "type": "number",
        "example": 0
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -2287,6 +3146,31 @@
        "type": "integer",
        "example": 3000
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -2314,6 +3198,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Tax"
     ],
@@ -2394,6 +3305,31 @@
        "type": "boolean",
        "example": false
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -2445,8 +3381,8 @@
      {
       "name": "age",
       "in": "query",
-      "required": true,
-      "description": "Either this or birth_date. Long-term care runs 40 to 64.",
+      "required": false,
+      "description": "Either this or birth_date is required. Long-term care runs 40 to 64. Prefer birth_date.",
       "schema": {
        "type": "integer",
        "example": 40
@@ -2530,6 +3466,31 @@
       "schema": {
        "type": "integer",
        "example": 0
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -2627,6 +3588,31 @@
       "schema": {
        "type": "number",
        "example": 2
+      }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
       }
      }
     ],
@@ -2735,6 +3721,31 @@
        "type": "number",
        "example": 12
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -2792,6 +3803,31 @@
        "type": "string",
        "example": "2026-03-30"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -2839,6 +3875,31 @@
        "type": "string",
        "example": "2026-08-25"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -2876,6 +3937,31 @@
        "type": "string",
        "example": "健康保険法第43条"
       }
+     },
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
      }
     ],
     "tags": [
@@ -2903,6 +3989,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Statutes"
     ]
@@ -2928,6 +4041,33 @@
       "description": "Invalid or missing query parameter"
      }
     },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
     "tags": [
      "Meta"
     ]
