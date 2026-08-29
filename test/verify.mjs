@@ -1580,7 +1580,7 @@ for (const [p, want, label] of [
   // Entitlement must not rest on a header the caller can set. Without the proxy
   // secret configured this still passes (documented fallback), but once it is
   // set, a bare host header must buy nothing.
-  const spoofed = await post(rows(50), { 'X-RapidAPI-Host': 'japan-payroll.p.rapidapi.com' });
+  const spoofed = await post(rows(50), { 'X-RapidAPI-Host': 'japan-payroll-and-labor-constants.p.rapidapi.com' });
   const secretConfigured = (await (await tryFetch(`${PROD}/`)).json()).free_tier?.entitlement_verified;
   if (secretConfigured) {
     ok(spoofed.status === 400, 'a bare X-RapidAPI-Host header does not grant the paid cap',
@@ -4572,7 +4572,7 @@ for (const [p, want, label] of [
 
   // ヘッダは誰でも付けられる。判定をヘッダに置いたら課金は成立しない。
   const forged = await nonLocal('/v1/payroll/batch', {
-    'x-rapidapi-host': 'japan-payroll-api.p.rapidapi.com',
+    'x-rapidapi-host': 'japan-payroll-and-labor-constants.p.rapidapi.com',
     'x-rapidapi-subscription': 'PRO',
   }, rows(11));
   if (verified) {
@@ -4610,6 +4610,65 @@ for (const [p, want, label] of [
     ok(true, `鍵が無いので有料経路は試していない (verified=${verified})`);
   }
 }
+{
+  // 課金の入口が実在するか。**購読0の原因がここだった。**
+  //
+  // 出品の説明文の Quick start が `japan-payroll-api.p.rapidapi.com` を指しており、
+  // ゲートウェイは `{"message":"API doesn't exists"}` を返していた。
+  // 実際のホストは `japan-payroll-and-labor-constants.p.rapidapi.com`。
+  // **訪問者が最初にコピーするコードが、存在しない宛先を叩いていた。**
+  // 「動かないAPI」と判断されて離脱していたなら、購読が0なのは当然だった。
+  //
+  // 404 と 403 の違いが答えを分ける。404 は出品が無い、403 は出品はあって未購読。
+  // 未購読で断られるのが正常な状態。
+  const HOST_RE = /([a-z0-9-]+\.p\.rapidapi\.com)/g;
+  const files = ['recipes/jp-payroll/rapidapi-docs.md', 'mcp/README.md', 'mcp/README.ja.md'];
+  const advertised = new Set();
+  for (const f of files) {
+    let text;
+    try { text = await readFile(new URL(`../${f}`, import.meta.url), 'utf8'); }
+    catch { continue; }
+    for (const m of text.matchAll(HOST_RE)) advertised.add(m[1]);
+  }
+  ok(advertised.size >= 1, 'the docs name a RapidAPI host at all', [...advertised].join(', '));
+
+  const dead = [];
+  for (const host of advertised) {
+    let status = null, message = '';
+    try {
+      const r = await fetch(`https://${host}/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40`, {
+        headers: { 'X-RapidAPI-Key': 'probe-not-a-real-key', 'X-RapidAPI-Host': host },
+        signal: AbortSignal.timeout(20000),
+      });
+      status = r.status;
+      message = (await r.text()).slice(0, 80);
+    } catch {
+      // 外に出られない環境では判定しない。落とすのは「存在しない」と確定したときだけ。
+      continue;
+    }
+    // 403 = 出品はあり、未購読なので断られた(正常)。404 = 出品が無い。
+    if (status === 404 || /doesn't exists/i.test(message)) dead.push(`${host} → ${status} ${message}`);
+  }
+  ok(dead.length === 0,
+     'and every host it names actually exists at the RapidAPI gateway',
+     dead.join(' | ') || 'none');
+
+  // 出品ページのURLも、コードと文書で食い違っていないこと。
+  const listing = new Set();
+  for (const f of [...files, 'mcp/src/index.mjs', 'src/index.ts', 'scripts/stats.mjs']) {
+    let text;
+    try { text = await readFile(new URL(`../${f}`, import.meta.url), 'utf8'); }
+    catch { continue; }
+    for (const m of text.matchAll(/rapidapi\.com\/[\w-]+\/api\/([\w-]+)/g)) listing.add(m[1]);
+  }
+  ok(listing.size === 1, 'the listing is referred to by one name everywhere',
+     [...listing].join(', ') || 'none');
+  const slug = [...listing][0];
+  ok(slug && [...advertised].every((h) => h.startsWith(slug)),
+     'and the proxy host matches that listing, which is where the mismatch came from',
+     `listing=${slug} hosts=${[...advertised].join(',')}`);
+}
+
 
 
 

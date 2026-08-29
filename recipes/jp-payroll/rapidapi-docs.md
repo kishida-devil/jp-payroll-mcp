@@ -12,9 +12,9 @@ This API packages all of it, and answers the questions payroll actually asks.
 
 ```bash
 curl -X GET \
-  'https://japan-payroll-api.p.rapidapi.com/v1/payroll?prefecture=Tokyo&monthly_salary=350000&birth_date=1986-04-01&dependants=2' \
+  'https://japan-payroll-and-labor-constants.p.rapidapi.com/v1/payroll?prefecture=Tokyo&monthly_salary=350000&birth_date=1986-04-01&dependants=2' \
   -H 'X-RapidAPI-Key: YOUR_KEY' \
-  -H 'X-RapidAPI-Host: japan-payroll-api.p.rapidapi.com'
+  -H 'X-RapidAPI-Host: japan-payroll-and-labor-constants.p.rapidapi.com'
 ```
 
 One call returns health insurance, long-term care, pension, child support,
