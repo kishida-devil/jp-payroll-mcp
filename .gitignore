@@ -18,3 +18,7 @@ build/raw/
 .DS_Store
 Thumbs.db
 mcp/eval/build/
+
+# レジストリ投入用のバイナリ(配布物ではない)
+mcp/mcp-publisher.exe
+mcp/mcp-publisher.tar.gz

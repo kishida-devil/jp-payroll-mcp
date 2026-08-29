@@ -719,6 +719,27 @@ for (const [name, args, check] of [
   // 版番号は1箇所から。2つ持てばずれる — 実際 package.json が 0.4.0 の間、
   // サーバは 0.3.0 と名乗っていた。利用者が版を確かめる唯一の手段がこれなのに。
   const pkgJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+
+  // 公式MCPレジストリへの登録票。版を上げるたびに置き去りになるので固定する。
+  // 食い違ったまま出すと、レジストリ側の所有権検証で落ちる。
+  // (第28反復と同じ話 — 事実を2箇所に持てばいつか必ずずれる)
+  const serverJson = JSON.parse(await readFile(new URL('../server.json', import.meta.url), 'utf8'));
+  ok(serverJson.name === pkgJson.mcpName,
+     'server.json の名前が package.json の mcpName と一致する',
+     `${serverJson.name} / ${pkgJson.mcpName}`);
+  ok(serverJson.version === pkgJson.version
+     && serverJson.packages?.[0]?.version === pkgJson.version,
+     'and both versions in it track the package',
+     `${serverJson.version} / ${serverJson.packages?.[0]?.version} / ${pkgJson.version}`);
+  ok(serverJson.packages?.[0]?.identifier === pkgJson.name,
+     'and it points at this npm package', serverJson.packages?.[0]?.identifier);
+  // レジストリは description を100文字までしか受け付けない。超えると 422 で弾かれ、
+  // **登録できない=誰にも見つからない。**手元で気づけるようにする。
+  ok((serverJson.description ?? '').length <= 100,
+     'and the description fits the 100 characters the registry allows',
+     `${(serverJson.description ?? '').length} 文字`);
+  ok((serverJson.description ?? '').length >= 30,
+     'while still saying what it does', `${(serverJson.description ?? '').length} 文字`);
   ok(client.getServerVersion?.()?.version === pkgJson.version,
      'the server announces the version the package declares',
      `${client.getServerVersion?.()?.version} vs ${pkgJson.version}`);
