@@ -4668,6 +4668,84 @@ for (const [p, want, label] of [
      'and the proxy host matches that listing, which is where the mismatch came from',
      `listing=${slug} hosts=${[...advertised].join(',')}`);
 }
+{
+  // 外に出す文章の数字は、実装と一致していなければならない。
+  //
+  // 記事は宣伝ではなく「読んで役に立つ」から読まれる。そこに書いた数字が違っていたら、
+  // 記事も製品もまとめて信用されない。**書いた数字は検査する**(第24反復と同じ)。
+  const article = await readFile(
+    new URL('../docs/articles/zenn-payroll-traps.md', import.meta.url), 'utf8');
+
+  // 1. 退職日の1日差。記事は 95,130円(46,500 + 48,630)と書いている。
+  const pay = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
+  ok(pay.totals.social_insurance_combined === 95130
+     && pay.totals.social_insurance_employee === 46500
+     && pay.totals.social_insurance_employer === 48630,
+     '記事の 95,130円(46,500/48,630)が実際の計算と一致する',
+     `${pay.totals.social_insurance_employee}/${pay.totals.social_insurance_employer}`);
+  for (const n of ['95,130', '46,500', '48,630']) {
+    ok(article.includes(n), `記事が ${n} を挙げている`);
+  }
+  const l30 = (await get('/v1/eligibility?month=2026-03&left_on=2026-03-30')).body;
+  const l31 = (await get('/v1/eligibility?month=2026-03&left_on=2026-03-31')).body;
+  ok(l30.social_insurance_due === false && l31.social_insurance_due === true,
+     '3/30退職は不要・3/31退職は必要、という記事の主張どおり',
+     `${l30.social_insurance_due} / ${l31.social_insurance_due}`);
+  ok(l30.eligibility_lost_on === '2026-03-31' && l31.eligibility_lost_on === '2026-04-01',
+     'and the loss dates it quotes are the ones produced',
+     `${l30.eligibility_lost_on} / ${l31.eligibility_lost_on}`);
+
+  // 2. 1日生まれ。記事は 1986-04-01 → 到達 2026-03-31 → 適用 2026-03 と書いている。
+  const age = (await get('/v1/age-milestones?birth_date=1986-04-01')).body;
+  const forty = (age.milestones ?? []).find((m) => m.age === 40);
+  ok(forty?.reached_on === '2026-03-31' && forty?.applies_from_month === '2026-03',
+     '記事の「4月1日生まれは3月から」が実際の判定と一致する',
+     `${forty?.reached_on} / ${forty?.applies_from_month}`);
+  ok(article.includes('2026-03-31') && article.includes('2026-03'),
+     'そして記事にその日付が書いてある');
+
+  // 3. 随時改定。2等級で必要、1等級では不要、根拠は保発第4号。
+  const two = (await get('/v1/standard-remuneration/revision?current_remuneration=300000'
+    + '&months=350000:31,352000:30,349000:31&fixed_pay_change=increase')).body;
+  const one = (await get('/v1/standard-remuneration/revision?current_remuneration=300000'
+    + '&months=310000:31,312000:30,309000:31&fixed_pay_change=increase')).body;
+  ok(two.applies === true && one.applies === false,
+     '2等級で必要・1等級で不要、という記事の主張どおり',
+     `${two.applies} / ${one.applies}`);
+  ok((one.blocking_reasons ?? []).some((r) => r.includes('保発第4号')),
+     'and the notice the article names is the one the API cites',
+     (one.blocking_reasons ?? [])[0]?.slice(0, 40));
+  ok(article.includes('保発第4号'), '記事が保発第4号を挙げている');
+
+  // 4. 最低賃金。記事は秋田の令和7年度が 1031円・2026-03-31発効と書いている。
+  const akita = (await get('/v1/minimum-wage/history?prefecture=Akita')).body;
+  const latest = (akita.history ?? []).slice(-1)[0];
+  ok(latest?.hourly_wage === 1031 && latest?.effective_from === '2026-03-31',
+     '記事の「秋田 1031円・2026-03-31発効」が収録データと一致する',
+     `${latest?.hourly_wage} / ${latest?.effective_from}`);
+  ok(article.includes('1031') && article.includes('2026-03-31'),
+     'そして記事にその数字が書いてある');
+
+  // 5. 記事が挙げる条文が、APIが実際に引くものと同じであること。
+  for (const ref of ['健康保険法第36条', '健康保険法第156条第3項', '介護保険法第9条']) {
+    ok(article.includes(ref), `記事が ${ref} を挙げている`);
+  }
+  const quoted = JSON.stringify(l30.statutes ?? []);
+  ok(quoted.includes('第36条') && quoted.includes('第156条'),
+     'and the API cites those same provisions on the very call the article describes',
+     quoted.slice(0, 70));
+
+  // 6. 記事が案内する入口が生きていること。壊れた導線で人を送らない。
+  ok(article.includes('npx jp-payroll-mcp'), '記事が MCP の入口を書いている');
+  const health = await get('/v1/eligibility?month=2026-03&left_on=2026-03-31');
+  ok(health.status === 200, 'and the endpoint the article tells people to curl answers',
+     `${health.status}`);
+
+  // 7. まだ公開していないこと。published: true のまま置き忘れない。
+  ok(/^published:\s*false/m.test(article),
+     'the draft is not marked published until it is actually posted');
+}
+
 
 
 
