@@ -4745,6 +4745,44 @@ for (const [p, want, label] of [
   ok(/^published:\s*false/m.test(article),
      'the draft is not marked published until it is actually posted');
 }
+{
+  // GitHub のトップページに出る数字。**買い手が最初に見る場所。**
+  //
+  // 第21反復で mcp/README.md の「17 tools」を直したとき、**ルートの README を
+  // 見ていなかった。**そちらも 17 tools・36 endpoints・3,638 assertions のままで、
+  // 実物は 28・43・4,290。実際より小さく、検査も薄い製品として並んでいた。
+  // 棚が2つあることに気づいていなかった。
+  const rootReadme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const toolSource = await readFile(new URL('../mcp/src/index.mjs', import.meta.url), 'utf8');
+  const toolCount = [...toolSource.matchAll(/registerTool\('/g)].length;
+  const specNow = (await get('/openapi.json')).body;
+  const pathCount = Object.keys(specNow.paths).filter((p) => p.startsWith('/v1/')).length;
+
+  const claimed = (re) => {
+    const m = re.exec(rootReadme);
+    return m ? Number(m[1].replace(/,/g, '')) : null;
+  };
+  ok(claimed(/(\d+) tools/) === toolCount,
+     'README のトップが名乗るツール数が実物と一致する',
+     `${claimed(/(\d+) tools/)} vs ${toolCount}`);
+  ok(claimed(/(\d+) endpoints/) === pathCount,
+     'and the endpoint count as well', `${claimed(/(\d+) endpoints/)} vs ${pathCount}`);
+
+  // 表明の数は走るたびに増える。README が下回っているのは古い、上回っているのは嘘。
+  const claimedAssertions = claimed(/([\d,]+) assertions/);
+  ok(claimedAssertions !== null, 'README states how many assertions back the figures');
+  ok(claimedAssertions <= pass + fail + 60 && claimedAssertions >= (pass + fail) - 400,
+     'and that number is close to what the suite actually runs',
+     `README ${claimedAssertions} / 実際 ${pass + fail} 前後`);
+
+  // 同じ数字が2箇所に出るので、両方が同じことを言っていること。
+  const allAssertionMentions = [...rootReadme.matchAll(/([\d,]+) assertions/g)]
+    .map((m) => m[1].replace(/,/g, ''));
+  ok(new Set(allAssertionMentions).size === 1,
+     'and every mention of it in the file agrees',
+     allAssertionMentions.join(' / '));
+}
+
 
 
 

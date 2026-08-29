@@ -45,15 +45,19 @@ notepad D:\Claude\tsumugi\recipes\jp-payroll\rapidapi-docs.md
 
 **手順**
 
+cmd.exe では `./` が使えません。バックスラッシュで。
+
 ```bash
-cd /d/Claude/tsumugi/mcp && ./mcp-publisher.exe login
+cd /d D:\Claude\tsumugi\mcp && mcp-publisher.exe login
 ```
 
 表示されたコードを https://github.com/login/device に入力。続けて:
 
 ```bash
-cd /d/Claude/tsumugi/mcp && ./mcp-publisher.exe publish
+cd /d D:\Claude\tsumugi\mcp && mcp-publisher.exe publish
 ```
+
+(Git Bash から実行する場合は `cd /d/Claude/tsumugi/mcp && ./mcp-publisher.exe login`)
 
 **確かめ方:**
 
@@ -119,7 +123,7 @@ curl -s https://api.github.com/repos/kishida-devil/jp-payroll-mcp | python -c "i
 版を上げてから公開してください(同じ版は再公開できません)。
 
 ```bash
-cd /d/Claude/tsumugi/mcp && npm version patch && npm publish
+cd /d D:\Claude\tsumugi\mcp && npm version patch && npm publish
 ```
 
 **確かめ方:**

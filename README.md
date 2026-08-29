@@ -5,17 +5,17 @@ premiums for all 47 prefectures, withholding tax, standard remuneration decision
 revisions, leave exemptions, minimum wage — with the statute or ministerial notice each
 answer rests on.
 
-Verified against the published tables cell by cell: **3,638 assertions** on every change.
+Verified against the published tables cell by cell: **4,295 assertions** on every change.
 
 ## Two ways in
 
-**As an MCP server**, for asking questions through an AI assistant. 17 tools, free, no key:
+**As an MCP server**, for asking questions through an AI assistant. 28 tools, free, no key:
 
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 ```
 
-**As an HTTP API**, for building it into software. 36 endpoints, OpenAPI 3.0, batch:
+**As an HTTP API**, for building it into software. 43 endpoints, OpenAPI 3.0, batch:
 
 ```bash
 curl "https://japan-payroll-api.tsumugi.workers.dev/v1/payroll?prefecture=Tokyo&monthly_salary=350000&birth_date=1986-04-01"
@@ -249,7 +249,7 @@ provision to back it fails the build rather than silently returning nothing.
 
 ## Verification
 
-`test/verify.mjs` runs 3,638 assertions against a live server. The core of it compares the
+`test/verify.mjs` runs 4,295 assertions against a live server. The core of it compares the
 API's computed premiums to the **amounts printed in the official 協会けんぽ workbook** for
 250 prefecture × grade combinations — the published half-share figures, not a
 reimplementation of the formula. It also checks:

@@ -751,6 +751,23 @@ for (const [name, args, check] of [
   }
   ok((pkgJson.keywords ?? []).length >= 20,
      'and the keywords still back it up', `${(pkgJson.keywords ?? []).length} 語`);
+
+  // 依頼リストのコマンドは cmd.exe で動くこと。
+  // `./mcp-publisher.exe` を渡して「'.' は認識されていません」と言わせた。
+  // **相手の端末で動かない手順は、手順ではない。**
+  const todo = await readFile(new URL('../../docs/TODO-owner.md', import.meta.url), 'utf8');
+  const broken = [];
+  let inBlock = false;
+  for (const [i, line] of todo.split(String.fromCharCode(10)).entries()) {
+    if (line.startsWith('```')) { inBlock = !inBlock; continue; }
+    if (!inBlock) continue;
+    if (line.trim().startsWith('./')) broken.push(`${i + 1}: 先頭の ./`);
+    if (/(?<![A-Za-z])\/d\/[A-Za-z]/.test(line)) broken.push(`${i + 1}: /d/ 形式のパス`);
+    if (line.includes(String.fromCharCode(9))) broken.push(`${i + 1}: タブ混入`);
+  }
+  ok(broken.length === 0,
+     'every command in the owner checklist runs in cmd.exe, which is the shell they use',
+     broken.slice(0, 4).join(' | ') || 'none');
   ok(client.getServerVersion?.()?.version === pkgJson.version,
      'the server announces the version the package declares',
      `${client.getServerVersion?.()?.version} vs ${pkgJson.version}`);
