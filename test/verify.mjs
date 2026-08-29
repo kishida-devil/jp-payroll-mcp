@@ -4900,6 +4900,98 @@ for (const [p, want, label] of [
     ok(true, '鍵が無いので有料の実寸は試していない');
   }
 }
+{
+  // 最初の顧客がたどる道を、端から端まで歩く。
+  //
+  // 個々の部品はすべて緑なのに購読は0。**部品が動くことと、道が繋がっていることは別。**
+  // 見つける → 試す → 上限に当たる → 購読する → 規模で使う、を順に踏む。
+  // 落とすのは「私たちの実装が壊れているとき」だけ。登録や設定の未了は
+  // 落とさずに数える — それは私が直せる種類のものではないので。
+  const walk = [];
+  const note = (label, state, detail) => walk.push({ label, state, detail });
+
+  // 見つかるか(未了は落とさない。あなたのアカウント操作が要る)
+  let regCount = null;
+  try {
+    const r = await fetch('https://registry.modelcontextprotocol.io/v0/servers?search=jp-payroll',
+      { signal: AbortSignal.timeout(20000) });
+    regCount = ((await r.json()).servers ?? []).length;
+  } catch { /* 外に出られない環境では判定しない */ }
+  if (regCount !== null) note('MCPレジストリで見つかる', regCount > 0 ? 'ok' : 'todo', `${regCount} 件`);
+
+  // 試せるか(ここは実装。壊れていれば落とす)
+  const first = await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40');
+  ok(first.status === 200 && first.body.totals?.net_pay > 0,
+     '鍵なしで最初の1回が答えを返す', `${first.status} / ${first.body.totals?.net_pay}`);
+  note('鍵なしで試せる', 'ok', `${first.body.totals?.net_pay}`);
+
+  // 上限に当たったとき、有料への道が示されるか
+  const capped = await (async () => {
+    const payload = JSON.stringify({
+      employees: Array.from({ length: 11 }, () => ({ monthly_salary: 300000, age: 40 })),
+      defaults: { prefecture: 'Tokyo' },
+    });
+    const u = new URL(`${BASE}/v1/payroll/batch`);
+    return new Promise((resolve) => {
+      const req = httpRequest({
+        hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST',
+        headers: { Host: 'example.com', 'content-type': 'application/json',
+                   'content-length': Buffer.byteLength(payload) },
+      }, (res) => {
+        let t = ''; res.on('data', (d) => { t += d; });
+        res.on('end', () => { try { resolve({ status: res.statusCode, body: JSON.parse(t) }); }
+                              catch { resolve({ status: res.statusCode, body: {} }); } });
+      });
+      req.on('error', () => resolve({ status: 0, body: {} }));
+      req.write(payload); req.end();
+    });
+  })();
+  ok(capped.status === 400 && capped.body.code === 'batch_too_large',
+     '無料枠の上限で断られる', `${capped.status} ${capped.body.code}`);
+  ok(/rapidapi\.com/.test(JSON.stringify(capped.body)),
+     'そして断りの中に、払える場所が書いてある');
+  note('上限で有料への道が示される', 'ok', capped.body.code);
+
+  // 出品のゲートウェイが生きているか。404 なら**私たちが宣伝している宛先が無い**ので落とす。
+  let gwStatus = null;
+  try {
+    const host = 'japan-payroll-and-labor-constants.p.rapidapi.com';
+    const r = await fetch(`https://${host}/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40`,
+      { headers: { 'X-RapidAPI-Key': 'walk-probe', 'X-RapidAPI-Host': host },
+        signal: AbortSignal.timeout(20000) });
+    gwStatus = r.status;
+  } catch { /* 外に出られない環境では判定しない */ }
+  if (gwStatus !== null) {
+    ok(gwStatus !== 404,
+       '出品のゲートウェイが生きている(403=未購読は正常、404=出品が無い)', `${gwStatus}`);
+    note('出品が生きている', gwStatus === 403 ? 'ok' : 'todo', `${gwStatus}`);
+  }
+
+  // 無料枠ちょうどは通る。境界の内側で落ちていないこと。
+  const atCap = await (async () => {
+    const r = await tryFetch(`${BASE}/v1/payroll/batch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        employees: Array.from({ length: 10 }, () => ({ monthly_salary: 520000, age: 45, dependants: 4 })),
+        defaults: { prefecture: 'Tokyo' } }),
+    });
+    return { status: r.status, body: await r.json() };
+  })();
+  ok(atCap.status === 200 && atCap.body.succeeded === 10,
+     '無料枠の上限ちょうどは通る', `${atCap.status} ${atCap.body.succeeded}`);
+
+  // 古い数字で誤答しない。信用の土台。
+  const stale = await get('/v1/minimum-wage?prefecture=Tokyo&date=2026-10-01');
+  ok(stale.status === 422 && stale.body.code === 'out_of_coverage',
+     '収録外の日付で古い数字を返さない', `${stale.status} ${stale.body.code}`);
+
+  const blocked = walk.filter((w) => w.state === 'todo');
+  ok(walk.length >= 3, 'the walk covers the path a first customer takes', `${walk.length} 区間`);
+  // 未了は落とさない。**見えるようにするだけ。**直すのは私ではない。
+  ok(true, `到達の未了: ${blocked.length} 件`,
+     blocked.map((b) => `${b.label}(${b.detail})`).join(' / ') || 'なし');
+}
+
 
 
 
