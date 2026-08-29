@@ -4782,6 +4782,52 @@ for (const [p, want, label] of [
      'and every mention of it in the file agrees',
      allAssertionMentions.join(' / '));
 }
+{
+  // 有料商品の説明。**買い手が読んで払うかを決める文章。**
+  //
+  // 無料のMCPには README.ja.md があるのに、お金を払ってもらう側の説明は
+  // 和文率4%だった。日本の法令だけを扱い、日本企業に売る商品で、順序が逆だった。
+  // 英語は残す(RapidAPI 内の検索は英語で効く)。日本語を先に置いた。
+  const listing = await readFile(
+    new URL('../recipes/jp-payroll/rapidapi-docs.md', import.meta.url), 'utf8');
+  const lines = listing.split(String.fromCharCode(10)).filter((l) => l.trim());
+  const jaLines = lines.filter((l) => /[ぁ-んァ-ヶ]/.test(l)).length;
+  ok(jaLines >= 40, '有料商品の説明に日本語の節がある', `${jaLines} / ${lines.length} 行`);
+  ok(lines.some((l) => /English below/i.test(l)),
+     'and it hands over to English rather than replacing it');
+
+  // 売り文句の数字が実装と一致すること。違えば文章ごと信用されない。
+  const pay = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
+  ok(pay.totals.social_insurance_combined === 95130,
+     '説明が挙げる 95,130円 が実際の計算と一致する',
+     `${pay.totals.social_insurance_combined}`);
+  ok(listing.includes('95,130'), 'そして説明にその数字が書いてある');
+
+  const l30 = (await get('/v1/eligibility?month=2026-03&left_on=2026-03-30')).body;
+  const l31 = (await get('/v1/eligibility?month=2026-03&left_on=2026-03-31')).body;
+  ok(l30.social_insurance_due === false && l31.social_insurance_due === true,
+     '「3月30日退職ならかからず、31日ならかかる」が実際の判定どおり');
+
+  const akita = (await get('/v1/minimum-wage/history?prefecture=Akita')).body;
+  const last = (akita.history ?? []).slice(-1)[0];
+  ok(last?.effective_from === '2026-03-31' && listing.includes('2026年3月31日発効'),
+     '秋田の発効日が収録データと一致する', `${last?.effective_from}`);
+
+  // 断り方の例が、実際にその通り返ること。
+  const noChange = (await get('/v1/standard-remuneration/revision?current_remuneration=300000'
+    + '&months=300000:31,300000:30,300000:31&fixed_pay_change=none')).body;
+  ok(noChange.applies === false
+     && (noChange.blocking_reasons ?? []).some((r) => r.includes('保発第4号')),
+     '説明に載せた「できない理由」の形が実際に返る',
+     (noChange.blocking_reasons ?? [])[0]?.slice(0, 40));
+
+  // 掲載しているエンドポイント数が実物と一致すること(第5反復と同じ穴を作らない)。
+  const specHere = (await get('/openapi.json')).body;
+  const n = Object.keys(specHere.paths).filter((p) => p.startsWith('/v1/')).length;
+  ok(listing.includes(`${n} endpoints`),
+     'and the endpoint count it advertises is the real one', `${n}`);
+}
+
 
 
 

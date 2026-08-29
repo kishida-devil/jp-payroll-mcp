@@ -5,7 +5,7 @@ premiums for all 47 prefectures, withholding tax, standard remuneration decision
 revisions, leave exemptions, minimum wage — with the statute or ministerial notice each
 answer rests on.
 
-Verified against the published tables cell by cell: **4,295 assertions** on every change.
+Verified against the published tables cell by cell: **4,303 assertions** on every change.
 
 ## Two ways in
 
@@ -249,7 +249,7 @@ provision to back it fails the build rather than silently returning nothing.
 
 ## Verification
 
-`test/verify.mjs` runs 4,295 assertions against a live server. The core of it compares the
+`test/verify.mjs` runs 4,303 assertions against a live server. The core of it compares the
 API's computed premiums to the **amounts printed in the official 協会けんぽ workbook** for
 250 prefecture × grade combinations — the published half-share figures, not a
 reimplementation of the formula. It also checks:
