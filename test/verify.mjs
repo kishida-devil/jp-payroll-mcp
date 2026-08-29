@@ -4827,6 +4827,80 @@ for (const [p, want, label] of [
   ok(listing.includes(`${n} endpoints`),
      'and the endpoint count it advertises is the real one', `${n}`);
 }
+{
+  // 払った人が最初に叩く機能。**ここが落ちれば最初の顧客は即座に離れる。**
+  //
+  // 無料枠は10人、有料は500人。500人を実寸で通したことが一度も無かった。
+  // 実測すると、手当・扶養・労災・住民税つきの現実的な条件で既定の応答が 1.02MB。
+  // `detail=compact` なら139KB(87%減)だが、**それを知らせる文は1MBの末尾にあった。**
+  // いちばん必要な人がいちばん読めない場所にある。実測サイズを上位に置いた。
+  const paidPost = (path, body, headers = {}) => new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const u = new URL(BASE + path);
+    const req = httpRequest({
+      hostname: u.hostname, port: u.port, path: u.pathname + u.search, method: 'POST',
+      headers: {
+        Host: 'example.com', 'content-type': 'application/json',
+        'content-length': Buffer.byteLength(payload), ...headers,
+      },
+    }, (res) => {
+      let text = '';
+      res.on('data', (d) => { text += d; });
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, bytes: Buffer.byteLength(text), body: JSON.parse(text) }); }
+        catch { resolve({ status: res.statusCode, bytes: Buffer.byteLength(text), body: {} }); }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+
+  let devSecret = null;
+  try {
+    const vars = await readFile(new URL('../.dev.vars', import.meta.url), 'utf8');
+    devSecret = /RAPIDAPI_PROXY_SECRET=(.+)/.exec(vars)?.[1]?.trim() ?? null;
+  } catch { /* 無ければ有料経路は試せない */ }
+
+  if (devSecret) {
+    const paid = { 'x-rapidapi-proxy-secret': devSecret, 'x-rapidapi-subscription': 'PRO' };
+    const heavy = Array.from({ length: 500 }, () => ({
+      monthly_salary: 520000, age: 45, dependants: 4, commuting_allowance: 15000,
+      commuting_distance_km: 22, commuting_parking: 3000, workers_comp_type: '98',
+      resident_tax: 18000,
+    }));
+    const full = await paidPost('/v1/payroll/batch', { employees: heavy, defaults: { prefecture: 'Tokyo' } }, paid);
+    ok(full.status === 200 && full.body.succeeded === 500,
+       '有料の500人バッチが全件通る', `${full.status} succeeded=${full.body.succeeded}`);
+    ok(full.body.failed === 0, 'and nothing falls out of it', `${full.body.failed}`);
+
+    // 1MBを超える応答は、経路によっては届かない。せめて本人に見えるようにする。
+    ok(full.body.size_hint?.bytes > 200000,
+       '大きな応答は自分の実測サイズを申告する', `${full.body.size_hint?.bytes}`);
+    ok(Math.abs(full.body.size_hint.bytes - full.bytes) < 5000,
+       'and that figure is the size actually returned, not an estimate',
+       `申告 ${full.body.size_hint.bytes} / 実際 ${full.bytes}`);
+    ok(/detail=compact/.test(full.body.size_hint?.how ?? ''),
+       'and names the way to make it smaller', full.body.size_hint?.how);
+
+    const compact = await paidPost('/v1/payroll/batch?detail=compact',
+      { employees: heavy, defaults: { prefecture: 'Tokyo' } }, paid);
+    ok(compact.status === 200 && compact.body.succeeded === 500, 'compact でも全件通る');
+    ok(compact.bytes < full.bytes / 5,
+       'and it is the order of magnitude the hint promises',
+       `${Math.round(full.bytes / 1024)}KB → ${Math.round(compact.bytes / 1024)}KB`);
+    ok(compact.body.size_hint === undefined,
+       'while compact does not nag about its own size');
+
+    // 小さな実行には出さない。10人で毎回出れば、ただの雑音になる。
+    const small = await paidPost('/v1/payroll/batch',
+      { employees: heavy.slice(0, 10), defaults: { prefecture: 'Tokyo' } }, paid);
+    ok(small.body.size_hint === undefined, '小さな実行には出さない', `${small.bytes} bytes`);
+  } else {
+    ok(true, '鍵が無いので有料の実寸は試していない');
+  }
+}
+
 
 
 

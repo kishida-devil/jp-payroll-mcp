@@ -1450,6 +1450,32 @@ function idempotencyNote(key: string | undefined) {
   };
 }
 
+/**
+ * 大きな応答に、実測サイズと `detail=compact` にした場合の見込みを添える。
+ *
+ * 500人バッチの実測: 既定 1,045KB / compact 139KB(87%減)。比率はそこから取っている。
+ * 応答の末尾の `notes` に書いてあっても、1MBの向こう側は読まれない。
+ * **いちばん必要な人がいちばん読めない場所にある**ので、上位に置く。
+ *
+ * 返す直前に測る。推測した数字を返さない。
+ */
+function withSizeHint<T extends Record<string, unknown>>(body: T, detail: string): T {
+  if (detail === 'compact') return body;
+  const bytes = new TextEncoder().encode(JSON.stringify(body)).length;
+  if (bytes < 200_000) return body;
+  return {
+    ...body,
+    size_hint: {
+      bytes,
+      compact_estimate_bytes: Math.round(bytes * 0.133),
+      how: '?detail=compact',
+      note: 'この応答の大きさです。内訳を使わないなら ?detail=compact で'
+        + 'およそ13%まで小さくなります(500人の実測で 1,045KB → 139KB)。'
+        + '落とした項目と取り戻し方は omitted に載ります。',
+    },
+  };
+}
+
 app.post('/v1/payroll/batch', async (c) => {
   // GET と同じ検査を通す。第8反復で「触った9本だけ」を直したのと同じ形で、
   // POST 4本がこの検査を通っておらず、`?zzz=1` を黙って無視していた。
@@ -1496,7 +1522,7 @@ app.post('/v1/payroll/batch', async (c) => {
       '保険料の内訳まで見るなら「full」、支払額だけなら「compact」を指定してください。');
 
   const { results, errors, summary } = runBatch(rows as BatchRow[], defaults, detailRaw as Detail);
-  return c.json({
+  return c.json(withSizeHint({
     run_id: await runId(c.req.path, payload),
     idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: rows.length,
@@ -1515,7 +1541,7 @@ app.post('/v1/payroll/batch', async (c) => {
       resident_tax: '住民税は渡された額をそのまま使います。ここでは算出しません。',
     },
     attribution: { ...ATTRIBUTION, withholding_tax: WITHHOLDING_ATTRIBUTION },
-  });
+  }, detailRaw));
 });
 
 /**
@@ -1937,7 +1963,7 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
   });
 
   const decidedRows = results.filter((r) => r.changed !== null);
-  return c.json({
+  return c.json(withSizeHint({
     run_id: await runId(c.req.path, payload),
     idempotency: idempotencyNote(c.req.header('idempotency-key')),
     count: rows.length,
@@ -1975,7 +2001,7 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
         '適用除外の人にも等級は付けます。除外の判断を数字と突き合わせて確かめられるようにするためです。',
     },
     attribution: REVISION_ATTRIBUTION,
-  });
+  }, c.req.query('detail') ?? 'full'));
 });
 
 app.get('/v1/standard-remuneration/leave-end', (c) => {
