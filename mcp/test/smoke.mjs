@@ -740,6 +740,17 @@ for (const [name, args, check] of [
      `${(serverJson.description ?? '').length} 文字`);
   ok((serverJson.description ?? '').length >= 30,
      'while still saying what it does', `${(serverJson.description ?? '').length} 文字`);
+
+  // npm の検索順位はテキスト一致で決まり、description の一致は keywords より強い。
+  // 実測: `社労士`(descriptionにある・競合2,787件) は1位でスコア163.9、
+  // `給与計算`(keywords止まり・競合43,720件) は圏外だった。首位のスコアは99.6なので、
+  // **同じ強さで一致できれば上位に入る。**いちばん検索される語を description に置く。
+  for (const term of ['給与計算', '社会保険', '標準報酬月額', '社労士']) {
+    ok((pkgJson.description ?? '').includes(term),
+       `npm の description が「${term}」を含む(検索の入口)`);
+  }
+  ok((pkgJson.keywords ?? []).length >= 20,
+     'and the keywords still back it up', `${(pkgJson.keywords ?? []).length} 語`);
   ok(client.getServerVersion?.()?.version === pkgJson.version,
      'the server announces the version the package declares',
      `${client.getServerVersion?.()?.version} vs ${pkgJson.version}`);

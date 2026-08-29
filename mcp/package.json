@@ -1,7 +1,7 @@
 {
   "name": "jp-payroll-mcp",
   "version": "0.4.0",
-  "description": "MCP server for Japanese payroll, social insurance and labour law (社労士・労務): premiums for all 47 prefectures, withholding tax, overtime (割増賃金), annual leave (年次有給休暇), standard remuneration decisions and revisions (定時決定・随時改定), leave premium exemptions, minimum wage, consumption tax by date, plus the full text of every statute it cites from e-Gov. Verified cell by cell against the official 協会けんぽ and 国税庁 tables.",
+  "description": "日本の給与計算・社会保険・労務のMCPサーバー。Japanese payroll, social insurance and labour law for AI assistants and HTTP clients: 47都道府県の保険料率、源泉徴収税額表、割増賃金、年次有給休暇、標準報酬月額の定時決定・随時改定、産休育休の保険料免除、最低賃金、消費税率。公表資料から計算し、根拠にした条文を必ず添えます。協会けんぽ・国税庁の公式表に一桁ずつ照合済み。社労士・人事労務の実務向け。",
   "type": "module",
   "bin": {
     "jp-payroll-mcp": "src/index.mjs"
