@@ -14,31 +14,41 @@
 
 ---
 
-## 0. 日本語のREADMEを世に出す 🔴 いまここ
+## 0. 日本語のREADMEと着地頁を世に出す 🔴 いまここ
 
-npm のパッケージ頁も GitHub のトップも、描画されるのは英語版のほうでした。
-日本語版はずっとあったのに、リンクの先に置いてあって誰も踏みません。
-入れ替えたので、**publish しないと npmjs.com の頁は英語のまま**です。
+2つ直してあります。
+
+**1つ目 — READMEの言語。**npm のパッケージ頁も GitHub のトップも、描画されるのは英語版のほうでした。日本語版はずっとあったのに、リンクの先に置いてあって誰も踏みません。入れ替えたので、**publish しないと npmjs.com の頁は英語のまま**です。
+
+**2つ目 — 着地点。**記事もREADMEもRapidAPIも `japan-payroll-api.tsumugi.workers.dev` を指しているのに、ブラウザで開くと9,772バイトの生JSONが出ていました。ブラウザには日本語の頁を、APIクライアントには今までどおりJSONを返すようにしたので、**deploy しないと生JSONのまま**です。
 
 - [ ] 実行する
 
-**下の6行をまとめて貼ってください(1〜2分)。** cmd でも PowerShell でも動きます。
+**下の6行をまとめて貼ってください(2〜3分)。** cmd でも PowerShell でも動きます。
 
 ```
 cd D:\Claude\tsumugi
 git push
+npx wrangler deploy
 npm publish D:\Claude\tsumugi\mcp
 D:\Claude\tsumugi\mcp\mcp-publisher.exe login github
 D:\Claude\tsumugi\mcp\mcp-publisher.exe publish D:\Claude\tsumugi\mcp\server.json
-gh repo edit kishida-devil/jp-payroll-mcp -d "日本の給与計算・社会保険・労務のAPIとMCPサーバー。47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、割増賃金、最低賃金を計算し、根拠の条文を返します。Japanese payroll, social insurance and labour law as an MCP server and HTTP API."
 ```
 
 `mcp-publisher.exe login github` はブラウザで機器認証のコードを聞かれます。
 前回と同じ手順です。npm は2FAのコードを聞かれます。
 
 **うまくいったかの確認(私がやります):**
-`https://www.npmjs.com/package/jp-payroll-mcp` が日本語で始まっていること。
-`https://github.com/kishida-devil/jp-payroll-mcp` も同様。
+
+| 見るところ | 期待 |
+|---|---|
+| npmjs.com のパッケージ頁 | 日本語で始まる |
+| github.com のトップ | 日本語で始まる |
+| API のURLをブラウザで開く | 日本語の頁が出る(生JSONではない) |
+| 同じURLに `curl` | **今までと同じJSON**(APIを壊していないこと) |
+| `/sitemap.xml` | 200 |
+
+貼り終えたら教えてください。全部私が確認します。
 
 ## 済んだもの
 

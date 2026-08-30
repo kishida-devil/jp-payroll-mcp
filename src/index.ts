@@ -70,6 +70,7 @@ import {
   getHoliday, holidaysBetween, holidaysInYear, inCoverage, isBusinessDay,
   isOpenOn, isWeekend, parseISO, shiftBusinessDays, toISO, type Calendar,
 } from './holidays';
+import { landingPage, wantsHtml } from './landing';
 
 /** Cloudflare's Rate Limiting binding, typed structurally so this file does not
  *  depend on which name the workers-types version happens to export. */
@@ -403,9 +404,57 @@ const needPref = (c: any) => {
   return { pref };
 };
 
+/**
+ * 検索の入口。
+ *
+ * robots.txt は Cloudflare の既定(content-signals のコメントだけ)が出ていて、
+ * 指示が1行も無く Sitemap も無かった。妨げてはいないが案内もしていない。
+ */
+app.get('/robots.txt', (c) => {
+  c.header('Content-Type', 'text/plain; charset=utf-8');
+  return c.body([
+    'User-agent: *',
+    'Allow: /',
+    '',
+    `Sitemap: ${new URL('/sitemap.xml', c.req.url).toString()}`,
+    '',
+  ].join('\n'));
+});
+
+app.get('/sitemap.xml', (c) => {
+  const origin = new URL(c.req.url).origin;
+  const paths = ['/', '/openapi.json', '/v1/data-freshness'];
+  c.header('Content-Type', 'application/xml; charset=utf-8');
+  return c.body(
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+    paths.map((p) => `<url><loc>${origin}${p}</loc></url>`).join('') +
+    '</urlset>');
+});
+
+app.get('/favicon.svg', (c) => {
+  c.header('Content-Type', 'image/svg+xml; charset=utf-8');
+  c.header('Cache-Control', 'public, max-age=86400');
+  return c.body(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+    '<rect width="64" height="64" rx="12" fill="#0b5cd5"/>' +
+    '<text x="32" y="45" font-size="38" text-anchor="middle" fill="#fff" ' +
+    'font-family="system-ui,sans-serif">給</text></svg>');
+});
+
 app.get('/', (c) => {
   const unknownQ = rejectBadQuery(c, ['include'] as const);
   if (unknownQ) return unknownQ;
+
+  // ここは記事もREADMEも出品も指している着地点なのに、ブラウザで開くと
+  // 9,772バイトの生JSONが出ていた。人が見て製品だと分からない。
+  // **Accept を見て出し分ける。**curl の既定は Accept: */* なので JSON のまま。
+  if (wantsHtml(c.req.header('accept'))) {
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    c.header('Cache-Control', 'public, max-age=300');
+    return c.body(landingPage());
+  }
+
   return c.json({
     name: '日本の給与・労務データAPI',
     description:

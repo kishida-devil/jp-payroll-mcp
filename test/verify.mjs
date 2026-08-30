@@ -5125,6 +5125,60 @@ for (const [p, want, label] of [
   ok(dead.length === 0, 'ローカルへのリンクが全部生きている',
      dead.length ? dead.slice(0, 6).join(' / ') : `${docs.length} ファイル走査`);
 }
+{
+  // **着地点が人に何も言っていなかった。**記事もREADMEも出品もこのURLを指すのに、
+  // ブラウザで開くと9,772バイトの生JSONが出ていた。製品には見えないし、
+  // application/json は日本語の頁として検索に扱われにくい。
+  //
+  // 出し分けにしたので、いちばん怖いのは**JSONを壊すこと**。そこを先に見る。
+  const asClient = await tryFetch(`${BASE}/`);   // curl の既定は Accept: * / *
+  ok(asClient.headers.get('content-type')?.includes('application/json'),
+     'APIクライアントには JSON のまま返る',
+     asClient.headers.get('content-type'));
+  const idx = await asClient.json();
+  ok(Array.isArray(idx.endpoints) || typeof idx.endpoints === 'object',
+     'and the endpoint index is still there');
+
+  const asBrowser = await tryFetch(`${BASE}/`,
+    { headers: { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' } });
+  ok(asBrowser.headers.get('content-type')?.includes('text/html'),
+     'ブラウザには頁を返す', asBrowser.headers.get('content-type'));
+  const html = await asBrowser.text();
+
+  const jaRatio = (html.match(/[ぁ-んァ-ヶ一-龥]/g) ?? []).length / html.length;
+  ok(jaRatio > 0.15, 'その頁は日本語である', `${Math.round(jaRatio * 100)}%`);
+  for (const needed of ['<title>', 'name="description"', 'rel="canonical"',
+                        'npx -y jp-payroll-mcp', 'application/ld+json']) {
+    ok(html.includes(needed), `頁に ${needed} がある`);
+  }
+
+  // 頁に書いた数字は、APIが出す数字と同じでなければならない。
+  // 出品文と記事で同じ食い違いを何度も起こしたので、ここも繋いでおく。
+  const pay = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
+  ok(html.includes('95,130') && pay.totals.social_insurance_combined === 95130,
+     'and the figure it advertises is the one the API computes',
+     `${pay.totals.social_insurance_combined}`);
+  ok(html.includes('4,349') || /(\d[\d,]*)件<\/span> の検証/.test(html),
+     'and it states how many assertions back it');
+
+  // 頁から出るリンクが、この API の中で死んでいないこと。
+  const internal = [...html.matchAll(/href="(\/[^"]*)"/g)].map((m) => m[1]);
+  ok(internal.length >= 3, '頁から中のリンクが出ている', `${internal.length} 本`);
+  for (const href of [...new Set(internal)]) {
+    const r = await tryFetch(BASE + href.replace(/&amp;/g, '&'));
+    ok(r.status === 200, `頁のリンク ${href} が生きている`, `HTTP ${r.status}`);
+  }
+
+  // 検索の入口。Cloudflare の既定は content-signals のコメントだけで、
+  // User-agent 行も Sitemap 行も無かった。
+  const robots = await (await tryFetch(`${BASE}/robots.txt`)).text();
+  ok(/^User-agent:/m.test(robots), 'robots.txt に指示がある');
+  ok(/^Sitemap: https?:\/\/\S+\/sitemap\.xml$/m.test(robots), 'and it points at the sitemap');
+  const sm = await tryFetch(`${BASE}/sitemap.xml`);
+  ok(sm.status === 200 && (await sm.text()).includes('<urlset'), 'sitemap.xml が返る');
+  ok((await tryFetch(`${BASE}/favicon.svg`)).status === 200, 'favicon がある');
+}
+
 
 
 
