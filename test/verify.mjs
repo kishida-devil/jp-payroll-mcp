@@ -3995,11 +3995,11 @@ for (const [p, want, label] of [
     ['/v1/worker-type', '被保険者区分'],
     ['/v1/workers-compensation', '労災保険率'],
     ['/v1/national-insurance', '国民年金'],
-    ['/v1/commuting-allowance', 'commuting allowance'],
-    ['/v1/annual-cost', 'a year of employing'],
-    ['/v1/consumption-tax', 'Consumption tax'],
+    ['/v1/commuting-allowance', '通勤手当'],
+    ['/v1/annual-cost', '1年雇う費用'],
+    ['/v1/consumption-tax', '消費税'],
     ['/v1/statute', 'e-Gov'],
-    ['/v1/minimum-wage', 'Minimum wage'],
+    ['/v1/minimum-wage', '最低賃金'],
   ];
   const live = AREAS.filter(([p]) => p in spec.paths);
   ok(live.length === AREAS.length, 'every area named here still has an endpoint behind it',
@@ -4792,9 +4792,12 @@ for (const [p, want, label] of [
     new URL('../recipes/jp-payroll/rapidapi-docs.md', import.meta.url), 'utf8');
   const lines = listing.split(String.fromCharCode(10)).filter((l) => l.trim());
   const jaLines = lines.filter((l) => /[ぁ-んァ-ヶ]/.test(l)).length;
-  ok(jaLines >= 40, '有料商品の説明に日本語の節がある', `${jaLines} / ${lines.length} 行`);
-  ok(lines.some((l) => /English below/i.test(l)),
-     'and it hands over to English rather than replacing it');
+  ok(jaLines >= 100, '有料商品の説明が日本語主体である', `${jaLines} / ${lines.length} 行`);
+  ok(lines.some((l) => /^## English/.test(l)),
+     'and English follows it rather than leading', '## English');
+  ok(jaLines / lines.length > 0.5,
+     '**主が日本語**であること。買い手が日本人なので、英語が先だと読む順が逆になる',
+     `${Math.round(jaLines * 100 / lines.length)}%`);
 
   // 売り文句の数字が実装と一致すること。違えば文章ごと信用されない。
   const pay = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
@@ -4810,7 +4813,7 @@ for (const [p, want, label] of [
 
   const akita = (await get('/v1/minimum-wage/history?prefecture=Akita')).body;
   const last = (akita.history ?? []).slice(-1)[0];
-  ok(last?.effective_from === '2026-03-31' && listing.includes('2026年3月31日発効'),
+  ok(last?.effective_from === '2026-03-31',
      '秋田の発効日が収録データと一致する', `${last?.effective_from}`);
 
   // 断り方の例が、実際にその通り返ること。
@@ -4826,6 +4829,46 @@ for (const [p, want, label] of [
   const n = Object.keys(specHere.paths).filter((p) => p.startsWith('/v1/')).length;
   ok(listing.includes(`${n} endpoints`),
      'and the endpoint count it advertises is the real one', `${n}`);
+
+  // 価格は書かない。Pricing タブが正で、ここに書けば古びる(第24反復と同じ)。
+  ok(!/\$\d/.test(listing),
+     'the listing text quotes no price of its own, so it cannot go stale',
+     (/\$\d[\d.]*/.exec(listing) ?? ['none'])[0]);
+  ok(/Pricing タブが正/.test(listing), 'and points at the tab that is authoritative');
+
+  // 一覧に出る一行。**ここで読まれなければ中を見てもらえない。**
+  // 買い手は日本人なので日本語を先に置くが、RapidAPI 内の検索は英語でも効くので
+  // `Japan payroll` は残す。300字の上限を超えると貼れない。
+  const recipeSrc = await readFile(
+    new URL('../recipes/jp-payroll/recipe.py', import.meta.url), 'utf8');
+  const shortAt = recipeSrc.indexOf('"short_description"');
+  const shortBlock = shortAt < 0 ? '' : recipeSrc.slice(shortAt, recipeSrc.indexOf('),', shortAt));
+  const shortText = [...shortBlock.matchAll(/"([^"]*)"/g)]
+    .map((m) => m[1]).filter((t) => t !== 'short_description').join('');
+  ok(shortText.length > 0 && shortText.length <= 300,
+     'short description が RapidAPI の300字に収まる', `${shortText.length} 字`);
+  const jaChars = (shortText.match(/[ぁ-んァ-ヶ一-龥]/g) ?? []).length;
+  ok(jaChars > shortText.length * 0.3,
+     'and leads in Japanese, because the buyer is Japanese',
+     `${jaChars} / ${shortText.length}`);
+  for (const term of ['給与計算', '社会保険', 'Japan payroll']) {
+    ok(shortText.includes(term), `そして「${term}」で探す人に当たる`);
+  }
+  const nPaths = Object.keys(specHere.paths).filter((x) => x.startsWith('/v1/')).length;
+  ok(!/[0-9]+ endpoints/.test(shortText) || shortText.includes(`${nPaths} endpoints`),
+     'and any endpoint count in it is the real one', `${nPaths}`);
+
+  // 評価の順序。無料BASICは回数が少なく、統合作業には足りない。
+  // それを言わずに購読させると、壁に当たって「使えない」と判断される。
+  ok(/購読せずに試せます/.test(listing),
+     'and tells people to evaluate on the keyless URL before subscribing');
+  ok(/機能ではなくバッチ人数/.test(listing),
+     'and says where the paid line actually is');
+
+  // 帯域は従量。応答サイズは買い手の請求額に直結する。
+  ok(/detail=compact/.test(listing) && /140KB/.test(listing) && /1MB/.test(listing),
+     'and gives the response sizes, because bandwidth is metered',
+     'compact の案内あり');
 }
 {
   // 払った人が最初に叩く機能。**ここが落ちれば最初の顧客は即座に離れる。**
@@ -4991,6 +5034,42 @@ for (const [p, want, label] of [
   ok(true, `到達の未了: ${blocked.length} 件`,
      blocked.map((b) => `${b.label}(${b.detail})`).join(' / ') || 'なし');
 }
+{
+  // 出品に出る説明文は3つある。**3つとも同じ言語で、同じ数字でなければならない。**
+  //
+  // 貼る場所を数えたら3箇所だった: Short Description、Overview、そして仕様書の
+  // `info.description`。私は2つしか用意しておらず、3つ目は英語のまま残っていた。
+  // 買い手が日本人で、日本専用のAPIで、表示言語が場所によって違う理由がない。
+  const infoDesc = (await get('/openapi.json')).body.info?.description ?? '';
+  const jaRatio = (t) => (t.match(/[ぁ-んァ-ヶ一-龥]/g) ?? []).length / Math.max(t.length, 1);
+  ok(jaRatio(infoDesc) > 0.4,
+     '仕様書の説明文も日本語主体である', `${Math.round(jaRatio(infoDesc) * 100)}%`);
+  ok(infoDesc.length > 300, 'and still says enough to decide on', `${infoDesc.length} 字`);
+
+  // 3つとも同じ事実を語ること。片方だけ古い数字になるのが、この周回で何度も起きた形。
+  const payNow = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
+  ok(infoDesc.includes('95,130')
+     && payNow.totals.social_insurance_combined === 95130,
+     'and the figure it quotes is the one the API computes',
+     `${payNow.totals.social_insurance_combined}`);
+  ok(infoDesc.includes('保発第4号'),
+     'and names the notice the judgement actually cites');
+
+  // 古いホストがどこにも残っていないこと。訪問者が最初にコピーする行なので。
+  const listingText = await readFile(
+    new URL('../recipes/jp-payroll/rapidapi-docs.md', import.meta.url), 'utf8');
+  for (const [label, text] of [['仕様書の説明', infoDesc], ['出品の説明', listingText]]) {
+    ok(!text.includes('japan-payroll-api.p.rapidapi.com'),
+       `${label}に404を返すホストが無い`);
+  }
+
+  // 生成物が出所と一致していること。src/data を手で直すと次の生成で消える。
+  const recipeText = await readFile(
+    new URL('../recipes/jp-payroll/recipe.py', import.meta.url), 'utf8');
+  ok(recipeText.includes('95,130'),
+     'and the recipe is where it comes from, not a hand edit of the built spec');
+}
+
 
 
 

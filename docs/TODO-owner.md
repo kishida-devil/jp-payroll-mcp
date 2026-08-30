@@ -49,7 +49,7 @@ Quick start をコピーして叩いた人は「動かないAPI」と判断し�
 3. 保存
 
 ```bash
-notepad D:\Claude\tsumugi\recipes\jp-payroll\rapidapi-docs.md
+python D:\Claude\tsumugi\scripts\build-listing.py
 ```
 
 **確かめ方:** 保存後、ページの Quick start をそのままコピーして叩く。
@@ -71,16 +71,16 @@ notepad D:\Claude\tsumugi\recipes\jp-payroll\rapidapi-docs.md
 cmd.exe では `./` が使えません。バックスラッシュで。
 
 ```bash
-cd /d D:\Claude\tsumugi\mcp && mcp-publisher.exe login
+D:\Claude\tsumugi\mcp\mcp-publisher.exe login github
 ```
 
 表示されたコードを https://github.com/login/device に入力。続けて:
 
 ```bash
-cd /d D:\Claude\tsumugi\mcp && mcp-publisher.exe publish
+D:\Claude\tsumugi\mcp\mcp-publisher.exe publish
 ```
 
-(Git Bash から実行する場合は `cd /d/Claude/tsumugi/mcp && ./mcp-publisher.exe login`)
+(どのシェルでも同じで動きます。連結も cd も要りません)
 
 **確かめ方:**
 
@@ -146,7 +146,7 @@ curl -s https://api.github.com/repos/kishida-devil/jp-payroll-mcp | python -c "i
 版を上げてから公開してください(同じ版は再公開できません)。
 
 ```bash
-cd /d D:\Claude\tsumugi\mcp && npm version patch && npm publish
+npm publish --prefix D:\Claude\tsumugi\mcp
 ```
 
 **確かめ方:**
