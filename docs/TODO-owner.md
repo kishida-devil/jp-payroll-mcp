@@ -33,6 +33,7 @@ npx wrangler deploy
 npm publish D:\Claude\tsumugi\mcp
 D:\Claude\tsumugi\mcp\mcp-publisher.exe login github
 D:\Claude\tsumugi\mcp\mcp-publisher.exe publish D:\Claude\tsumugi\mcp\server.json
+gh repo edit kishida-devil/jp-payroll-mcp -d "日本の給与計算・社会保険・労務のAPIとMCPサーバー。47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、割増賃金、年次有給休暇、最低賃金を計算し、根拠の条文または通達を返します。Japanese payroll, social insurance and labour law as an MCP server and HTTP API."
 ```
 
 `mcp-publisher.exe login github` はブラウザで機器認証のコードを聞かれます。
@@ -61,7 +62,7 @@ Qiita 用に、**内容の重ならない**2本目を書いてあります。テ
 貼るファイル:
 
 ```
-D:\Claude	sumugi\docs\listing\qiita-article.md
+D:\Claude\tsumugi\docs\listing\qiita-article.md
 ```
 
 https://qiita.com/drafts/new で、1行目の `# ` を除いた本文を貼ってください
