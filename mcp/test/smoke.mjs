@@ -769,6 +769,13 @@ for (const [name, args, check] of [
     if (line.trim().startsWith('./')) broken.push(`${i + 1}: ./ は cmd.exe で不正`);
     if (/(?<![A-Za-z])\/d\/[A-Za-z]/.test(line)) broken.push(`${i + 1}: /d/ 形式は Windows で不正`);
     if (line.includes(String.fromCharCode(9))) broken.push(`${i + 1}: タブ混入`);
+    // `npm publish --prefix <dir>` は動かない。--prefix は install 先を変えるだけで、
+    // publish の対象は cwd のまま。フォルダは引数として渡す。
+    if (/npm publish\s+--prefix/.test(line)) broken.push(`${i + 1}: npm publish --prefix は効かない`);
+    // 作業ディレクトリに依存するコマンドを渡さない。相手がどこから叩くか分からない。
+    // `mcp-publisher.exe publish` は cwd の server.json を読むので、パスを明示する。
+    if (/mcp-publisher\.exe publish\s*$/.test(line.trim()))
+      broken.push(`${i + 1}: publish に server.json のパスが無い(cwd 依存)`);
   }
   ok(broken.length === 0,
      'every command in the owner checklist runs in cmd.exe and PowerShell alike',

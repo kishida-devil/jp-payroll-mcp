@@ -77,7 +77,7 @@ D:\Claude\tsumugi\mcp\mcp-publisher.exe login github
 表示されたコードを https://github.com/login/device に入力。続けて:
 
 ```bash
-D:\Claude\tsumugi\mcp\mcp-publisher.exe publish
+D:\Claude\tsumugi\mcp\mcp-publisher.exe publish D:\Claude\tsumugi\mcp\server.json
 ```
 
 (どのシェルでも同じで動きます。連結も cd も要りません)
@@ -116,7 +116,7 @@ notepad D:\Claude\tsumugi\docs\articles\zenn-payroll-traps.md
 
 ## 4. GitHub の topics を設定する
 
-- [ ] 実行する
+- [x] 実行済み(2026-08-30。10件設定)
 
 **なぜ:** topics が空で、GitHub のトピック検索に一切載りません。
 
@@ -146,7 +146,13 @@ curl -s https://api.github.com/repos/kishida-devil/jp-payroll-mcp | python -c "i
 版を上げてから公開してください(同じ版は再公開できません)。
 
 ```bash
-npm publish --prefix D:\Claude\tsumugi\mcp
+npm login --registry=https://registry.npmjs.org/
+```
+
+ログインが切れていると npm は 404 を返します(401 ではなく)。続けて:
+
+```bash
+npm publish D:\Claude\tsumugi\mcp
 ```
 
 **確かめ方:**
