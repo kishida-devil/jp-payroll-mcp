@@ -4741,9 +4741,19 @@ for (const [p, want, label] of [
   ok(health.status === 200, 'and the endpoint the article tells people to curl answers',
      `${health.status}`);
 
-  // 7. まだ公開していないこと。published: true のまま置き忘れない。
-  ok(/^published:\s*false/m.test(article),
-     'the draft is not marked published until it is actually posted');
+  // 7. Zenn の制約を満たしていること。**貼れない記事は書いていないのと同じ。**
+  //
+  // 公開前は「published: false のままか」を見ていた。公開に進んだのでその検査は
+  // 役目を終えた。残しておくと、緑にするために false へ戻すことになる。
+  const fm = /^---\n([\s\S]*?)\n---/.exec(article)?.[1] ?? '';
+  ok(fm.length > 0, '記事に frontmatter がある');
+  const topics = /^topics:\s*\[(.*)\]/m.exec(fm)?.[1] ?? '';
+  const topicList = topics.split(',').map((t) => t.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+  ok(topicList.length >= 1 && topicList.length <= 5,
+     'topics は Zenn の上限5つに収まる', `${topicList.length}: ${topicList.join('/')}`);
+  ok(/^type:\s*"?(tech|idea)"?/m.test(fm), 'type が tech か idea である');
+  ok(/^title:\s*"[^"]{10,}"/m.test(fm), 'タイトルが入っている');
+  ok(/^emoji:\s*"?\S/m.test(fm), 'アイキャッチの絵文字が入っている');
 }
 {
   // GitHub のトップページに出る数字。**買い手が最初に見る場所。**

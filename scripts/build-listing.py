@@ -44,6 +44,11 @@ def main() -> int:
     src = ROOT / "recipes" / "jp-payroll" / "rapidapi-docs.md"
     shutil.copyfile(src, OUT / "overview.md")
 
+    # Zenn 記事も同じ場所に出す。貼る先が違うだけで、やることは同じ。
+    article = ROOT / "docs" / "articles" / "zenn-payroll-traps.md"
+    if article.exists():
+        shutil.copyfile(article, OUT / "zenn-article.md")
+
     print("書き出しました。この2つを RapidAPI に貼ってください。")
     print()
     print(f"  Short Description 欄 ({len(short)}字)")
