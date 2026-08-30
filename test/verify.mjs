@@ -5187,6 +5187,67 @@ for (const [p, want, label] of [
   ok(sm.status === 200 && (await sm.text()).includes('<urlset'), 'sitemap.xml が返る');
   ok((await tryFetch(`${BASE}/favicon.svg`)).status === 200, 'favicon がある');
 }
+{
+  // **2つ目の記事。**Zenn だけでは面が1つで、狙える検索語も1組しかない。
+  // これは等級表と料率の話で、Zenn の記事(退職日・年齢・随時改定)と内容が重ならない。
+  //
+  // 記事に書いた数字は、APIが返す数字と一致していなければならない。
+  // 出品文・READMEで同じ食い違いを何度も起こしたので、公開物は全部ここに繋ぐ。
+  const qiita = await readFile(
+    new URL('../docs/articles/qiita-rate-table.md', import.meta.url), 'utf8');
+
+  const tbl = (await get('/v1/standard-remuneration/table')).body;
+  ok(qiita.includes(`${tbl.health_grades}`) && tbl.health_grades === 50,
+     '記事の健康保険の等級数がAPIと一致', `${tbl.health_grades}`);
+  ok(qiita.includes(`${tbl.pension_grades}`) && tbl.pension_grades === 32,
+     '記事の厚生年金の等級数がAPIと一致', `${tbl.pension_grades}`);
+
+  const withPension = tbl.grades.filter((g) => g.pension_grade !== null);
+  const below = tbl.grades.filter((g) => g.pension_grade === null
+    && g.health_grade < withPension[0].health_grade).length;
+  const above = tbl.grades.filter((g) => g.pension_grade === null
+    && g.health_grade > withPension[withPension.length - 1].health_grade).length;
+  ok(below === 3 && above === 15 && qiita.includes('下に3つ、上に15つ'),
+     'and the asymmetry it describes is the real one', `下${below} 上${above}`);
+  ok(tbl.grades[0].remuneration_from === null
+     && tbl.grades[tbl.grades.length - 1].remuneration_to === null
+     && qiita.includes('開いています'),
+     'and the open-ended ends are really open');
+
+  // 47都道府県ぶんの料率。記事は最安・最高と「41通り」を主張している。
+  const prefs = (await get('/v1/prefectures')).body.prefectures;
+  const rates = [];
+  for (const p of prefs) {
+    const r = (await get(`/v1/insurance-rates?prefecture=${p.code}`)).body.rates;
+    rates.push([p.name_ja, r.health_insurance]);
+  }
+  rates.sort((a, b) => a[1] - b[1]);
+  const distinct = new Set(rates.map((r) => r[1])).size;
+  ok(qiita.includes(`${distinct}通り`), '記事の「異なる料率の数」が実物と一致', `${distinct}`);
+  ok(qiita.includes(rates[0][0]) && qiita.includes((rates[0][1] * 100).toFixed(2)),
+     'and names the cheapest prefecture and its rate', `${rates[0][0]} ${rates[0][1]}`);
+  const top = rates[rates.length - 1];
+  ok(qiita.includes(top[0]) && qiita.includes((top[1] * 100).toFixed(2)),
+     'and the dearest', `${top[0]} ${top[1]}`);
+  const spread = ((top[1] - rates[0][1]) * 100).toFixed(2);
+  ok(qiita.includes(`${spread}ポイント`), 'and the spread between them', `${spread}`);
+
+  // 全国一律のものを都道府県別と書いていないこと。
+  const tokyo = (await get('/v1/insurance-rates?prefecture=Tokyo')).body.rates;
+  ok(qiita.includes((tokyo.long_term_care * 100).toFixed(2))
+     && qiita.includes((tokyo.pension * 100).toFixed(2)),
+     'and the national rates are the ones the API returns',
+     `${tokyo.long_term_care} / ${tokyo.pension}`);
+
+  // 表明の数。README と同じで、下回っていれば古い。
+  const claimed = Number((/\*\*([\d,]+)件\*\* の検証/.exec(qiita)?.[1] ?? '0').replace(/,/g, ''));
+  ok(claimed > 0 && claimed <= pass + fail + 200,
+     '記事が名乗る検証数が実物を超えていない', `${claimed} / 実際 ${pass + fail} 前後`);
+
+  // 宣伝している値段が、製品が言う値段と同じであること。
+  ok(qiita.includes('月4ドル'), '記事の価格が課金点の文面と同じ');
+}
+
 
 
 

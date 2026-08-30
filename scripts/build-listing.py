@@ -44,10 +44,14 @@ def main() -> int:
     src = ROOT / "recipes" / "jp-payroll" / "rapidapi-docs.md"
     shutil.copyfile(src, OUT / "overview.md")
 
-    # Zenn 記事も同じ場所に出す。貼る先が違うだけで、やることは同じ。
-    article = ROOT / "docs" / "articles" / "zenn-payroll-traps.md"
-    if article.exists():
-        shutil.copyfile(article, OUT / "zenn-article.md")
+    # 記事も同じ場所に出す。貼る先が違うだけで、やることは同じ。
+    for src_name, out_name in (
+        ("zenn-payroll-traps.md", "zenn-article.md"),
+        ("qiita-rate-table.md", "qiita-article.md"),
+    ):
+        article = ROOT / "docs" / "articles" / src_name
+        if article.exists():
+            shutil.copyfile(article, OUT / out_name)
 
     print("書き出しました。この2つを RapidAPI に貼ってください。")
     print()
