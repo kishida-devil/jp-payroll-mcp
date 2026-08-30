@@ -39,7 +39,16 @@ gh repo edit kishida-devil/jp-payroll-mcp -d "日本の給与計算・社会保�
 `mcp-publisher.exe login github` はブラウザで機器認証のコードを聞かれます。
 前回と同じ手順です。npm は2FAのコードを聞かれます。
 
-**うまくいったかの確認(私がやります):**
+**貼り終えたら、これ1行で答え合わせできます。**
+
+```
+python D:\Claude\tsumugi\scripts\verify-published.py
+```
+
+18項目を見て、出ていないものを「-- 」で並べます。
+いま(公開前)に走らせると 3/18 と正しく答えます。
+
+**確認の中身:**
 
 | 見るところ | 期待 |
 |---|---|
