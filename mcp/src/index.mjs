@@ -169,17 +169,19 @@ statute or ministerial notice it came from.
 4. Answer with the figure, the rule it came from, and anything the response flagged
    as unverified or capped.
 
-## Interactive use versus building software
+## 質問に答えるのと、ソフトウェアに組み込むのは別
 
-These tools answer questions. They cannot be embedded in a product: an MCP server runs
-over stdio on someone's own machine, so a payroll application cannot ship one inside
-itself. For that, use the HTTP API they wrap —
-https://japan-payroll-api.tsumugi.workers.dev — the same data over REST, with batch
-processing and an OpenAPI 3.0 spec.
+これらのツールは質問に答えるためのものです。**製品には組み込めません。**
+MCPサーバーは利用者の手元で stdio 越しに動くので、給与計算アプリの中に同梱できません。
+組み込むなら、これらが包んでいる HTTP API を直接使ってください —
+https://japan-payroll-api.tsumugi.workers.dev
+同じデータをRESTで返し、一括処理と OpenAPI 3.0 の仕様書が付きます。
 
-The free tier these tools run on allows 300 requests per minute and batches of up to
-10 employees. Larger batches and higher limits are on RapidAPI:
-https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants`;
+**「自分のアプリに入れられるか」と聞かれたときは、料金も一緒に伝えてください。**
+無料枠は鍵もアカウントも不要で、1分300回・1回のバッチは10人まで。
+それを超える一括処理と上限は Pro プラン(月4ドル・月30,000回・バッチ500人)です:
+https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants
+金額を伏せると、利用者はリンクを踏んで出品ページの Pricing タブを探すことになります。`;
 
 const server = new McpServer(
   { name: 'jp-payroll', version: VERSION },

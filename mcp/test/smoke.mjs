@@ -874,6 +874,38 @@ await client.close();
   }
   ok(!pkg.files.includes('README.ja.md'), 'そして消えたファイルを同梱しようとしない');
 }
+{
+  // **いちばん買い手に近い瞬間に、売っていなかった。**
+  //
+  // instructions は「製品に組み込むなら HTTP API を使え」と言った直後に、
+  // 無料の直URLだけを案内していた。開発者が「自分のアプリに入れられるか」と
+  // 聞く瞬間が、この製品でいちばん購入に近い。そこに金額が無いと、
+  // 利用者はリンクを踏んで出品ページの Pricing タブを探すことになる。
+  //
+  // この文はAIが読む。日本の利用者に日本語で答える助手が読むので、日本語で書く。
+  // 非貪欲マッチは使えない。INSTRUCTIONS の中に markdown のコード span が
+  // 20個あって、最初のバッククォートで切れる。始端と終端を位置で取る。
+  const mcpSrc = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
+  const from = mcpSrc.indexOf('const INSTRUCTIONS');
+  const to = mcpSrc.indexOf('const server =', from);
+  const inst = from >= 0 && to > from ? mcpSrc.slice(from, to) : '';
+  ok(inst.length > 500, 'AIに渡す指示がある', `${inst.length} 字`);
+
+  const seg = inst.slice(inst.indexOf('組み込む'));
+  ok(seg.length > 100, '「組み込むなら」の節がある');
+  ok(/月4ドル/.test(seg), 'and it names the price where the買い手 is closest to buying');
+  ok(/30,000|30000/.test(seg), 'and what the money buys');
+  ok(/rapidapi\.com/.test(seg), 'and where to buy it');
+
+  const jaRatio = (t) => (t.match(/[ぁ-んァ-ヶ一-龥]/g) ?? []).length / Math.max(t.length, 1);
+  ok(jaRatio(seg) > 0.25, 'その節が日本語である', `${Math.round(jaRatio(seg) * 100)}%`);
+
+  // 価格は1箇所に書くと必ずずれる。出所と一致していること。
+  const landing = await readFile(new URL('../../src/landing.ts', import.meta.url), 'utf8');
+  ok(/月4ドル|\$4/.test(landing) || /4\.00/.test(landing) || landing.includes('有料プラン'),
+     '着地頁も同じ有料導線を持つ');
+}
+
 
 console.log(`  passed ${pass} / ${pass + fail}`);
 if (fail) { console.log('\n  FAILURES:'); failures.forEach((f) => console.log('   - ' + f)); process.exit(1); }
