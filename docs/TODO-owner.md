@@ -27,6 +27,18 @@
 **下の6行をまとめて貼ってください(2〜3分)。** cmd でも PowerShell でも動きます。
 
 ```
+bash D:/Claude/tsumugi/scripts/publish.sh
+```
+
+この1行で7つ全部やります。**先に全部空打ちしてから本番を叩き、途中で落ちたらそこで止めます。**
+`--check` を付けると空打ちだけで終わります。
+
+途中で npm の2FAコードと、GitHub の機器認証コードを聞かれます。手元で入力してください。
+最後に答え合わせまで自動で走ります。
+
+<details><summary>1行ずつ手で叩く場合</summary>
+
+```
 cd D:\Claude\tsumugi
 git push
 npx wrangler deploy
@@ -35,6 +47,9 @@ D:\Claude\tsumugi\mcp\mcp-publisher.exe login github
 D:\Claude\tsumugi\mcp\mcp-publisher.exe publish D:\Claude\tsumugi\mcp\server.json
 gh repo edit kishida-devil/jp-payroll-mcp -d "日本の給与計算・社会保険・労務のAPIとMCPサーバー。47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、割増賃金、年次有給休暇、最低賃金を計算し、根拠の条文または通達を返します。Japanese payroll, social insurance and labour law as an MCP server and HTTP API."
 ```
+
+</details>
+
 
 `mcp-publisher.exe login github` はブラウザで機器認証のコードを聞かれます。
 前回と同じ手順です。npm は2FAのコードを聞かれます。
