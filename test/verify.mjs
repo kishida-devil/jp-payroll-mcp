@@ -5019,6 +5019,15 @@ for (const [p, want, label] of [
      '無料枠の上限で断られる', `${capped.status} ${capped.body.code}`);
   ok(/rapidapi\.com/.test(JSON.stringify(capped.body)),
      'そして断りの中に、払える場所が書いてある');
+
+  // **値段も書いてあること。**製品の中で買い手が「払うか」を考える瞬間はここ1箇所で、
+  // そこに金額が無いと、リンクを踏んで出品を開いて Pricing タブを探すまで4ドルだと
+  // 分からない。同じ検索結果に競合が19ドルで並んでいるので、伏せる理由がない。
+  // 「いくらか分からない」は、その場で離脱する理由になる。
+  const offer = JSON.stringify(capped.body);
+  ok(/月4ドル/.test(offer), 'and it says what that costs, here, in words',
+     capped.body.hint?.slice(0, 70));
+  ok(/30,000/.test(offer), 'and what the money buys');
   note('上限で有料への道が示される', 'ok', capped.body.code);
 
   // 出品のゲートウェイが生きているか。404 なら**私たちが宣伝している宛先が無い**ので落とす。

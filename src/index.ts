@@ -125,9 +125,28 @@ const FREE_TIER = {
     + '確実な境界は batch_rows のほうで、こちらは1件の差で拒否します。',
 };
 
+/**
+ * 製品の中で買い手が「払うか」を考える瞬間は、ここ1箇所しかない。
+ *
+ * その文面に**値段が書いていなかった。**上限に当たった人は、リンクを踏んで
+ * 出品ページを開き、Pricing タブを探して初めて4ドルだと知る。
+ * 同じ場所に競合が19ドルで並んでいるので、金額を伏せる理由がない。
+ * 「いくらか分からない」は、その場で離脱する理由になる。
+ */
+// RapidAPI の価格表に出ているボタンの名前そのもの。訳すと、リンクを踏んだ人が
+// 着いた画面に「Pro」しかなく、言葉が一致しなくなる。だから英語のまま置く。
+const PLAN_NAME = 'Pro';
+
 const UPGRADE = {
   where: 'https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants',
+  plan: PLAN_NAME,
+  price_usd: 4,
+  requests_per_month: 30000,
   what: '上限の引き上げと本来のサイズのバッチが使えます。課金・鍵・割当はそちら側で扱われます。',
+  /** 上限に当たった人がその場で判断できるだけのことを、1文で言う。 */
+  offer: (rows: number) =>
+    `1回 ${rows} 人までのバッチは ${PLAN_NAME} プラン(月4ドル・月30,000回)で使えます: `
+    + 'https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants',
 };
 
 /** Local development is exempt: a test suite is not a customer. */
@@ -189,8 +208,10 @@ app.use('*', async (c, next) => {
       return c.json({
         error: `無料枠の上限に達しました。1分あたり ${FREE_TIER.requests_per_minute} 回が目安です。`,
         code: 'rate_limited',
-        hint: '直接呼ぶ場合とMCP経由に適用されます。本番の量を扱うなら RapidAPI の出品を見てください。'
-          + UPGRADE.what,
+        // ここも買い手が判断する瞬間なので、金額を伏せない。
+        hint: `直接呼ぶ場合とMCP経由に適用されます。本番の量を扱うなら ${PLAN_NAME} プラン`
+          + `(月${UPGRADE.price_usd}ドル・月${UPGRADE.requests_per_month.toLocaleString('en-US')}回)へ: `
+          + UPGRADE.where + '。' + UPGRADE.what,
         free_tier: FREE_TIER,
         upgrade: UPGRADE.where,
       }, 429);
@@ -1555,8 +1576,8 @@ app.post('/v1/payroll/batch', async (c) => {
         : `無料枠では1回のバッチにつき ${FREE_TIER.batch_rows} 人までです。渡されたのは ${rows.length} 人でした。`,
       paid
         ? '何回かに分けて実行してください。'
-        : `1回 ${MAX_BATCH} 人までのバッチは ${UPGRADE.where} で利用できます。` +
-          '無料枠の他の呼び出しに回数の制限はありません。この上限はバッチの人数だけにかかります。',
+        : `${UPGRADE.offer(MAX_BATCH)}。`
+          + '無料枠の他の呼び出しに回数の制限はありません。この上限はバッチの人数だけにかかります。',
       'batch_too_large');
   if (rows.some((r) => typeof r !== 'object' || r === null || Array.isArray(r)))
     return bad(c, '「employees」の各要素はオブジェクトで渡してください。');
@@ -1911,7 +1932,7 @@ app.post('/v1/standard-remuneration/regular/batch', async (c) => {
         : `無料枠では1回のバッチにつき ${FREE_TIER.batch_rows} 人までです。渡されたのは ${rows.length} 人でした。`,
       paid
         ? '何回かに分けて実行してください。'
-        : `1回 ${MAX_BATCH} 人までのバッチは ${UPGRADE.where} で利用できます。` +
+        : `${UPGRADE.offer(MAX_BATCH)}。` +
           '算定基礎届は全員を一度に対象とするため、6月にいちばん効きやすい上限です。',
       'batch_too_large');
   if (rows.some((r) => typeof r !== 'object' || r === null || Array.isArray(r)))
