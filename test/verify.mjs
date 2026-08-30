@@ -41,11 +41,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const ATTEMPTS = 5;
 
+// 本番に対して流すと無料枠のレート制限に当たる。当たったとき、いままでは
+// 数十行あとで `Cannot read properties of undefined (reading 'map')` になっていた。
+// **制限に当たったことは、当たった場所で言わなければ分からない。**
+// 予期しない 429 は、その場で理由つきで止める。
 const get = async (p, attempt = 0) => {
   try {
     const r = await fetch(BASE + p, { signal: AbortSignal.timeout(20000) });
+    if (r.status === 429 && !/rate-limit|free-tier/.test(p)) {
+      throw new Error(
+        `GET ${p} が 429。${BASE} の無料枠のレート制限に当たっています。` +
+        'ローカルに対して流してください: npx wrangler dev --port 8799');
+    }
     return { status: r.status, body: await r.json() };
   } catch (e) {
+    if (/レート制限/.test(e?.message ?? '')) throw e;
     if (attempt < ATTEMPTS - 1) {
       // 待たずに retry すると、3回とも再起動中に着弾して同じ失敗になる。
       // workerd はこの負荷で実際にクラッシュし、復帰まで1秒前後かかる。
@@ -4622,12 +4632,18 @@ for (const [p, want, label] of [
   // 404 と 403 の違いが答えを分ける。404 は出品が無い、403 は出品はあって未購読。
   // 未購読で断られるのが正常な状態。
   const HOST_RE = /([a-z0-9-]+\.p\.rapidapi\.com)/g;
-  const files = ['recipes/jp-payroll/rapidapi-docs.md', 'mcp/README.md', 'mcp/README.ja.md'];
+  // ファイル名を変えたら、この一覧も変える。**`catch { continue }` は黙って
+  // 検査対象を減らす。**README.ja.md を README.en.md に改名したとき、この行は
+  // 何も言わずに1ファイル分の走査を落とすところだった。読めないなら落とす。
+  const files = ['recipes/jp-payroll/rapidapi-docs.md',
+                 'README.md', 'mcp/README.md', 'mcp/README.en.md'];
   const advertised = new Set();
   for (const f of files) {
-    let text;
+    let text = null;
     try { text = await readFile(new URL(`../${f}`, import.meta.url), 'utf8'); }
-    catch { continue; }
+    catch { /* 下で落とす */ }
+    ok(text !== null, `走査対象の ${f} が実在する`);
+    if (text === null) continue;
     for (const m of text.matchAll(HOST_RE)) advertised.add(m[1]);
   }
   ok(advertised.size >= 1, 'the docs name a RapidAPI host at all', [...advertised].join(', '));
@@ -5079,6 +5095,37 @@ for (const [p, want, label] of [
   ok(recipeText.includes('95,130'),
      'and the recipe is where it comes from, not a hand edit of the built spec');
 }
+{
+  // **改名するとリンクが切れる。**README.ja.md を README.en.md にしたとき、
+  // ルートの README から2本、GitHub 上で404になるリンクが残った。
+  // 訪問者が最初に着く頁からの死んだリンクなので、黙って残ってはいけない。
+  // 一度直すだけでは次の改名でまた起きるので、毎回全部数える。
+  const { readdir } = await import('node:fs/promises');
+  const { existsSync } = await import('node:fs');
+  const root = new URL('../', import.meta.url);
+  const docs = [];
+  for (const d of ['', 'mcp/', 'docs/', 'docs/articles/', 'recipes/jp-payroll/']) {
+    let names = [];
+    try { names = await readdir(new URL(d, root)); } catch { continue; }
+    for (const n of names) if (n.endsWith('.md')) docs.push(d + n);
+  }
+  ok(docs.length >= 5, 'マークダウンを走査できている', `${docs.length} ファイル`);
+
+  const dead = [];
+  for (const f of docs) {
+    const text = await readFile(new URL(f, root), 'utf8');
+    const dir = f.includes('/') ? f.slice(0, f.lastIndexOf('/') + 1) : '';
+    for (const m of text.matchAll(/\]\(([^)\s#]+)(?:\s[^)]*)?\)/g)) {
+      const href = m[1];
+      if (/^(https?:|mailto:|#|\/)/.test(href)) continue;
+      const target = new URL(dir + href, root);
+      if (!existsSync(target)) dead.push(`${f} -> ${href}`);
+    }
+  }
+  ok(dead.length === 0, 'ローカルへのリンクが全部生きている',
+     dead.length ? dead.slice(0, 6).join(' / ') : `${docs.length} ファイル走査`);
+}
+
 
 
 

@@ -1,38 +1,37 @@
 # jp-payroll-mcp
 
-MCP server for Japanese payroll and labour law. Gives an AI assistant 28 tools for
-social insurance premiums, withholding income tax, standard remuneration decisions
-and revisions, leave premium exemptions, minimum wage and business-day arithmetic.
+日本の給与計算・社会保険・労働法を、AIアシスタントから使えるMCPサーバーです。
+社会保険料、源泉所得税、標準報酬月額の決定と改定、休業中の保険料免除、最低賃金、
+営業日計算まで28のツールを提供します。
 
-Free, no key, no account.
+無料。APIキー不要、アカウント登録不要。
 
 ```bash
 npx jp-payroll-mcp
 ```
 
-[日本語のREADMEはこちら](README.ja.md)
+**English:** Japanese payroll, social insurance and labour law as an MCP server — 28 tools, free, no key. See **[README.en.md](https://github.com/kishida-devil/jp-payroll-mcp/blob/main/mcp/README.en.md)**.
 
-## Why this exists
+## なぜ必要か
 
-An assistant asked to work out Japanese payroll will answer confidently and be
-wrong, because the rules are counter-intuitive rather than obscure:
+日本の給与計算をAIに聞くと、**自信満々に間違えます。** 難解だからではなく、
+直感に反するからです。
 
-- Social insurance coverage ends the **day after** the last day worked. Leaving on
-  31 March costs a full month of premium; leaving on 30 March costs nothing. One day.
-- An age is attained the **day before** the birthday (年齢計算ニ関スル法律). Someone born
-  on 1 April turns 40 on 31 March, and their long-term care premium starts a month
-  earlier than expected.
-- The "two grades or more" test for 随時改定 **is not in 健康保険法**. It is in 昭和36年
-  保発第4号, a ministerial notice — along with four exceptions where one grade is enough.
-- Premiums are charged on 標準報酬月額, a 50-grade step function — except employment
-  insurance, which is charged on actual salary. The employee share rounds half **down**.
-- Bonus premiums have two caps that work differently: health caps at 5,730,000 yen
-  **cumulatively per fiscal year**, pension at 1,500,000 yen **per payment**.
+- 社会保険の資格喪失日は、**退職日の翌日**です。3月31日退職なら3月分の保険料が
+  発生し、3月30日退職なら発生しません。**1日の違いで丸1か月分**が動きます。
+- 年齢に達するのは**誕生日の前日**です(年齢計算ニ関スル法律)。4月1日生まれの人は
+  3月31日に40歳になるので、介護保険料の徴収開始が1か月早まります。
+- 随時改定の「2等級以上の差」という基準は、**健康保険法のどこにも書かれていません。**
+  昭和36年 保発第4号という通知にあり、しかも1等級で足りる例外が4つあります。
+- 保険料は標準報酬月額(50等級の階段関数)にかかりますが、**雇用保険だけは実際の
+  給与額**にかかります。被保険者負担分の端数は**五捨六入**です。
+- 賞与の上限は健康保険が**年度累計573万円**、厚生年金が**1回150万円**と、
+  性質が違います。
 
-Every one of those produces a number that looks plausible and is wrong. These tools
-compute them from the published tables instead, and cite the statute or notice.
+どれも「それらしく見えて間違っている数字」を生みます。このサーバーは公表されている
+料額表・税額表から計算し、根拠の条文や通知を一緒に返します。
 
-## Setup
+## 導入
 
 ### Claude Code
 
@@ -40,9 +39,9 @@ compute them from the published tables instead, and cite the statute or notice.
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 ```
 
-### Claude Desktop / other MCP clients
+### Claude Desktop など
 
-Add to your config file:
+設定ファイルに追記してください。
 
 ```json
 {
@@ -55,161 +54,157 @@ Add to your config file:
 }
 ```
 
-Requires Node 18 or later.
+Node 18 以降が必要です。
 
-## Tools
+## ツール一覧(28)
 
-**Payroll**
+**給与・賞与**
 
-| Tool | What it does |
+| ツール | 内容 |
 |---|---|
-| `calculate_payslip` | Full monthly deductions and net pay, employee and employer share |
-| `calculate_payroll_batch` | A whole payroll in one call, with run totals and a run id |
-| `calculate_bonus` | Bonus premiums with both caps, optionally with withholding tax |
-| `calculate_overtime_pay` | 割増賃金 — 25% overtime, 50% past 60 hours, 35% holiday, 25% night on top (労基法37条) |
-| `calculate_withholding_tax` | 源泉徴収税額表 — monthly, daily (incl. the 丙 column), or the formula method |
-| `commuting_allowance_exemption` | The non-taxable ceiling: counted in full for social insurance, taxed only above the limit |
-| `calculate_annual_cost` | What a year of employing someone costs, including the employer share |
+| `calculate_payslip` | 月次の控除内訳と手取り。事業主負担分も返します |
+| `calculate_payroll_batch` | 全社員分を1回で。合計と run_id つき |
+| `calculate_bonus` | 賞与の保険料(2種類の上限に対応)。源泉所得税も同時に |
+| `calculate_overtime_pay` | 割増賃金 — 時間外25%、月60時間超50%、法定休日35%、深夜はさらに25%(労基法37条) |
+| `calculate_withholding_tax` | 源泉徴収税額表 — 月額表・日額表(丙欄含む)・電算機計算の特例 |
+| `commuting_allowance_exemption` | 通勤手当の非課税限度額。社会保険は全額算入、所得税は限度超過分のみ |
+| `calculate_annual_cost` | 1人を1年雇う費用。事業主負担を含めた総額 |
 
-**Standard remuneration (標準報酬月額)**
+**標準報酬月額**
 
-| Tool | What it does |
+| ツール | 内容 |
 |---|---|
-| `judge_monthly_revision` | Is a 随時改定 (月額変更届) due? Judges health and pension separately |
-| `decide_regular_remuneration` | Annual 定時決定 (算定基礎届) from April–June pay |
-| `decide_regular_remuneration_batch` | The same for a whole office — June decides everyone at once |
-| `judge_leave_end_revision` | Revision on returning from maternity or childcare leave — one grade is enough |
-| `judge_annual_average` | 年間平均による保険者算定, for seasonal work |
-| `lookup_standard_remuneration` | Grade for an amount, or the whole 50-grade table |
+| `judge_monthly_revision` | 随時改定(月額変更届)の要否。健保と厚年を別々に判定 |
+| `decide_regular_remuneration` | 定時決定(算定基礎届)を4〜6月の報酬から |
+| `decide_regular_remuneration_batch` | 同じ判定を事業所全員分。6月は全員が一斉に決まる |
+| `judge_leave_end_revision` | 産休・育休からの復帰時改定。1等級差で足ります |
+| `judge_annual_average` | 年間平均による保険者算定(季節的な業務) |
+| `lookup_standard_remuneration` | 金額から等級を引く。省略すれば50等級の表そのもの |
 
-**Eligibility, leave and age**
+**資格・休業・年齢**
 
-| Tool | What it does |
+| ツール | 内容 |
 |---|---|
-| `judge_worker_type` | Insured or not: the three-quarters test, and 20 hours / ¥88,000 / student / 51 staff |
-| `check_insurance_eligibility` | Is a premium due in a joining or leaving month? |
-| `check_leave_exemption` | Which months a maternity or childcare leave exempts |
-| `judge_annual_leave` | 年次有給休暇 — days granted, including the proportional table for part-timers |
-| `get_age_milestones` | When 40, 65, 70 and 75 are reached, and what each changes |
+| `judge_worker_type` | 被保険者になるか。四分の三基準と20時間/88,000円/学生/51人 |
+| `check_insurance_eligibility` | 入社月・退職月に保険料がかかるか |
+| `check_leave_exemption` | 産休・育休がどの月を免除するか |
+| `judge_annual_leave` | 年次有給休暇の付与日数。短時間労働者の比例付与も |
+| `get_age_milestones` | 40・65・70・75歳の到達日と、そのとき変わるもの |
 
-**Reference**
+**参照**
 
-| Tool | What it does |
+| ツール | 内容 |
 |---|---|
-| `get_insurance_rates` | Rates for any of the 47 prefectures, plus employment insurance |
-| `list_workers_compensation_rates` | 労災保険率 by trade — 2.5 to 88 per 1,000, entirely on the employer |
-| `national_insurance` | 国民年金 for people outside employee insurance, and why 国民健康保険 has no national figure |
-| `get_minimum_wage` | Minimum wage in effect on a date, back to FY2002 |
-| `consumption_tax` | The rate in force on a date, the reduced 8%, and every change since 1989 |
-| `business_days` | Holidays 1955–2027, business-day counting and shifting, banking calendar |
-| `validate_corporate_number` | 法人番号 and invoice registration check digits, or the digit for a 12-digit base |
-| `validate_invoice_numbers_batch` | Many registration numbers at once — form only; registration needs the NTA site |
-| `get_statute_text` | Full text of any provision the other tools cite |
-| `check_data_freshness` | What each dataset covers and when it changes next |
+| `get_insurance_rates` | 47都道府県の料率と雇用保険料率 |
+| `list_workers_compensation_rates` | 労災保険率(事業の種類別)。全額事業主負担、1,000分の2.5〜88 |
+| `national_insurance` | 国民年金の額と、国民健康保険に全国一律の額が存在しない理由 |
+| `get_minimum_wage` | ある日に効力を持つ最低賃金(平成14年度まで遡及) |
+| `consumption_tax` | 日付指定の税率、軽減8%、1989年以降の改定履歴 |
+| `business_days` | 1955〜2027年の祝日、営業日計算、銀行カレンダー |
+| `validate_corporate_number` | 法人番号・登録番号のチェックディジット。12桁から13桁の算出も |
+| `validate_invoice_numbers_batch` | 登録番号をまとめて形式検査(登録状況は国税庁サイトで) |
+| `get_statute_text` | 他のツールが引用する条文の本文 |
+| `check_data_freshness` | 各データの収録範囲と、次に変わる時期 |
 
-## Building this into a product?
+## 使用例
 
-These tools are for asking questions interactively — a person, an assistant, one
-case at a time. They cannot be embedded in software: an MCP server runs over stdio
-on somebody's own machine, so a payroll product cannot ship one inside itself.
+> 3月31日で退職する社員がいます。3月分の社会保険料はどうなりますか。
 
-For that, use the HTTP API these tools wrap:
+`check_insurance_eligibility` が呼ばれ、資格喪失日が4月1日になるため**3月分の保険料が
+発生する**ことと、3月30日退職なら発生しないことが返ります。
+
+> 4月に基本給を28万から32万に上げました。月額変更届は必要ですか。
+
+`judge_monthly_revision` が健康保険と厚生年金それぞれについて判定します。該当しない
+場合は「等級差が足りない」「支払基礎日数が不足」など、**どの要件で外れたか**を返します。
+
+> 育休から時短勤務で復帰した社員の保険料を下げられますか。
+
+`judge_leave_end_revision` です。随時改定と違って**1等級差で足り、固定的賃金の変動も
+不要**なので、時短復帰のケースはこちらが該当します。
+
+## 関連ツール
+
+日本の法令系MCPサーバーの多くは **原文を取ってくる** もので、そこから先の判断は人が
+行います。このサーバーは **計算して判定し、根拠の条文も返します。** 競合ではなく
+補完関係です。
+
+| | 「法律に何と書いてあるか」 | 「で、いくら払うのか」 |
+|---|---|---|
+| [`labor-law-mcp`](https://www.npmjs.com/package/labor-law-mcp) | 労働・社会保険法令45本、厚労省通達、安衛通達 | — |
+| [`tax-law-mcp`](https://www.npmjs.com/package/tax-law-mcp) | 税法24本、国税庁通達17本、裁決事例 | — |
+| [`hourei-mcp-server`](https://www.npmjs.com/package/hourei-mcp-server) | e-Gov経由で法令全般 | — |
+| **jp-payroll-mcp** | 引用する28条項の本文 | 保険料、源泉徴収税額、等級改定、免除判定 |
+
+`labor-law-mcp` に健康保険法第43条を聞けば条文が返ります。こちらに「月額変更届は必要か」
+と聞けば、要否と等級、そして **該当しない場合はどの要件で外れたか** が返ります。条文本文が
+必要なら `get_statute_text` で同時に取れます。
+
+**すでにどれかを入れている方は、併用してください。** 両方入っていれば、アシスタントが
+質問に応じて使い分けます。
+
+## データの出典
+
+すべて公式資料からプログラムで抽出し、その資料に印刷されている数値と突き合わせて
+検証しています。式を解説文から再実装したものではありません。
+
+| データ | 出典 |
+|---|---|
+| 保険料率・標準報酬月額表 | 全国健康保険協会 保険料額表 |
+| 源泉徴収税額表 | 国税庁 |
+| 雇用保険料率 | 厚生労働省 |
+| 最低賃金 | 厚生労働省 地域別最低賃金 |
+| 祝日 | 内閣府 |
+| 改定ルール | e-Gov法令検索、厚生労働省 法令等データベース、日本年金機構 |
+
+背後のAPIは変更のたびに **4,339件** の検証を実行します。中核は、協会けんぽの
+料額表に印刷されている金額と250通り(都道府県×等級)を突き合わせる検証と、
+国税庁の源泉徴収税額表の**全2,079セル**との突き合わせです。
+
+## 正直に書いておくこと
+
+- **これらは「届出が必要か」を判定するもので、届出そのものではありません。**
+  「業務の性質上例年発生することが見込まれるか」「実費弁償に当たるか」「本人が同意したか」
+  など、APIには見えない事実で決まる要件があります。それらは入力として受け取り、
+  応答にそのまま返します。保険者算定で異なる結論になることもあります。
+- **住民税は計算しません。** 前年所得と市区町村によって決まり、特別徴収税額通知書の
+  金額を使うものだからです。渡された額を控除するだけです。
+- **年末調整には対応していません。**
+- **インボイス番号のチェックディジットが通っても、法人とは限りません。** 個人事業主も
+  同じ規則を満たします。
+- **一次情報で裏が取れなかった事項**は、断定せず `guidance.fixed_pay.unverified` として
+  応答に載せています。家族手当が固定的賃金に当たるか、有給休暇日を支払基礎日数に
+  どう数えるか、年俸制の扱いの3点です。解説サイトの見解は一致していますが、
+  省庁が文書で書いているのを確認できませんでした。
+- いかなる政府機関とも関係がなく、保証もありません。届出に使う前に出典元で
+  ご確認ください。
+
+## 製品に組み込む場合
+
+これらのツールは**対話的に質問へ答えるためのもの**です。ソフトウェアには組み込めません。
+MCPサーバーは利用者自身のマシンでstdio経由で動くため、給与計算製品の中に同梱できないからです。
+
+その場合は、ツールが叩いているHTTP APIを直接お使いください。
 **https://japan-payroll-api.tsumugi.workers.dev**
 
-Same data, same rules, over REST — plus batch processing and an OpenAPI 3.0 spec
-to generate a client from.
+同じデータ・同じルールをRESTで提供しており、バッチ処理とOpenAPI 3.0仕様書(クライアント
+自動生成用)が付きます。
 
-The free tier covers interactive use comfortably and is what these MCP tools run
-on: 300 requests per minute, and batches of up to 10 employees. Nothing is metered
-per call and no key is needed. Production volume — full 500-row batches and higher
-limits — is on RapidAPI, where billing, keys and quotas are handled for you:
+無料枠は対話利用には十分です。**300リクエスト/分、バッチは10人まで。** 呼び出し単位の
+課金はなく、キーも不要です。本番規模 — 500人までのバッチと上限緩和 — はRapidAPIにあり、
+課金・キー・クォータはそちらで管理されます。
 https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants
 
-## Related tools
+## 設定
 
-Japanese statutory MCP servers mostly *retrieve* — they hand you the text of a law and
-leave the reasoning to you. This one *computes*, and returns the statute it relied on.
-They fit together rather than compete:
-
-| | Answers "what does the law say?" | Answers "so what do I pay?" |
+| 環境変数 | 既定値 | 用途 |
 |---|---|---|
-| [`labor-law-mcp`](https://www.npmjs.com/package/labor-law-mcp) | 45 labour and social insurance laws, MHLW and JAISH notices | — |
-| [`tax-law-mcp`](https://www.npmjs.com/package/tax-law-mcp) | 24 tax laws, 17 NTA circulars, tribunal decisions | — |
-| [`hourei-mcp-server`](https://www.npmjs.com/package/hourei-mcp-server) | Any Japanese law, via e-Gov | — |
-| **jp-payroll-mcp** | The 28 provisions it cites, in full | Premiums, withholding tax, grade revisions, exemptions |
+| `JP_PAYROLL_API_URL` | `https://japan-payroll-api.tsumugi.workers.dev` | 自前のデプロイ先を指定。末尾のスラッシュは除去されます |
+| `JP_PAYROLL_TIMEOUT_MS` | `15000` | タイムアウト。往復時間より短いと全呼び出しが失敗するため、下限1000msでクランプします |
 
-Ask `labor-law-mcp` for 健康保険法第43条 and you get the article. Ask this one whether a
-月額変更届 is due and you get yes or no, which grade, and *why not* when the answer is
-no — plus the article, if you add `get_statute_text`.
+## ライセンス
 
-If you already have one of those installed, install this alongside it. An assistant
-with both picks the right one per question.
-
-## Where the numbers come from
-
-Every figure is extracted programmatically from the official source and verified
-against the values published in it — not reimplemented from a description of the
-formula.
-
-| Data | Source |
-|---|---|
-| Social insurance rates, grade table | 全国健康保険協会 保険料額表 |
-| Withholding tax tables | 国税庁 源泉徴収税額表 |
-| Employment insurance | 厚生労働省 |
-| Minimum wage | 厚生労働省 地域別最低賃金 |
-| Public holidays | 内閣府 |
-| Revision rules | e-Gov 法令検索, 厚生労働省 法令等データベース, 日本年金機構 |
-
-The API behind these tools runs **3,638 assertions** on every change. The core of it
-compares computed premiums against the amounts printed in the 協会けんぽ workbook for
-250 prefecture × grade combinations, and against all 2,079 published cells of the
-National Tax Agency withholding table.
-
-## Honest limits
-
-- **These tools decide whether a filing is due. They are not the filing.** Some rules
-  turn on facts no API can see — whether a seasonal swing is 「業務の性質上例年発生すること
-  が見込まれる」, whether an allowance is 実費弁償, whether the employee consented. Those are
-  declared inputs, echoed back in the response. 保険者算定 can still reach a different
-  conclusion.
-- **Resident tax is never derived.** It depends on the previous year's income and the
-  municipality. Pass the figure from the 特別徴収税額通知書.
-- **Year-end adjustment (年末調整) is not covered.**
-- **A passing invoice check digit does not identify a corporation.** Sole proprietors
-  satisfy exactly the same rule.
-- **A few practice points could not be sourced to a primary document** and are returned
-  as `guidance.fixed_pay.unverified` rather than asserted: whether 家族手当 counts as
-  fixed pay, how paid leave counts toward 支払基礎日数, how 年俸制 is treated.
-- Not endorsed by, affiliated with, or guaranteed by any government agency. Verify
-  against the source before relying on a figure for a statutory filing.
-
-## Configuration
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `JP_PAYROLL_API_URL` | `https://japan-payroll-api.tsumugi.workers.dev` | Point at your own deployment. Trailing slashes are stripped |
-| `JP_PAYROLL_TIMEOUT_MS` | `15000` | Request timeout. Clamped to a 1000 ms floor, since a timeout shorter than a round trip fails every call |
-
-## Development
-
-```bash
-npm test           # 138 checks: 109 behavioural, 29 failure-path
-npm run test:smoke # tool behaviour, against production
-```
-
-Both suites drive a real stdio transport with the real MCP client, because a tool
-with a broken handler still lists perfectly — the failure only appears when
-something calls it. The failure suite spawns the server against deliberately
-broken origins (unreachable, hanging, HTML instead of JSON, 500, 400) and asserts
-on what the assistant is *told*, since in every one of those cases the model's next
-move is chosen from the error text alone.
-
-Point `JP_PAYROLL_API_URL` at a local `wrangler dev` to test against unreleased API
-changes. `npm publish` runs the full suite first and aborts if anything fails.
-
-## Licence
-
-Code MIT. Underlying data is Japanese government open data; licensing differs by
-publisher — 厚生労働省 and 国税庁 material is under 公共データ利用規約 (第1.0版), while
-全国健康保険協会 permits reproduction with attribution but not modification. Each
-response carries the terms for the source it drew on.
+コードはMIT。元データは日本の政府オープンデータですが、**発行元ごとに条件が異なります。**
+厚生労働省と国税庁の資料は公共データ利用規約(第1.0版)ですが、全国健康保険協会は
+出典明示のうえでの転載を認める一方、**無断改変を禁じており、PDLには言及していません。**
+各応答が、その回答に使った出典の条件を返します。

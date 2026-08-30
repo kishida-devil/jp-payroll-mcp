@@ -1,5 +1,43 @@
 # jp-payroll-mcp
 
+**日本の給与計算・社会保険・労務を、表を引くのではなく計算して返すAPIとMCPサーバーです。**
+47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、休業中の保険料免除、
+割増賃金、年次有給休暇、最低賃金、営業日計算まで。**答えには根拠の条文または通知が付きます。**
+
+公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,339件** の検証を実行します。
+
+## 使いかたは2通り
+
+**MCPサーバー** — AIアシスタントに日本語で聞く。28ツール、無料、APIキー不要:
+
+```bash
+claude mcp add jp-payroll -- npx -y jp-payroll-mcp
+```
+
+**HTTP API** — ソフトウェアに組み込む。43エンドポイント、OpenAPI 3.0、一括処理:
+
+```bash
+curl "https://japan-payroll-api.tsumugi.workers.dev/v1/payroll?prefecture=Tokyo&monthly_salary=350000&birth_date=1986-04-01"
+```
+
+MCPサーバーはAPIの薄い層なので、どちらも同じ答えを返します。
+人が聞くのか、プログラムが聞くのかの違いです。
+
+### なぜ要るのか
+
+自前で書くと、**もっともらしく見えて間違っている数字**が出ます。3月31日退職と3月30日退職では
+1か月分の社会保険料が動きます(東京・40歳・月給30万円で労使合計95,130円)。4月1日生まれの人は
+3月31日に40歳になるので介護保険料が1か月早く始まります。随時改定の「2等級以上」は健康保険法に
+書いておらず、昭和36年保発第4号にあります。
+
+- 解説記事: **[日本の給与計算・社会保険をAPIとMCPにしました](https://zenn.dev/kishida_devil/articles/9d5a645a105c0b)**
+- MCPサーバーの詳細: **[mcp/README.md](mcp/README.md)**
+- 大量処理の有料プラン: [RapidAPI](https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants)
+
+以下は英語の詳細仕様です。
+
+---
+
 Japanese payroll, social insurance and labour law, computed rather than looked up —
 premiums for all 47 prefectures, withholding tax, standard remuneration decisions and
 revisions, leave exemptions, minimum wage — with the statute or ministerial notice each
@@ -24,7 +62,7 @@ curl "https://japan-payroll-api.tsumugi.workers.dev/v1/payroll?prefecture=Tokyo&
 The MCP server is a thin layer over the API, so both give the same answers. Which you
 want depends on whether a person or a program is asking.
 
-- MCP server source and its own README: [`mcp/`](mcp/) · [日本語](mcp/README.ja.md)
+- MCP server source and its own README: [`mcp/`](mcp/) · [English](mcp/README.en.md)
 - Live API: `https://japan-payroll-api.tsumugi.workers.dev`
 - OpenAPI spec: [`/openapi.json`](https://japan-payroll-api.tsumugi.workers.dev/openapi.json)
 
@@ -56,8 +94,8 @@ right one per question.
 
 ## MCP server
 
-Source in [`mcp/`](mcp/), with its own [README](mcp/README.md) ·
-[日本語](mcp/README.ja.md). Test it with `npm run mcp:test` — it drives a real stdio
+Source in [`mcp/`](mcp/), with its own [README](mcp/README.md) (日本語) ·
+[English](mcp/README.en.md). Test it with `npm run mcp:test` — it drives a real stdio
 transport with the real MCP client, because a tool with a broken handler still lists
 perfectly and only fails when something calls it.
 

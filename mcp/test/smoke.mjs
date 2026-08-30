@@ -659,7 +659,7 @@ for (const [name, args, check] of [
   // という運用は3回続けて守られていない。だから数える。
   const source = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
   const names = [...source.matchAll(/registerTool\('([\w_]+)'/g)].map((m) => m[1]);
-  for (const f of ['README.md', 'README.ja.md']) {
+  for (const f of ['README.md', 'README.en.md']) {
     const txt = await readFile(new URL(`../${f}`, import.meta.url), 'utf8');
     const missing = names.filter((n) => !txt.includes(n));
     ok(missing.length === 0, `${f} lists every tool that exists`, missing.join(', ') || 'none');
@@ -668,9 +668,20 @@ for (const [name, args, check] of [
       .filter((w) => /_/.test(w) && !names.includes(w));
     const ghosts = [...new Set(advertised)].filter((w) => /^(calculate|judge|decide|check|get|list|lookup|validate|business|national|commuting|consumption)_/.test(w));
     ok(ghosts.length === 0, `${f} advertises nothing that was removed`, ghosts.join(', ') || 'none');
-    const claimed = /(\d+) tools|ツール一覧\((\d+)\)/.exec(txt);
-    ok(claimed && Number(claimed[1] ?? claimed[2]) === names.length,
-       `${f} states the right count`, `says ${claimed?.[1] ?? claimed?.[2]}, has ${names.length}`);
+    // **数え方が甘かった。**`exec` は最初に当たった1つを返すので、ファイルの中で
+    // 「ツール一覧(28)」が当たれば、冒頭の「17のツール」は一度も見られない。
+    // 実際にそうなっていた。日本語版は同じファイルの中で 17 と 28 を名乗っており、
+    // それでもこの検査は緑だった。**1つ見つけて満足する検査は、検査ではない。**
+    // 名乗っている数を全部集めて、全部が実物と一致することを見る。
+    const claims = [
+      ...txt.matchAll(/(\d+)\s*tools\b/g),
+      ...txt.matchAll(/ツール一覧\((\d+)\)/g),
+      ...txt.matchAll(/(\d+)\s*(?:の)?ツール(?:を提供|があ|一覧)/g),
+    ].map((m) => Number(m[1]));
+    ok(claims.length > 0, `${f} says how many tools there are`);
+    const wrong = [...new Set(claims)].filter((n) => n !== names.length);
+    ok(wrong.length === 0, `${f} states the right count everywhere it states one`,
+       wrong.length ? `${wrong.join('/')} vs ${names.length}` : `${claims.length}箇所とも ${names.length}`);
   }
 }
 {
@@ -826,6 +837,45 @@ for (const [name, args, check] of [
 
 
 await client.close();
+{
+  // **描かれる面が何語か。**日本語版はずっとあったが、npm のパッケージ頁も
+  // GitHub のトップも描画するのは README.md のほうで、日本語版はリンクの先だった。
+  // 買い手は日本の給与ソフトを作る人で、その人は日本語で検索する。
+  // Google が拾う一次面が英語だと、探している当人に見つからない。
+  //
+  // 出品文でも同じ間違いをして指摘された(「対象は日本人だから日本語がよくないか」)。
+  // 出品文だけ直して README を直していなかったので、ここで固定する。
+  const rendered = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const jaRatio = (t) => (t.match(/[ぁ-んァ-ヶ一-龥]/g) ?? []).length / Math.max(t.length, 1);
+  ok(jaRatio(rendered.slice(0, 1200)) > 0.25,
+     'npm が描画する README は日本語で始まる',
+     `${Math.round(jaRatio(rendered.slice(0, 1200)) * 100)}%`);
+
+  // 英語話者を締め出さない。行き先が冒頭にあること。
+  ok(rendered.slice(0, 1200).includes('README.en.md'),
+     'and points an English reader somewhere in the first screen');
+
+  // **npm は相対リンクをリポジトリのルート基準で解決する。**この README は mcp/ の
+  // 下にあるので、`](README.en.md)` と書くと npmjs.com 上で 404 になる。
+  // 描画される頁に死んだリンクを置くと、英語話者はそこで行き止まりになる。
+  ok(/\]\(https:\/\/github\.com\/[^)]*README\.en\.md\)/.test(rendered),
+     'and that link is absolute, because npm resolves relative ones against the repo root');
+  const pkgRepo = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  ok(pkgRepo.repository?.directory === 'mcp',
+     'package.json says which subdirectory it lives in', pkgRepo.repository?.directory);
+  const english = await readFile(new URL('../README.en.md', import.meta.url), 'utf8');
+  ok(jaRatio(english.slice(0, 1200)) < 0.15, 'README.en.md はその英語版である');
+  ok(english.includes('](README.md)'), 'and links back');
+
+  // 同梱物。名前を変えたのに files を直し忘れると、npm 上でリンクが 404 になる。
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  for (const f of ['README.md', 'README.en.md']) {
+    ok(pkg.files.includes(f), `${f} は npm に同梱される`);
+  }
+  ok(!pkg.files.includes('README.ja.md'), 'そして消えたファイルを同梱しようとしない');
+}
+
 console.log(`  passed ${pass} / ${pass + fail}`);
 if (fail) { console.log('\n  FAILURES:'); failures.forEach((f) => console.log('   - ' + f)); process.exit(1); }
+
 console.log('  all checks green\n');
