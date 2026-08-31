@@ -21,6 +21,13 @@ set -u
 # 場所を決め打ちせず、自分がどこに置かれているかから割り出す。
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Git Bash の pwd は /d/Claude/tsumugi を返すが、Windows の node は
+# require('/d/...') を解決できない。混在形式 (D:/Claude/tsumugi) なら両方が読む。
+# 場所を決め打ちしていた頃はたまたま正しく、自動判定にして壊した。
+if command -v cygpath >/dev/null 2>&1; then
+  ROOT="$(cygpath -m "$ROOT")"
+fi
+
 # WSL だと Windows 側の npm / gh / wrangler / mcp-publisher.exe が揃わない。
 # 中途半端に走らせるより、入口を教えて止める。
 case "$(uname -s)" in
@@ -67,7 +74,10 @@ printf '  gh: %s に push できます\n' "$REPO"
 ahead=$(git log --oneline origin/main..HEAD | wc -l | tr -d ' ')
 printf '  git: 未push %s コミット\n' "$ahead"
 
-ver=$(node -p "require('$MCP/package.json').version")
+ver=$(node -p "require('$MCP/package.json').version" 2>/dev/null)
+# 版が読めないまま先へ進むと `npm view pkg@` が latest に当たり、
+# 「既にあります」と誤って報告する。実際にそう出た。空なら止める。
+[ -n "$ver" ] || die "mcp/package.json から版を読めませんでした ($MCP)"
 printf '  版: %s\n' "$ver"
 if npm view "jp-payroll-mcp@$ver" version >/dev/null 2>&1; then
   die "npm に $ver は既にあります。mcp/package.json と mcp/server.json の版を上げてください"
