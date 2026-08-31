@@ -407,6 +407,36 @@ function outsideRateWindow(c: any, set: RateSet, iso: string | null) {
 const bad = (c: any, message: string, hint?: string, code = 'invalid_request') =>
   c.json({ error: message, code, ...(hint ? { hint } : {}) }, 400);
 
+/**
+ * 生年月日が、年齢として意味のある範囲にあるか。
+ *
+ * `age` は 0〜120 で弾いていたのに、**同じことを意味する `birth_date` は形式しか
+ * 見ていなかった。**`birth_date=2099-01-01` は 200 を返し、給与明細を組み立て、
+ * `/v1/age-milestones` は `age: -73` と答えたうえで健康保険と厚生年金を
+ * 「加入」と判定していた。1999 を 2099 と打ち間違えれば、それらしい明細が出る。
+ *
+ * 片方だけ厳しい検証は、緩いほうから入られる。同じ範囲に揃える。
+ */
+const badBirthDate = (c: any, birth: Date | null): any => {
+  if (!birth) return null;
+  // 基準日は as_of。過去の給与を組み直す人がいるので、「今日」で判定すると
+  // 正しい呼び出しを弾く。as_of は各ハンドラでこの検査より後に読まれるので、
+  // ここで自分で読む。壊れた as_of は、それぞれのハンドラが別途弾く。
+  const asOfRaw = c.req.query('as_of');
+  const asOf = asOfRaw ? parseDate(asOfRaw) : null;
+  const ref = asOf ?? new Date();
+  if (birth.getTime() > ref.getTime())
+    return bad(c, '「birth_date」が未来の日付です。',
+      `${birth.toISOString().slice(0, 10)} は基準日 ${ref.toISOString().slice(0, 10)} より後です。` +
+      '年号の打ち間違い(1999 を 2099 など)でよく起きます。' +
+      'age は0から120で受けているので、生年月日も同じ範囲でしか受けません。');
+  const years = (ref.getTime() - birth.getTime()) / (365.2425 * 24 * 3600 * 1000);
+  if (years > 120)
+    return bad(c, '「birth_date」が古すぎます。',
+      `基準日時点で ${Math.floor(years)} 歳になります。age は0から120で受けています。`);
+  return null;
+};
+
 const needPref = (c: any) => {
   const raw = c.req.query('prefecture') ?? c.req.query('pref');
   const pref = resolvePrefecture(raw ?? null);
@@ -863,6 +893,7 @@ app.get('/v1/payroll', (c) => {
   if (birthRaw !== undefined && !birth)
     return bad(c, '「birth_date」はYYYY-MM-DD形式の日付で渡してください。',
       '生年月日を渡すと、40歳・65歳・70歳・75歳の到達日を正確に当てはめます。');
+  { const e = badBirthDate(c, birth); if (e) return e; }
 
   // 年齢は「あると精度が上がる」ものではなく、徴収するかどうかを決める要件そのもの。
   // 渡さなければ介護保険なしで計算して200を返していたが、それは「40歳未満」という
@@ -2332,6 +2363,7 @@ app.get('/v1/annual-cost', (c) => {
   const birth = birthRaw === undefined ? null : parseDate(birthRaw);
   if (birthRaw !== undefined && !birth)
     return bad(c, '「birth_date」はYYYY-MM-DD形式の日付で渡してください。');
+  { const e = badBirthDate(c, birth); if (e) return e; }
   if (ageRaw === undefined && birthRaw === undefined)
     return bad(c, '「age」か「birth_date」のどちらかが必要です。',
       '介護保険法第9条は年齢そのものを、介護保険料がかかるかどうかの基準にしています。年齢が無ければ、40歳以上65歳未満の人について年額が過小になります。',
@@ -2899,6 +2931,7 @@ app.get('/v1/bonus-insurance', (c) => {
   const birth = birthRaw === undefined ? null : parseDate(birthRaw);
   if (birthRaw !== undefined && !birth)
     return bad(c, '「birth_date」はYYYY-MM-DD形式の日付で渡してください。');
+  { const e = badBirthDate(c, birth); if (e) return e; }
 
   // 賞与にも同じ法理が働く。月次だけ直して賞与を残すと、片方だけ正しい状態になる。
   if (ageRaw === undefined && birthRaw === undefined)
@@ -2955,6 +2988,7 @@ app.get('/v1/age-milestones', (c) => {
   if (unknownQ) return unknownQ;
 
   const birth = parseDate(c.req.query('birth_date'));
+  { const e = badBirthDate(c, birth); if (e) return e; }
   if (!birth)
     return bad(c, 'クエリパラメータ「birth_date」は必須で、YYYY-MM-DD形式の日付で渡してください。');
   const asOfRaw = c.req.query('as_of');

@@ -82,7 +82,7 @@ footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color
 <p>発効日は都道府県ごとに違います。令和7年度の秋田県は <span class="n">1,031円</span>で、発効は <span class="n">2026-03-31</span>。「10月に一律」と実装すると半年近く違う額を使い続けます。</p>
 
 <h2>答えには根拠が付きます</h2>
-<p>条文名を挙げて終わりにせず、引用している条項を同梱しているので、<code>?include=statute_text</code> で<strong>実際の文言</strong>まで取れます。実務の略称(健保法43条、厚年法81条の2、徴収法11条)も解決します。</p>
+<p>健康保険法・厚生年金保険法・徴収法など<strong>8法令</strong>の条項を同梱しているので、その範囲は <code>?include=statute_text</code> で<strong>実際の文言</strong>まで取れます。実務の略称(健保法43条、厚年法81条の2、徴収法11条)も解決します。労働基準法や所得税法のように同梱していない法令は、<strong>推測した本文を返さずに断り、e-Gov の該当条文へ案内します。</strong></p>
 <pre><code>curl "${BASE}/v1/statute?ref=健康保険法第43条"</code></pre>
 
 <h2>数字の出どころ</h2>
@@ -94,7 +94,7 @@ footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color
 <tr><th>祝日</th><td>内閣府</td></tr>
 <tr><th>改定の規則</th><td>e-Gov 法令検索、日本年金機構</td></tr>
 </table>
-<p>すべて公式資料から機械的に抽出し、<strong>そこに印刷されている値と突き合わせて</strong>います。協会けんぽの保険料額表と250通りの都道府県×等級、国税庁の月額表の公表2,079セル全部を照合し、変更のたびに <span class="n">4,349件</span> の検証を実行します。</p>
+<p>すべて公式資料から機械的に抽出し、<strong>そこに印刷されている値と突き合わせて</strong>います。協会けんぽの保険料額表と250通りの都道府県×等級、国税庁の月額表の公表2,079セル全部を照合し、変更のたびに <span class="n">4,420件</span> の検証を実行します。</p>
 <p><a href="/v1/data-freshness">各データの収録範囲と次の改定時期</a>を返すので、古くなったことが黙って進行しません。収録範囲の外の日付は、古い数字を返さずに断ります。</p>
 
 <h2>料金</h2>

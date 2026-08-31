@@ -66,6 +66,7 @@ const get = async (p, attempt = 0) => {
   }
 };
 
+let CLAIMED_ASSERTIONS = null;
 let pass = 0, fail = 0;
 const failures = [];
 // The suite is I/O bound at roughly 90ms per request against a local wrangler,
@@ -4797,9 +4798,42 @@ for (const [p, want, label] of [
   // 表明の数は走るたびに増える。README が下回っているのは古い、上回っているのは嘘。
   const claimedAssertions = claimed(/([\d,]+) assertions/);
   ok(claimedAssertions !== null, 'README states how many assertions back the figures');
-  ok(claimedAssertions <= pass + fail + 60 && claimedAssertions >= (pass + fail) - 400,
-     'and that number is close to what the suite actually runs',
-     `README ${claimedAssertions} / 実際 ${pass + fail} 前後`);
+  // 実数との突き合わせは**スイートの最後**でやる。ここで比べると、まだ走って
+  // いない分だけ必ず足りない。-400〜+60 という妙な許容幅はその穴埋めで、
+  // その幅の中で5面が別々の数字に散らばっても緑のままだった。
+  CLAIMED_ASSERTIONS = claimedAssertions;
+
+  // **同じ事実に5つの違う数字が載っていた。**記事4,372・出品文4,320・
+  // README 4,339・着地頁 4,349、実際は 4,383。全部この幅(-400〜+60)に
+  // 収まっていたので、この検査は5面ぜんぶ緑にしていた。
+  //
+  // 何件通しているかは製品の信頼性の根拠なので、**面ごとに違うのがいちばん困る。**
+  // 近いかどうかではなく、全面が同じ数を名乗ることを見る。
+  // 揃えるのは `python scripts/sync-counts.py <数>`。
+  const COUNT_SURFACES = [
+    ['README.md', /\*\*([\d,]+) assertions\*\*/],
+    ['mcp/README.md', /\*\*([\d,]+)件\*\* の検証/],
+    ['mcp/README.en.md', /\*\*([\d,]+) assertions\*\*/],
+    ['src/landing.ts', /<span class="n">([\d,]+)件<\/span> の検証/],
+    ['recipes/jp-payroll/rapidapi-docs.md', /\*\*変更のたびに([\d,]+)件の表明\*\*/],
+    ['docs/articles/qiita-rate-table.md', /\*\*([\d,]+)件\*\* の検証/],
+  ];
+  const claims = [];
+  for (const [f, re_] of COUNT_SURFACES) {
+    let text = null;
+    try { text = await readFile(new URL(`../${f}`, import.meta.url), 'utf8'); }
+    catch { /* 下で落とす */ }
+    ok(text !== null, `検証数を名乗る ${f} が実在する`);
+    if (text === null) continue;
+    const m = re_.exec(text);
+    ok(m !== null, `${f} が検証数を名乗っている`);
+    if (m) claims.push([f, Number(m[1].replace(/,/g, ''))]);
+  }
+  const distinct = [...new Set(claims.map(([, n]) => n))];
+  ok(distinct.length === 1,
+     '検証数を名乗る面が全部同じ数を言う',
+     distinct.length === 1 ? `${distinct[0]} で ${claims.length} 面一致`
+       : claims.map(([f, n]) => `${f.split('/').pop()}:${n}`).join(' / '));
 
   // 同じ数字が2箇所に出るので、両方が同じことを言っていること。
   const allAssertionMentions = [...rootReadme.matchAll(/([\d,]+) assertions/g)]
@@ -5247,6 +5281,91 @@ for (const [p, want, label] of [
   // 宣伝している値段が、製品が言う値段と同じであること。
   ok(qiita.includes('月4ドル'), '記事の価格が課金点の文面と同じ');
 }
+{
+  // **片方だけ厳しい検証は、緩いほうから入られる。**
+  //
+  // 利用者として叩いて見つけた: `age` は 0〜120 で弾くのに、同じことを意味する
+  // `birth_date` は形式しか見ていなかった。`birth_date=2099-01-01` は 200 を返し、
+  // 給与明細を組み立て、/v1/age-milestones は `age: -73` と答えたうえで
+  // 健康保険と厚生年金を「加入」と判定した。1999 を 2099 と打つだけで起きる。
+  for (const p of [
+    '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&birth_date=2099-01-01',
+    '/v1/annual-cost?prefecture=Tokyo&monthly_salary=300000&birth_date=2099-01-01',
+    '/v1/bonus-insurance?prefecture=Tokyo&bonus=500000&birth_date=2099-01-01',
+    '/v1/age-milestones?birth_date=2099-01-01',
+  ]) {
+    const r = await get(p);
+    ok(r.status === 400 && r.body?.code === 'invalid_request',
+       `未来の生年月日を断る ${p.split('?')[0]}`, `${r.status} ${r.body?.code}`);
+    ok(/未来の日付/.test(r.body?.error ?? ''), 'and says which way it is wrong');
+  }
+
+  // 打ち間違いの正体を言うこと。「形式が違う」では直せない。
+  const one = await get('/v1/age-milestones?birth_date=2099-01-01');
+  ok(/2099/.test(one.body?.hint ?? '') && /age/.test(one.body?.hint ?? ''),
+     'and the hint names the year and the age rule', (one.body?.hint ?? '').slice(0, 60));
+
+  // 120歳より前も、age の上限と揃える。
+  const old = await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&birth_date=1850-01-01');
+  ok(old.status === 400, '120歳を超える生年月日も断る', String(old.status));
+
+  // **正しい生年月日を壊していないこと。**断る側に寄せすぎると製品が死ぬ。
+  const good = await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&birth_date=1986-04-01');
+  ok(good.status === 200 && good.body?.totals?.social_insurance_combined > 0,
+     'そして普通の生年月日はそのまま通る', String(good.status));
+
+  // as_of を渡したときは、その日を基準にすること。過去の給与を再計算する人がいる。
+  const past = await get(
+    '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&birth_date=2026-06-01&as_of=2026-05-01');
+  ok(past.status === 400, 'as_of より後の生年月日は、その基準で断る', String(past.status));
+}
+
+{
+  // **「全部同梱」と書いてあったが、38本中13本は引けなかった。**
+  //
+  // 利用者として使って見つけた。記事と出品文と着地頁が「引用している条項は
+  // 全部同梱してある」と言い、労働基準法第37条(残業の記事を読んだ人が
+  // まず試す条文)は out_of_coverage だった。8法令しか収録していないのは
+  // 設計どおりで、断り方も正しい。**間違っていたのは売り文句のほう。**
+  //
+  // 収録数が変われば文面も変わる。数を数えて突き合わせる。
+  const corpus = JSON.parse(
+    await readFile(new URL('../src/data/statutes.json', import.meta.url), 'utf8'));
+  const lawCount = Object.keys(corpus.laws).length;
+  ok(lawCount >= 5, '条文の収録法令を数えられている', `${lawCount} 法令`);
+
+  for (const f of ['docs/articles/zenn-payroll-traps.md',
+                   'recipes/jp-payroll/rapidapi-docs.md',
+                   'src/landing.ts']) {
+    let text = null;
+    try { text = await readFile(new URL(`../${f}`, import.meta.url), 'utf8'); }
+    catch { /* 下で落とす */ }
+    ok(text !== null, `条文の説明を持つ ${f} が実在する`);
+    if (text === null) continue;
+    ok(!/引用している条項は全部同梱/.test(text),
+       `${f} が「全部同梱」と言っていない`);
+    ok(text.includes(`${lawCount}法令`),
+       `${f} が収録法令数を正しく名乗る`, `${lawCount}法令`);
+  }
+
+  // そして断り方が実際に案内になっていること。断るだけでは行き止まり。
+  const r = await get(`/v1/statute?ref=${encodeURIComponent('労働基準法第37条')}`);
+  ok(r.status === 400 && r.body?.code === 'out_of_coverage',
+     '同梱していない条文は推測せず断る', `${r.status} ${r.body?.code}`);
+  ok(/e-gov/i.test(r.body?.hint ?? ''), 'and sends the reader to e-Gov');
+}
+
+{
+  // ここが最後。pass + fail が確定しているのはこの位置だけ。
+  // 名乗る数は、実際に通した数と同じでなければならない。**近いではなく同じ。**
+  // 揃えるのは `python scripts/sync-counts.py <数>`(全12箇所を1回で書き換える)。
+  const actual = pass + fail + 1; // この検査自身を数に入れる
+  ok(CLAIMED_ASSERTIONS !== null, '検証数の名乗りを読めている');
+  ok(CLAIMED_ASSERTIONS === actual,
+     '名乗っている検証数が、実際に通した数と一致する',
+     `名乗り ${CLAIMED_ASSERTIONS} / 実際 ${actual} — python scripts/sync-counts.py ${actual}`);
+}
+
 
 
 
