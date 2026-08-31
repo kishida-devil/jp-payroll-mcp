@@ -1,0 +1,8 @@
+# cmd.exe は .cmd をラベルと goto で読む。LF に正規化されると壊れる。
+# 実際に警告が出た: "CRLF will be replaced by LF the next time Git touches it"。
+# クローンし直した人の手元で動かなくなるので、CRLF のまま固定する。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# シェルスクリプトは逆。CRLF が混ざると bash が `\r` をコマンド名に含める。
+*.sh text eol=lf
