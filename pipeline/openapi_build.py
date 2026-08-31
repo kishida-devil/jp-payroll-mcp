@@ -128,6 +128,21 @@ def build_spec(recipe: dict[str, Any]) -> dict[str, Any]:
                     "content": {"application/json": {"schema": {"type": "object"}}},
                 },
                 "400": {"description": "Invalid or missing query parameter"},
+                # 経路はあるがメソッドが違うときに返る。仕様書に無い応答は、
+                # 生成したクライアントが扱えない。GET /v1/payroll/batch を
+                # ブラウザで開いた人が最初に当たるのはこれ。
+                "405": {
+                    "description": (
+                        "The path exists but not for this method. "
+                        "The Allow header lists what it takes."
+                    ),
+                },
+                "422": {
+                    "description": (
+                        "The date asked for is outside the bundled data. "
+                        "Refused rather than answered with a stale figure."
+                    ),
+                },
             },
         }
         method = ep.get("method", "get").lower()

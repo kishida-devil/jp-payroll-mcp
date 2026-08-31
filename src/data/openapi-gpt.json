@@ -34,6 +34,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -96,6 +102,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -158,6 +170,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -225,6 +243,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -297,6 +321,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -533,6 +563,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -615,6 +651,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -697,6 +739,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -773,6 +821,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -859,6 +913,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -945,6 +1005,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1007,6 +1073,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1069,6 +1141,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1155,6 +1233,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1242,6 +1326,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1358,6 +1448,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1470,6 +1566,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1572,6 +1674,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1709,6 +1817,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -1820,6 +1934,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2029,6 +2149,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2125,6 +2251,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2237,6 +2369,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2329,6 +2467,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2411,6 +2555,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2573,6 +2723,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2695,6 +2851,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2827,6 +2989,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2909,6 +3077,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [
@@ -2981,6 +3155,12 @@
      },
      "400": {
       "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
      }
     },
     "parameters": [

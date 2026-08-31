@@ -160,7 +160,7 @@ formula.
 | Public holidays | 内閣府 |
 | Revision rules | e-Gov 法令検索, 厚生労働省 法令等データベース, 日本年金機構 |
 
-The API behind these tools runs **4,420 assertions** on every change. The core of it
+The API behind these tools runs **4,440 assertions** on every change. The core of it
 compares computed premiums against the amounts printed in the 協会けんぽ workbook for
 250 prefecture × grade combinations, and against all 2,079 published cells of the
 National Tax Agency withholding table.

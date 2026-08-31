@@ -39,7 +39,12 @@ try {
  */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const ATTEMPTS = 5;
+// 5回・計3.75秒では足りなかった。この負荷で workerd は実際に落ちるとファイルの
+// 冒頭に自分で書いてあるのに、復帰を待ちきれずに2回スイートを落としている
+// (3,500件目と3,750件目)。7回・計約16秒に伸ばす。**待つほうが、落ちるより安い。**
+// それでも戻らないなら本当に死んでいるので、そのときは落ちてよい。
+const ATTEMPTS = 7;
+const BACKOFF_CAP_MS = 4000;
 
 // 本番に対して流すと無料枠のレート制限に当たる。当たったとき、いままでは
 // 数十行あとで `Cannot read properties of undefined (reading 'map')` になっていた。
@@ -59,7 +64,7 @@ const get = async (p, attempt = 0) => {
     if (attempt < ATTEMPTS - 1) {
       // 待たずに retry すると、3回とも再起動中に着弾して同じ失敗になる。
       // workerd はこの負荷で実際にクラッシュし、復帰まで1秒前後かかる。
-      await sleep(250 * 2 ** attempt);
+      await sleep(Math.min(BACKOFF_CAP_MS, 250 * 2 ** attempt));
       return get(p, attempt + 1);
     }
     throw new Error(`GET ${p} failed after ${ATTEMPTS} attempts: ${e?.message ?? e}`);
@@ -96,7 +101,7 @@ const tryFetch = async (url, init, attempt = 0) => {
     return await fetch(url, { signal: AbortSignal.timeout(30000), ...init });
   } catch (e) {
     if (attempt < ATTEMPTS - 1) {
-      await sleep(250 * 2 ** attempt);
+      await sleep(Math.min(BACKOFF_CAP_MS, 250 * 2 ** attempt));
       return tryFetch(url, init, attempt + 1);
     }
     throw new Error(`${init?.method ?? 'GET'} ${url} failed after ${ATTEMPTS} attempts: ${e?.message ?? e}`);
@@ -3796,6 +3801,14 @@ for (const [p, want, label] of [
   // 語長ではなく機能語で数える。ただしパラメータ名・URL・ヘッダ値は数えない。
   // そこを数えたせいで「No.2585」「from=&to=」が英文と誤判定されていた。
   const FUNC = /\b(the|is|are|was|an|of|in|on|to|and|for|not|this|that|it|be|with|from|only|when|must|needs?|cannot|its|but|by|or|at|you|your|has|have|does|do|so|if|any|all|each|per|than|then|there|here|which|what|why|how|into|over|under|between|because|rather|instead|whether|while|would|should|could|may|can|will|use|pass|got|see|add)\b/gi;
+  // **掃引が引用符を取り違える。**`allowed.has('POST') && !allowed.has('GET')` で、
+  // 'POST' の閉じ引用符と 'GET' の開き引用符を対にして、間のコード
+  // `) && !allowed.has(` を散文として拾った。`has` が機能語に入っているので英文判定になる。
+  // 私の書き方の問題ではなく、行に文字列リテラルが2つ並べば誰でも踏む。
+  //
+  // 散文には現れない記号を持つものは、文ではなくコード片として除く。
+  // 「英語を見逃さない」ためのものなので、除外はここだけに絞る。
+  const CODEISH = /&&|\|\||=>|!==|===|\)\s*\{|;\s*$|^\s*\)/;
   const NOISE = /https?:\/\/\S+|\$\{[^}]*\}?|\/v1\/[\w/-]+|\b[a-z][a-z_-]*=\S*|No\.\d+|\b[A-Z]\d{6,}\b|[「"][a-z_]+[」"]/g;
   const JA = /[ぁ-んァ-ヶ一-龥]/;
   const KANA = /[ぁ-んァ-ヶ]/;
@@ -3857,6 +3870,7 @@ for (const [p, want, label] of [
         if (/[ぁ-んァ-ヶ][a-z]/.test(t)) frag.push(at);
         const clean = t.replace(NOISE, ' ');
         if (!JA.test(t)) {
+          if (CODEISH.test(t)) continue;   // 引用符の取り違えで拾ったコード片
           if ((clean.match(FUNC) ?? []).length >= 1) english.push(at);
         } else if (KANA.test(t)) {
           // 和文に混じる英字は、識別子か列挙値でなければ散文の残り。
@@ -5353,6 +5367,75 @@ for (const [p, want, label] of [
   ok(r.status === 400 && r.body?.code === 'out_of_coverage',
      '同梱していない条文は推測せず断る', `${r.status} ${r.body?.code}`);
   ok(/e-gov/i.test(r.body?.hint ?? ''), 'and sends the reader to e-Gov');
+}
+
+{
+  // **「今日」に依存する答えを、日付境界を越えて配ってはいけない。**
+  //
+  // 全経路が max-age=3600 + stale-while-revalidate=86400 だった。合わせて25時間。
+  // 日付を渡さない呼び出しは「今日」で計算するので、10月1日に最低賃金が改定される日、
+  // 9月30日にキャッシュされた令和7年度の額が配られる。本来その日付は422で断る。
+  // 「古くなったことが黙って進行しません」と書いている製品でそれは起こせない。
+  //
+  // 日付を明示した呼び出しは時間に依存しないので、長く持たせてよい。
+  // get() は本文しか返さないので、ここだけヘッダを直接見る。
+  const cc = async (p) =>
+    (await tryFetch(BASE + p)).headers.get('cache-control') ?? '';
+
+  for (const p of [
+    '/v1/minimum-wage?prefecture=Tokyo',
+    '/v1/age-milestones?birth_date=1986-04-01',
+    '/v1/annual-leave?hired_on=2025-04-01',
+    '/v1/data-freshness',
+  ]) {
+    const h = await cc(p);
+    ok(!/stale-while-revalidate/.test(h),
+       `日付を渡さない ${p.split('?')[0]} は stale を配らない`, h);
+    ok(/max-age=\d+/.test(h), 'and still caches for a while', h);
+  }
+
+  for (const p of [
+    '/v1/minimum-wage?prefecture=Tokyo&date=2015-06-01',
+    '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&as_of=2026-06-01',
+  ]) {
+    const h = await cc(p);
+    ok(/stale-while-revalidate/.test(h),
+       `日付を渡した ${p.split('?')[0]} は長く持たせる`, h);
+  }
+}
+
+{
+  // **経路はあるのに「ありません」と答えていた。**
+  //
+  // `GET /v1/payroll/batch` が 404「そのエンドポイントはありません」を返していた。
+  // 一括処理は有料機能で、説明を読んだ人がブラウザで開くのはまさにこの経路。
+  // 存在しないと言われれば壊れていると判断して離脱する。
+  // RapidAPI の出品に誤ったホストを書いて購読者を失ったのと同じ形。
+  for (const [method, path, why] of [
+    ['GET', '/v1/payroll/batch', 'POST専用の経路をGETで'],
+    ['POST', '/v1/payroll', 'GET専用の経路をPOSTで'],
+  ]) {
+    const r = await tryFetch(BASE + path, { method });
+    const body = await r.json().catch(() => ({}));
+    ok(r.status === 405, `${why} は405を返す`, `${r.status} ${body.code}`);
+    ok(body.code === 'method_not_allowed', 'and says why', body.code);
+    ok(/経路自体は存在します/.test(body.hint ?? ''),
+       'and that the path itself exists', (body.hint ?? '').slice(0, 40));
+    ok((r.headers.get('allow') ?? '').length > 0,
+       'and sends Allow so a client can correct itself', r.headers.get('allow') ?? '');
+  }
+
+  // 本当に無い経路は、今までどおり404。**区別が付かなければ直した意味がない。**
+  const gone = await tryFetch(BASE + '/v1/definitely-not-here');
+  const gb = await gone.json().catch(() => ({}));
+  ok(gone.status === 404 && gb.code === 'not_found',
+     '存在しない経路は404のまま', `${gone.status} ${gb.code}`);
+
+  // 列挙に載せる。載っていない code は、呼び手にとって存在しないのと同じ。
+  const enums = (await get('/v1/enums')).body;
+  const codes = (enums.error_codes ?? []).map((x) => x.value ?? x);
+  ok(codes.includes('method_not_allowed'),
+     'そして新しい code が /v1/enums に載っている', codes.join(',').slice(0, 60));
 }
 
 {

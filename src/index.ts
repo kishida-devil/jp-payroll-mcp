@@ -86,6 +86,16 @@ const app = new Hono<{ Bindings: Env }>();
 app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'] }));
 
 /**
+ * `/cdn-cgi/*` には触らない。
+ *
+ * 本番では Cloudflare が手前で処理するので届かないが、`wrangler dev` では
+ * `/cdn-cgi/ProxyWorker/pause` と `/play` が再読込の合図としてアプリに届く。
+ * それを 404 で返し、構造化ログにも積んでいた。開発ログが実際の呼び出しと
+ * 混ざるうえ、合図を横取りしている。何もせず素通しする。
+ */
+app.all('/cdn-cgi/*', (c) => c.body(null, 204));
+
+/**
  * Which channel a request came through. Without this the question "is the MCP
  * server actually bringing anyone in?" has no answer — every request looks alike
  * in the dashboard, and a channel that is working is indistinguishable from one
@@ -136,6 +146,10 @@ const FREE_TIER = {
 // RapidAPI の価格表に出ているボタンの名前そのもの。訳すと、リンクを踏んだ人が
 // 着いた画面に「Pro」しかなく、言葉が一致しなくなる。だから英語のまま置く。
 const PLAN_NAME = 'Pro';
+
+// HTTPヘッダの名前。訳せないので定数にして参照する。和文に生で書くと
+// 英語掃引が散文の残りとして拾う(PLAN_NAME と同じ扱い)。
+const ALLOW_HEADER = 'Allow';
 
 const UPGRADE = {
   where: 'https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants',
@@ -299,8 +313,27 @@ app.use('*', async (c, next) => {
   }
   // Reference data changes on known dates (rates in March/April, minimum wage in
   // October), and a fix should reach callers the same day rather than a day late.
-  // An hour is long enough to absorb bursts without pinning stale figures.
-  c.header('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  //
+  // **日付を渡さなかった呼び出しは「今日」に依存する。**それを25時間
+  // (max-age 1時間 + stale-while-revalidate 24時間)持たせると、答えが変わる日を
+  // またいで古い答えが配られる。10月1日に最低賃金が改定される日、9月30日に
+  // キャッシュされた令和7年度の額が配られてしまう。本来は422で断る日付なのに。
+  // 「古くなったことが黙って進行しません」と書いている製品でそれは起こせない。
+  //
+  // 日付を明示した呼び出しは時間に依存しないので、長く持たせてよい。
+  // 明示しなかった呼び出しだけ、次のJST零時までで切る。
+  const PINS = ['as_of', 'date', 'month', 'year', 'from', 'to', 'left_on', 'joined_on'];
+  const pinned = PINS.some((k) => c.req.query(k) !== undefined);
+  if (pinned) {
+    c.header('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  } else {
+    // JST の次の零時まで。境界を越えたら必ず取り直させる。
+    const now = Date.now();
+    const jst = now + 9 * 3600_000;
+    const untilMidnight = 86_400_000 - (jst % 86_400_000);
+    const secs = Math.max(60, Math.min(3600, Math.floor(untilMidnight / 1000)));
+    c.header('Cache-Control', `public, max-age=${secs}`);
+  }
 });
 
 /**
@@ -3156,6 +3189,7 @@ app.get('/v1/enums', (c) => {
       { value: 'unknown_parameter', description: 'このエンドポイントが受け付けないクエリパラメータです。黙って捨てずに拒否します。捨てられたパラメータは、もっともらしい誤った数字を生むためです。' },
       { value: 'out_of_coverage', description: '入力は正しいものの、このAPIが公表している範囲の外です。' },
       { value: 'not_found', description: 'そのエンドポイントはありません。' },
+      { value: 'method_not_allowed', description: `経路はありますが、そのHTTPメソッドでは呼べません。${ALLOW_HEADER} ヘッダに使えるものが入ります。` },
       { value: 'internal_error', description: '想定していない失敗です。' },
     ],
     prefectures: '47件すべては GET /v1/prefectures を見てください。',
@@ -3167,7 +3201,45 @@ app.get('/v1/data-freshness', (c) => {
   return (
   c.json(freshnessReport(new Date())));
 });
-app.notFound((c) => c.json({ error: 'そのエンドポイントはありません。', code: 'not_found', hint: 'エンドポイントの一覧は GET / を見てください。' }, 404));
+/**
+ * 経路はあるがメソッドが違う場合を、404 と区別する。
+ *
+ * `GET /v1/payroll/batch` が「そのエンドポイントはありません」を返していた。
+ * **一括処理は有料機能で、説明を読んだ人がブラウザで開くのはこの経路。**
+ * 存在しないと言われれば、壊れていると判断して離脱する。
+ * 以前 RapidAPI の出品に誤ったホストを書いて購読者を失ったのと同じ形。
+ *
+ * 経路表は Hono が持っているので、そこから引く。手で持つと必ずずれる。
+ */
+const METHODS_BY_PATH = new Map<string, Set<string>>();
+for (const r of app.routes) {
+  if (r.method === 'ALL') continue;
+  const s = METHODS_BY_PATH.get(r.path) ?? new Set<string>();
+  s.add(r.method.toUpperCase());
+  METHODS_BY_PATH.set(r.path, s);
+}
+
+app.notFound((c) => {
+  const allowed = METHODS_BY_PATH.get(new URL(c.req.url).pathname);
+  if (allowed && allowed.size && !allowed.has(c.req.method.toUpperCase())) {
+    // 文面は先に組む。テンプレートの途中に式を挟むと、英語掃引がコード片を
+    // 散文として拾う(実際 `) && !allowed.has(` を英文として報告された)。
+    const sorted = [...allowed].sort();
+    const postOnly = allowed.has('POST') && !allowed.has('GET');
+    const why = postOnly ? '一括処理は本文(JSON)で人数分を渡すため POST です。' : '';
+    c.header(ALLOW_HEADER, sorted.join(', '));
+    return c.json({
+      error: `このエンドポイントは ${c.req.method} を受け付けません。`,
+      code: 'method_not_allowed',
+      hint: `${sorted.join('、')} で呼んでください。経路自体は存在します。${why}`,
+    }, 405);
+  }
+  return c.json({
+    error: 'そのエンドポイントはありません。',
+    code: 'not_found',
+    hint: 'エンドポイントの一覧は GET / を見てください。',
+  }, 404);
+});
 app.onError((e, c) => c.json({ error: 'サーバ側で処理に失敗しました。', code: 'internal_error', detail: String(e?.message ?? e) }, 500));
 
 export default app;

@@ -52,7 +52,11 @@ case "${1:-count}" in
     kill_all
     listeners=$(netstat -ano | grep ":$PORT" | grep -c LISTENING)
     if [ "$listeners" != "0" ]; then echo "落としきれていない: $listeners"; exit 1; fi
-    npx wrangler dev --port "$PORT" --local >/dev/null 2>&1 &
+    # **出力を捨てていたので、落ちた理由が誰にも分からなかった。**
+    # スイートが3,500〜3,750件付近で2回連続で死んだとき、手がかりがゼロだった。
+    # 残す。場所は固定で、上書きしていく(溜めても読まない)。
+    : "${DEV_LOG:=${TMPDIR:-/tmp}/jp-payroll-dev.log}"
+    npx wrangler dev --port "$PORT" --local >"$DEV_LOG" 2>&1 &
     for _ in $(seq 1 60); do
       curl -s --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/v1/data-freshness" && break
       sleep 1
