@@ -14,7 +14,28 @@
 # このスクリプトは秘密を読まないし、保存もしない。
 set -u
 
-ROOT="D:/Claude/tsumugi"
+# **どの bash で起動されても動くようにする。**
+# `bash publish.sh` は、PATH の引き当て次第で WSL の bash が起動する。
+# WSL から見ると D:/Claude/tsumugi は存在せず(/mnt/d/... になる)、
+# 実際に `cd: D:/Claude/tsumugi: No such file or directory` で止まった。
+# 場所を決め打ちせず、自分がどこに置かれているかから割り出す。
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# WSL だと Windows 側の npm / gh / wrangler / mcp-publisher.exe が揃わない。
+# 中途半端に走らせるより、入口を教えて止める。
+case "$(uname -s)" in
+  Linux*)
+    cat <<'WSL'
+
+WSL の bash で起動されています。Windows 側の npm / gh / wrangler が使えません。
+かわりに、cmd か PowerShell でこれを実行してください:
+
+    D:\Claude\tsumugi\scripts\publish.cmd
+
+WSL
+    exit 1;;
+esac
+
 MCP="$ROOT/mcp"
 EXE="$MCP/mcp-publisher.exe"
 REPO="kishida-devil/jp-payroll-mcp"

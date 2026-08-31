@@ -27,18 +27,24 @@
 **下の6行をまとめて貼ってください(2〜3分)。** cmd でも PowerShell でも動きます。
 
 ```
-bash D:/Claude/tsumugi/scripts/publish.sh
+D:\Claude\tsumugi\scripts\publish.cmd
 ```
 
-この1行で7つ全部やります。**先に全部空打ちしてから本番を叩き、途中で落ちたらそこで止めます。**
+**cmd でも PowerShell でも、この1行で7つ全部やります。**
+先に全部空打ちしてから本番を叩き、途中で落ちたらそこで止めます。
 `--check` を付けると空打ちだけで終わります。
 
-途中で npm の2FAコードと、GitHub の機器認証コードを聞かれます。手元で入力してください。
-最後に答え合わせまで自動で走ります。
+`bash publish.sh` と打つと、PATH の引き当てで **WSL の bash** が起動することがあります。
+WSL からは `D:` が見えず `cd: No such file or directory` で止まります。
+`publish.cmd` は Git Bash を名指しするので、その事故が起きません。
 
-<details><summary>1行ずつ手で叩く場合</summary>
+**npm の認証は切れていることがあります**(前回の E404 の正体はこれでした)。
+事前確認で掴んで本番前に止まるので、言われたら先にこれを実行してください。
 
 ```
+npm login --registry=https://registry.npmjs.org/
+```
+
 cd D:\Claude\tsumugi
 git push
 npx wrangler deploy
