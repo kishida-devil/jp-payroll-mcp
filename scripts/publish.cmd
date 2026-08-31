@@ -1,35 +1,56 @@
 @echo off
-rem 公開の入口。bash を自分で選ばない。
+rem Entry point for publishing. ASCII only on purpose.
 rem
 rem   D:\Claude\tsumugi\scripts\publish.cmd
-rem   D:\Claude\tsumugi\scripts\publish.cmd --check   空打ちだけ
+rem   D:\Claude\tsumugi\scripts\publish.cmd --check
 rem
-rem `bash publish.sh` は PATH の引き当て次第で WSL の bash を起動する。
-rem WSL からは D: が見えず、Windows 側の npm / gh も無い。
-rem ここで Git Bash を名指しする。
+rem Three things broke the first version of this file, all of them cmd.exe rules:
+rem   1. It was UTF-8. cmd reads .cmd in the OEM code page (932 here), so the
+rem      Japanese comments became mojibake and were executed as commands.
+rem   2. %ProgramFiles(x86)% inside a for ( ... ) block: the ) in the variable
+rem      name closes the block early.
+rem   3. Both of the above broke `set "SH=%~dp0publish.sh"`, so bash was called
+rem      with an empty argument.
+rem Hence: ASCII, no parenthesised blocks, no (x86) variable.
 setlocal
 
 set "SH=%~dp0publish.sh"
+if not exist "%SH%" goto :nosh
 
-for %%B in (
-  "%ProgramFiles%\Git\bin\bash.exe"
-  "%ProgramFiles(x86)%\Git\bin\bash.exe"
-  "%LocalAppData%\Programs\Git\bin\bash.exe"
-) do (
-  if exist %%B (
-    "%%~B" "%SH%" %*
-    exit /b %ERRORLEVEL%
-  )
-)
+set "BASH=C:\Program Files\Git\bin\bash.exe"
+if exist "%BASH%" goto :run
 
+set "BASH=C:\Program Files (x86)\Git\bin\bash.exe"
+if exist "%BASH%" goto :run
+
+set "BASH=%LocalAppData%\Programs\Git\bin\bash.exe"
+if exist "%BASH%" goto :run
+
+set "BASH=C:\Program Files\Git\usr\bin\bash.exe"
+if exist "%BASH%" goto :run
+
+goto :nobash
+
+:run
+"%BASH%" "%SH%" %*
+exit /b %ERRORLEVEL%
+
+:nosh
 echo.
-echo Git Bash が見つかりませんでした。
-echo 探した場所:
-echo   %ProgramFiles%\Git\bin\bash.exe
-echo   %ProgramFiles(x86)%\Git\bin\bash.exe
+echo publish.sh not found next to this file:
+echo   %SH%
+echo.
+exit /b 1
+
+:nobash
+echo.
+echo Git Bash was not found. Looked in:
+echo   C:\Program Files\Git\bin\bash.exe
+echo   C:\Program Files (x86)\Git\bin\bash.exe
 echo   %LocalAppData%\Programs\Git\bin\bash.exe
+echo   C:\Program Files\Git\usr\bin\bash.exe
 echo.
-echo Git for Windows の bash.exe の場所が分かれば、そこから直接:
-echo   "C:\path\to\bash.exe" "%SH%"
+echo If Git for Windows is installed elsewhere, run it directly:
+echo   "C:\your\path\bash.exe" "%SH%"
 echo.
 exit /b 1
