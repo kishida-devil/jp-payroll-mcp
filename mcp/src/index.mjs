@@ -188,6 +188,24 @@ const server = new McpServer(
   { instructions: INSTRUCTIONS },
 );
 
+/**
+ * registerTool を包んで、**宣言していない引数を黙って捨てないようにする。**
+ *
+ * SDK は inputSchema に無いキーを黙って落とす。落とされたことは呼び手に伝わらない。
+ * 実際にこれで間違った答えが出た: `get_minimum_wage` の日付引数だけ名前が `date` で、
+ * 兄弟の6本は `as_of`。`as_of` と書いて 2015 年を指定したつもりの呼び出しが、
+ * 何の警告もなく 2025 年度の額(1,226円/正しくは888円)を返していた。
+ *
+ * HTTP API 側は同じものを 400 unknown_parameter で断っている
+ * (「黙って捨てられたパラメータは、もっともらしい誤った数字を生むためです」)。
+ * **ラップしている層のほうが弱いのはおかしい。**同じ扱いにする。
+ */
+const TOOL_ARGS = new Map();
+const registerTool = (name, def, handler) => {
+  TOOL_ARGS.set(name, new Set(Object.keys(def.inputSchema ?? {})));
+  server.registerTool(name, def, handler);
+};
+
 // ---------------------------------------------------------------------------
 // Shared argument shapes
 // ---------------------------------------------------------------------------
@@ -218,7 +236,7 @@ const monthsArg = z.string().describe(
 // Payroll
 // ---------------------------------------------------------------------------
 
-server.registerTool('calculate_payslip', {
+registerTool('calculate_payslip', {
   title: '給与計算 — 社会保険料・源泉所得税・手取り',
   description:
     'Full monthly deduction breakdown for one employee: health insurance, long-term care, ' +
@@ -291,7 +309,7 @@ server.registerTool('calculate_payslip', {
   return call('/v1/payroll' + qs(a));
 });
 
-server.registerTool('list_workers_compensation_rates', {
+registerTool('list_workers_compensation_rates', {
   title: '労災保険率 — 事業の種類別',
   description:
     'Workers compensation (労災保険) rates by business type, and the employer premium on a ' +
@@ -310,7 +328,7 @@ server.registerTool('list_workers_compensation_rates', {
   },
 }, async (a) => call('/v1/workers-compensation' + qs(a)));
 
-server.registerTool('calculate_bonus', {
+registerTool('calculate_bonus', {
   title: '賞与の社会保険料と源泉所得税',
   description:
     'Premiums and income tax on a 賞与. Both work differently from monthly pay and are ' +
@@ -382,7 +400,7 @@ server.registerTool('calculate_bonus', {
   });
 });
 
-server.registerTool('calculate_withholding_tax', {
+registerTool('calculate_withholding_tax', {
   title: '源泉徴収税額(月額表・日額表・電算機計算の特例)',
   description:
     'Income tax to withhold from a payment, from the National Tax Agency tables. ' +
@@ -424,7 +442,7 @@ server.registerTool('calculate_withholding_tax', {
 // Standard remuneration decisions and revisions
 // ---------------------------------------------------------------------------
 
-server.registerTool('judge_monthly_revision', {
+registerTool('judge_monthly_revision', {
   title: '随時改定(月額変更届)の要否判定',
   description:
     'Decides whether a pay change forces the standard remuneration to be revised, and answers ' +
@@ -453,7 +471,7 @@ server.registerTool('judge_monthly_revision', {
   },
 }, async (a) => call('/v1/standard-remuneration/revision' + qs(a)));
 
-server.registerTool('decide_regular_remuneration', {
+registerTool('decide_regular_remuneration', {
   title: '定時決定(算定基礎届) — 4〜6月の報酬から',
   description:
     'The yearly redetermination of standard remuneration, effective each September through the ' +
@@ -482,7 +500,7 @@ server.registerTool('decide_regular_remuneration', {
   },
 }, async (a) => call('/v1/standard-remuneration/regular' + qs(a)));
 
-server.registerTool('judge_leave_end_revision', {
+registerTool('judge_leave_end_revision', {
   title: '産休・育休終了時改定(1等級差で改定)',
   description:
     'A separate route with a lower bar than 随時改定, and the one people forget. ONE grade of ' +
@@ -504,7 +522,7 @@ server.registerTool('judge_leave_end_revision', {
   },
 }, async (a) => call('/v1/standard-remuneration/leave-end' + qs(a)));
 
-server.registerTool('calculate_payroll_batch', {
+registerTool('calculate_payroll_batch', {
   title: '給与計算をまとめて — 事業所全員分と合計',
   description:
     'Runs calculate_payslip for many employees in one call and returns the run totals: gross, '
@@ -558,7 +576,7 @@ server.registerTool('calculate_payroll_batch', {
               { method: 'POST', body });
 });
 
-server.registerTool('decide_regular_remuneration_batch', {
+registerTool('decide_regular_remuneration_batch', {
   title: '定時決定(算定基礎届)をまとめて — 事業所全員分',
   description:
     'Runs the annual 定時決定 for a whole payroll in one call, and reports which employees moved ' +
@@ -604,7 +622,7 @@ server.registerTool('decide_regular_remuneration_batch', {
   },
 }, async (a) => call('/v1/standard-remuneration/regular/batch', { method: 'POST', body: a }));
 
-server.registerTool('judge_annual_average', {
+registerTool('judge_annual_average', {
   title: '年間平均による保険者算定(季節変動がある場合)',
   description:
     'For work whose April-June happens to be its busiest or quietest quarter, where the ordinary ' +
@@ -637,7 +655,7 @@ server.registerTool('judge_annual_average', {
   },
 }, async (a) => call('/v1/standard-remuneration/annual-average', { method: 'POST', body: a }));
 
-server.registerTool('lookup_standard_remuneration', {
+registerTool('lookup_standard_remuneration', {
   title: '標準報酬月額の等級照会',
   description:
     'Maps a monthly amount to its health grade (1-50) and pension grade (1-32), with the ' +
@@ -657,7 +675,7 @@ server.registerTool('lookup_standard_remuneration', {
 // Eligibility, leave and age
 // ---------------------------------------------------------------------------
 
-server.registerTool('national_insurance', {
+registerTool('national_insurance', {
   title: '国民年金・国民健康保険 — 被用者保険に入らない人の側',
   description:
     'For anyone outside employee cover: the self-employed, freelancers, people between jobs.\n\n' +
@@ -689,7 +707,7 @@ server.registerTool('national_insurance', {
   as_of: a.as_of, months: a.months, supplementary: a.supplementary,
 })));
 
-server.registerTool('calculate_annual_cost', {
+registerTool('calculate_annual_cost', {
   title: '年間の労務コスト — 賞与の上限を年度で通した額',
   description:
     'What one employee costs an employer over a year, bonuses included.\n\n' +
@@ -738,7 +756,7 @@ server.registerTool('calculate_annual_cost', {
   }));
 });
 
-server.registerTool('judge_annual_leave', {
+registerTool('judge_annual_leave', {
   title: '年次有給休暇 — 付与日数と年5日の時季指定義務',
   description:
     'Works out how many days of paid leave someone has been granted, and whether the employer ' +
@@ -777,7 +795,7 @@ server.registerTool('judge_annual_leave', {
   annual_days: a.annual_days, days_taken: a.days_taken,
 })));
 
-server.registerTool('judge_worker_type', {
+registerTool('judge_worker_type', {
   title: '被保険者区分の判定 — 四分の三基準と20時間・88,000円・学生・51人',
   description:
     'Decides whether someone is covered by health and pension insurance, and on which ' +
@@ -825,7 +843,7 @@ server.registerTool('judge_worker_type', {
   employment_months: a.employment_months,
 })));
 
-server.registerTool('check_insurance_eligibility', {
+registerTool('check_insurance_eligibility', {
   title: '入社月・退社月の保険料の要否',
   description:
     'The single most expensive month-end mistake in Japanese payroll, and one an assistant will ' +
@@ -842,7 +860,7 @@ server.registerTool('check_insurance_eligibility', {
   },
 }, async (a) => call('/v1/eligibility' + qs(a)));
 
-server.registerTool('check_leave_exemption', {
+registerTool('check_leave_exemption', {
   title: '産休・育休の保険料免除月',
   description:
     'Maternity and childcare leave look alike and behave differently. Maternity leave has no ' +
@@ -861,7 +879,7 @@ server.registerTool('check_leave_exemption', {
   },
 }, async (a) => call('/v1/leave-exemption' + qs(a)));
 
-server.registerTool('get_age_milestones', {
+registerTool('get_age_milestones', {
   title: '年齢到達日(40/65/70/75)と保険料の変化',
   description:
     'Returns the exact date each threshold is crossed and which premium starts or stops: ' +
@@ -880,7 +898,7 @@ server.registerTool('get_age_milestones', {
 // Reference data
 // ---------------------------------------------------------------------------
 
-server.registerTool('get_insurance_rates', {
+registerTool('get_insurance_rates', {
   title: '社会保険料率・雇用保険料率',
   description:
     'Health insurance, long-term care, pension and child-support rates for a prefecture, plus ' +
@@ -903,7 +921,7 @@ server.registerTool('get_insurance_rates', {
   });
 });
 
-server.registerTool('get_minimum_wage', {
+registerTool('get_minimum_wage', {
   title: '最低賃金(指定日時点)',
   description:
     'Hourly 地域別最低賃金 for a prefecture. Revisions take effect prefecture by prefecture from ' +
@@ -912,13 +930,18 @@ server.registerTool('get_minimum_wage', {
   inputSchema: {
     prefecture,
     date: z.string().optional().describe('YYYY-MM-DD. Defaults to the rate currently in force.'),
+    // **6本の兄弟ツールが as_of と呼んでいるものを、ここだけ date と呼んでいた。**
+    // 呼び手は揃っているほうに寄せる。実際 as_of で 2015 年を指定した呼び出しが
+    // 黙って捨てられ、2025年度の 1,226円 が返っていた(正しくは 888円)。
+    // 名前を変えると既存の呼び出しが壊れるので、両方受ける。
+    as_of: z.string().optional().describe('Alias for date. YYYY-MM-DD.'),
     history: z.boolean().optional().describe('Return the full history instead of one date.'),
   },
 }, async (a) => a.history
   ? call('/v1/minimum-wage/history' + qs({ prefecture: a.prefecture }))
-  : call('/v1/minimum-wage' + qs({ prefecture: a.prefecture, date: a.date })));
+  : call('/v1/minimum-wage' + qs({ prefecture: a.prefecture, date: a.date ?? a.as_of })));
 
-server.registerTool('business_days', {
+registerTool('business_days', {
   title: '祝日・営業日計算(銀行カレンダー対応)',
   description:
     'Count business days in a range, shift a date by N business days, or check one date. ' +
@@ -956,7 +979,7 @@ server.registerTool('business_days', {
   }
 });
 
-server.registerTool('validate_invoice_numbers_batch', {
+registerTool('validate_invoice_numbers_batch', {
   title: 'インボイス登録番号をまとめて形式検査',
   description:
     'Checks the National Tax Agency check digit on many qualified-invoice registration numbers ' +
@@ -977,7 +1000,7 @@ server.registerTool('validate_invoice_numbers_batch', {
   },
 }, async (a) => call('/v1/invoice-number/validate/batch', { method: 'POST', body: a }));
 
-server.registerTool('validate_corporate_number', {
+registerTool('validate_corporate_number', {
   title: '法人番号・インボイス登録番号の検証',
   description:
     'Checks the National Tax Agency check digit on a 13-digit 法人番号, or on a qualified ' +
@@ -1005,7 +1028,7 @@ server.registerTool('validate_corporate_number', {
     + qs({ number: n }));
 });
 
-server.registerTool('consumption_tax', {
+registerTool('consumption_tax', {
   title: '消費税率(日付指定・軽減税率・改定履歴)',
   description:
     'The consumption tax rate in force on a date, with the national and local parts, and the '
@@ -1015,6 +1038,9 @@ server.registerTool('consumption_tax', {
     + 'sale is charged at the rate of the original transaction, not today\'s, so the date '
     + 'matters more often than people expect. Set history to see every change with its statute.',
   inputSchema: {
+    // 6本の兄弟ツールが as_of と呼ぶものを、ここも受ける。同じ概念に2つの名前が
+    // あると、呼び手は多数派を書く。名前を変えると既存が壊れるので両方受ける。
+    as_of: z.string().optional().describe('Alias for date. YYYY-MM-DD.'),
     date: z.string().optional().describe(
       'YYYY-MM-DD. The rate in force on that day. Defaults to today.'),
     amount: z.number().optional().describe('Tax-exclusive amount in yen, to compute the tax.'),
@@ -1026,11 +1052,12 @@ server.registerTool('consumption_tax', {
   },
 }, async (a) => {
   if (a.history) return call('/v1/consumption-tax/history');
-  const { history, ...q } = a;
-  return call('/v1/consumption-tax' + qs(q));
+  // as_of は date の別名。両方来たら date を採る(明示のほうが強い)。
+  const { history, as_of, ...q } = a;
+  return call('/v1/consumption-tax' + qs({ ...q, date: q.date ?? as_of }));
 });
 
-server.registerTool('get_statute_text', {
+registerTool('get_statute_text', {
   title: '条文の本文を取得',
   description:
     'Returns the full text of a Japanese statutory provision, as published by e-Gov.\n\n' +
@@ -1050,7 +1077,7 @@ server.registerTool('get_statute_text', {
   ? call('/v1/statute' + qs({ ref: a.ref }))
   : call('/v1/statute/index'));
 
-server.registerTool('calculate_overtime_pay', {
+registerTool('calculate_overtime_pay', {
   title: '割増賃金(時間外・深夜・休日)の計算',
   description:
     'Works out statutory premium pay under 労働基準法第37条 — overtime, night work and work on ' +
@@ -1090,7 +1117,7 @@ server.registerTool('calculate_overtime_pay', {
   holiday_night_hours: a.holiday_night_hours,
 })));
 
-server.registerTool('commuting_allowance_exemption', {
+registerTool('commuting_allowance_exemption', {
   title: '通勤手当の非課税限度額',
   description:
     'Works out how much of a commuting allowance escapes income tax, and states the amount ' +
@@ -1124,7 +1151,7 @@ server.registerTool('commuting_allowance_exemption', {
   amount: a.amount, distance_km: a.distance_km, fare: a.fare, parking: a.parking,
 })));
 
-server.registerTool('check_data_freshness', {
+registerTool('check_data_freshness', {
   title: 'データ鮮度 — 各データの対象期間と次回改定',
   description:
     'Japanese statutory figures change on fixed dates — insurance rates each March, employment ' +
@@ -1137,6 +1164,47 @@ server.registerTool('check_data_freshness', {
 }, async () => call('/v1/data-freshness'));
 
 // ---------------------------------------------------------------------------
+
+/**
+ * 未知の引数を、**SDKが削る前に**捕まえる。
+ *
+ * registerTool のハンドラを包むだけでは遅い。SDK は inputSchema に無いキーを
+ * Zod で落としてからハンドラを呼ぶので、ハンドラからは最初から無かったように見える。
+ * 実害が出た形: `get_minimum_wage` だけ日付引数が `date` で、兄弟6本は `as_of`。
+ * `as_of` で 2015 年を指定した呼び出しが黙って現在値(1,226円/正しくは888円)を返した。
+ *
+ * `tools/call` の入口で、宣言されたキーと突き合わせてから SDK に渡す。
+ * HTTP API 側は同じものを 400 unknown_parameter で断っている。層が違うだけで
+ * 同じ製品なので、**片方だけ黙って受け入れるのは筋が通らない。**
+ */
+{
+  const low = server.server;
+  const inner = low._requestHandlers.get('tools/call');
+  if (typeof inner !== 'function')
+    throw new Error('tools/call のハンドラが見つかりません。SDKの構造が変わっています。');
+  low._requestHandlers.set('tools/call', async (request, extra) => {
+    const name = request?.params?.name;
+    const allowed = TOOL_ARGS.get(name);
+    if (allowed) {
+      const unknown = Object.keys(request.params.arguments ?? {})
+        .filter((k) => !allowed.has(k));
+      if (unknown.length) {
+        const list = [...allowed].join('、');
+        return {
+          isError: true,
+          content: [{
+            type: 'text',
+            text: `${name} が受け付けない引数です: ${unknown.map((k) => `「${k}」`).join('、')}。` +
+                  `ここで受け付けるのは ${list} です。黙って無視せず拒否しています。` +
+                  '黙って捨てられた引数は、もっともらしい誤った数字を生むためです。' +
+                  ' [unknown_parameter]',
+          }],
+        };
+      }
+    }
+    return inner(request, extra);
+  });
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

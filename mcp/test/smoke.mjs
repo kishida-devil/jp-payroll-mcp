@@ -702,7 +702,11 @@ for (const [name, args, check] of [
       + '50万円の賞与に3,063円の過大な税額が出た事故に戻る',
   };
   const CROSS = new Set(['detail', 'include', 'pref', 'amount', 'start', 'end']);
-  const blocks = toolSrc.split("server.registerTool('").slice(1);
+  // 登録を `server.registerTool` から包んだ `registerTool` に変えたとき、
+  // ここが 0 ブロックになって検査が黙って空回りした。**0件で緑になる検査は検査でない。**
+  // 行頭の registerTool( で切る(包み側の定義行は `const registerTool =` なので当たらない)。
+  const blocks = toolSrc.split(/^registerTool\('/m).slice(1);
+  ok(blocks.length >= 20, 'ツール定義を読めている', `${blocks.length} ブロック`);
   const gaps = [], staleReasons = [];
   const { tools: liveTools } = await client.listTools();
   for (const b of blocks) {
@@ -826,6 +830,58 @@ for (const [name, args, check] of [
   ok(await text('calculate_bonus', bonus) !== await text('calculate_bonus', { ...bonus, column: 'otsu' }),
      '乙欄は賞与の税率表が別');
 }
+{
+  // **黙って捨てられる引数は、もっともらしい誤った数字を生む。**
+  //
+  // 利用者として使って見つけた: `get_minimum_wage` の日付引数だけ名前が `date` で、
+  // 兄弟6本は `as_of`。`as_of` で 2015 年を指定した呼び出しは何の警告もなく
+  // 2025年度の 1,226円 を返していた(正しくは 888円)。SDK は inputSchema に
+  // 無いキーを Zod で落としてからハンドラを呼ぶので、落ちたことが誰にも見えない。
+  //
+  // HTTP API 側は同じものを 400 unknown_parameter で断っている。
+  // **ラップしている層のほうが弱いのはおかしい。**
+  for (const [name, args, why] of [
+    ['get_minimum_wage', { prefecture: 'Tokyo', zzz_nonsense: 1 }, '出鱈目な引数'],
+    ['calculate_payslip', { prefecture: 'Tokyo', monthly_salary: 300000, age: 40, bonus: 500000 },
+     '別のツールの引数を混ぜる'],
+  ]) {
+    const r = await client.callTool({ name, arguments: args })
+      .catch((e) => ({ isError: true, content: [{ text: String(e?.message ?? e) }] }));
+    const text = (r.content ?? []).map((c) => c.text ?? '').join('');
+    ok(/unknown_parameter/.test(text), `${name} は${why}を断る`, text.slice(0, 70));
+  }
+
+  // 断るだけでなく、**何を受け付けるか**を言うこと。名前を間違えた人が直せない。
+  const r = await client.callTool({
+    name: 'get_minimum_wage', arguments: { prefecture: 'Tokyo', zzz: 1 },
+  }).catch(() => ({ content: [] }));
+  const t = (r.content ?? []).map((c) => c.text ?? '').join('');
+  ok(t.includes('prefecture') && t.includes('date'),
+     'and names what it does accept, so a misspelling is fixable');
+
+  // 正しい呼び出しを壊していないこと。**断る側に寄せすぎると製品が死ぬ。**
+  const good = await client.callTool({
+    name: 'get_minimum_wage', arguments: { prefecture: 'Tokyo', as_of: '2015-06-01' },
+  });
+  const g = JSON.parse((good.content ?? []).map((c) => c.text ?? '').join(''));
+  ok(g.hourly_wage === 888 && g.queried_date === '2015-06-01',
+     'as_of は date の別名として通り、過去の額を返す', `${g.hourly_wage}円 / ${g.queried_date}`);
+
+  // 名前の揺れそのものを固定する。**兄弟が as_of なら、ここも as_of を受けること。**
+  const { tools: allTools } = await client.listTools();
+  const dated = allTools.filter((x) => {
+    const p = Object.keys(x.inputSchema?.properties ?? {});
+    return p.includes('as_of') || p.includes('date');
+  });
+  const onlyDate = dated.filter((x) => {
+    const p = Object.keys(x.inputSchema?.properties ?? {});
+    return p.includes('date') && !p.includes('as_of') && !p.includes('from');
+  }).map((x) => x.name);
+  ok(onlyDate.length === 0,
+     '日付を取るツールは as_of を受ける(呼び手は揃っているほうに寄せる)',
+     onlyDate.join(', ') || 'none');
+}
+
 
 
 
@@ -905,6 +961,7 @@ await client.close();
   ok(/月4ドル|\$4/.test(landing) || /4\.00/.test(landing) || landing.includes('有料プラン'),
      '着地頁も同じ有料導線を持つ');
 }
+
 
 
 console.log(`  passed ${pass} / ${pass + fail}`);
