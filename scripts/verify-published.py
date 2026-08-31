@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -71,8 +72,12 @@ is_html = status == 200 and "text/html" in ctype
 check(is_html, "ブラウザには頁を返す", f"{status} {ctype}")
 # **HTMLが返っていないときに「日本語だ」と言ってはいけない。**
 # 生JSONも日本語なので、条件を付けないと間違った理由で緑になる。実際なった。
-check(is_html and ja_ratio(body[:2000]) > 0.15, "その頁が日本語である",
-      f"{round(ja_ratio(body[:2000]) * 100)}%" if is_html else "まだHTMLではない")
+# 先頭2,000バイトは <head> と CSS で、本文に届いていなかった。
+# 日本語の頁を「8%」と報告して落としていた。タグを外してから数える。
+_visible = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", body)
+_visible = re.sub(r"<[^>]+>", " ", _visible)
+check(is_html and ja_ratio(_visible) > 0.25, "その頁が日本語である",
+      f"本文 {round(ja_ratio(_visible) * 100)}%" if is_html else "まだHTMLではない")
 
 status, hdr, body = fetch(API + "/")
 ctype = (hdr.get("content-type") if hdr else "") or ""
@@ -96,7 +101,8 @@ check(status == 400, "50人のバッチは無料枠で断られる", str(status)
 if status == 400:
     d = json.loads(body)
     text = json.dumps(d, ensure_ascii=False)
-    check("\u6708\uff14\u30c9\u30eb" in text, "断りの文に値段が入っている",
+    # 全角の 4 で書いていた。実物は半角。出ているものを出ていないと報告していた。
+    check(("\u67084\u30c9\u30eb" in text or "\u6708\uff14\u30c9\u30eb" in text), "断りの文に値段が入っている",
           (d.get("hint") or "")[:70])
     check("30,000" in text, "そして何が買えるかも")
 

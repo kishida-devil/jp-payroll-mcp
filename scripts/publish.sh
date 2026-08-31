@@ -79,14 +79,23 @@ ver=$(node -p "require('$MCP/package.json').version" 2>/dev/null)
 # 「既にあります」と誤って報告する。実際にそう出た。空なら止める。
 [ -n "$ver" ] || die "mcp/package.json から版を読めませんでした ($MCP)"
 printf '  版: %s\n' "$ver"
+# **既に公開済みなのは、止める理由ではない。**
+# 前回の実行は npm publish まで通ったあと、ここで「0.4.2 は既にあります」と
+# 止まり、その先の mcp-publisher と gh repo edit に一度も到達しなかった。
+# 途中まで成功した手順を、頭から流し直せないスクリプトは使えない。
+# 済んでいる段は飛ばして、残りを続ける。
+NPM_DONE=0
 if npm view "jp-payroll-mcp@$ver" version >/dev/null 2>&1; then
-  die "npm に $ver は既にあります。mcp/package.json と mcp/server.json の版を上げてください"
+  NPM_DONE=1
+  printf '  npm: %s は公開済み。この段は飛ばします\n' "$ver"
 fi
 
 npx wrangler deploy --dry-run >/dev/null 2>&1 || die "wrangler deploy の空打ちが失敗しました"
 printf '  wrangler: 空打ち成功\n'
-npm publish "$MCP" --dry-run >/dev/null 2>&1 || die "npm publish の空打ちが失敗しました"
-printf '  npm: 空打ち成功\n'
+if [ "$NPM_DONE" = "0" ]; then
+  npm publish "$MCP" --dry-run >/dev/null 2>&1 || die "npm publish の空打ちが失敗しました"
+  printf '  npm: 空打ち成功\n'
+fi
 
 if [ "$CHECK_ONLY" = "1" ]; then
   printf '\n全部通りました。--check を外すと本番に出します。\n'
@@ -95,13 +104,22 @@ fi
 
 # ---- 本番 ------------------------------------------------------------------
 step "1/5 git push"
-git push || die "git push"
+if [ "$ahead" = "0" ]; then
+  printf '  未pushのコミットはありません。飛ばします\n'
+else
+  git push || die "git push"
+fi
 
 step "2/5 wrangler deploy"
 npx wrangler deploy || die "wrangler deploy"
 
-step "3/5 npm publish (2FAのコードを聞かれます)"
-npm publish "$MCP" || die "npm publish"
+step "3/5 npm publish"
+if [ "$NPM_DONE" = "1" ]; then
+  printf '  %s は公開済み。飛ばします\n' "$ver"
+else
+  printf '  2FAのコードを聞かれます\n'
+  npm publish "$MCP" || die "npm publish"
+fi
 
 step "4/5 MCPレジストリ (ブラウザで機器認証のコードを聞かれます)"
 "$EXE" login github || die "mcp-publisher login"
