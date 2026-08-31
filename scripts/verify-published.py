@@ -125,10 +125,27 @@ for term, before in (("\u7d66\u4e0e\u8a08\u7b97", 82), ("\u6a19\u6e96\u5831\u916
     if status != 200:
         check(False, f"GitHub 検索「{term}」", str(status))
         continue
-    d = json.loads(body)
-    names = [i["full_name"] for i in d["items"]]
-    check(REPO in names, f"GitHub 検索「{term}」に出る",
-          f"{d['total_count']}件 (公開前は{before}件)")
+    # per_page=30 では上位30件しか見ていなかった。83件中82位に出ているのに
+    # 「出ていない」と報告した。**順位が低いのと載っていないのは違う。**
+    # 1頁目だけ per_page=30、2頁目から 100 にしていたので 31〜100位が飛んだ。
+    # 82位にいるものを「上位300件に無い」と報告した。刻みを揃える。
+    total = json.loads(body)["total_count"]
+    rank = None
+    for page in (1, 2, 3):
+        st2, _, b2 = fetch(
+            f"https://api.github.com/search/repositories?q={q}&per_page=100&page={page}",
+            {"Accept": "application/vnd.github+json"})
+        if st2 != 200:
+            break
+        n2 = [i["full_name"] for i in json.loads(b2)["items"]]
+        if REPO in n2:
+            rank = (page - 1) * 100 + n2.index(REPO) + 1
+            break
+        if len(n2) < 100:
+            break
+    check(rank is not None, f"GitHub 検索「{term}」に出る",
+          f"{total}件中 {rank}位 (公開前は{before}件)" if rank
+          else f"{total}件 (公開前は{before}件) — 上位300件に無い")
 
 # --- 収益17: MCP が公開版で価格を伝える -------------------------------------
 status, _, body = fetch("https://registry.npmjs.org/jp-payroll-mcp/0.4.2")
@@ -136,7 +153,19 @@ check(status == 200, "npm に 0.4.2 が存在する", str(status))
 
 status, _, body = fetch(
     "https://registry.modelcontextprotocol.io/v0/servers?search=jp-payroll")
-check(status == 200 and "0.4.2" in body, "公式MCPレジストリが 0.4.2 を持つ", str(status))
+# 「本文に 0.4.2 が含まれるか」では、なぜ落ちたのかが分からなかった。
+# 実際は 0.4.2 が active で latest だったのに 200 とだけ出て落ちていた。
+# どの版が latest かを名指しで見る。
+reg_latest = None
+if status == 200:
+    for sv in json.loads(body).get("servers", []):
+        srv = sv.get("server", sv)
+        meta = sv.get("_meta", {}).get(
+            "io.modelcontextprotocol.registry/official", {})
+        if meta.get("isLatest"):
+            reg_latest = f"{srv.get('version')} ({meta.get('status')})"
+check(reg_latest is not None and reg_latest.startswith("0.4.2"),
+      "公式MCPレジストリの latest が 0.4.2", reg_latest or str(status))
 
 # --- 出力 -------------------------------------------------------------------
 ok_n = sum(1 for ok, _, _ in results if ok)
