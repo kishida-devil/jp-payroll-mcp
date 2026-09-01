@@ -43,8 +43,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 冒頭に自分で書いてあるのに、復帰を待ちきれずに2回スイートを落としている
 // (3,500件目と3,750件目)。7回・計約16秒に伸ばす。**待つほうが、落ちるより安い。**
 // それでも戻らないなら本当に死んでいるので、そのときは落ちてよい。
-const ATTEMPTS = 7;
-const BACKOFF_CAP_MS = 4000;
+// **12秒は実測せずに決めた数字だった。**見張りが立て直すのに実測15秒かかり、
+// わずかに足りずスイートが落ちた。再試行の予算は、復帰にかかる実時間より
+// 長くなければ意味がない。9回・上限8秒で計約40秒にする。
+// それでも戻らないなら本当に死んでいるので、そのときは落ちてよい。
+const ATTEMPTS = 9;
+const BACKOFF_CAP_MS = 8000;
 
 // 本番に対して流すと無料枠のレート制限に当たる。当たったとき、いままでは
 // 数十行あとで `Cannot read properties of undefined (reading 'map')` になっていた。
@@ -219,7 +223,19 @@ for (const [t, emp, er] of [['general', 0.005, 0.0085],
   ok(prev.body.hourly_wage < 1226, 'day before effective returns previous rate',
     `got ${prev.body.hourly_wage} on ${dayBefore}`);
   const hist = await get('/v1/minimum-wage/history?prefecture=Tokyo');
-  ok(hist.body.count === 24, 'Tokyo history has 24 years', `got ${hist.body.count}`);
+  // **改定の回数と、年度の数は別物。**
+  //
+  // 「24年ぶん」を数えていたが、東京は平成15年度と令和2年度に改定が無い
+  // (どちらも据え置き)。据え置きの年にも行を作ると、額も発効日も前年と
+  // 同じ行が並び、日付で引いたとき後の行が当たって**改定年度が1年ずれる**。
+  // 令和元年10月の改定が FY2020 と返っていた。行は改定ごとに1つだけ持つ。
+  ok(hist.body.count === 22, '東京の改定は22回(平成15年度と令和2年度は据え置き)',
+     `got ${hist.body.count}`);
+  const fys = hist.body.history.map((r) => r.fiscal_year);
+  ok(!fys.includes(2003) && !fys.includes(2020),
+     'そして据え置きの年度に行を作らない', `${fys.filter((y) => y === 2003 || y === 2020)}`);
+  ok(fys[0] === 2002 && fys[fys.length - 1] >= 2025,
+     'それでも2002年から現在まで届く', `${fys[0]}〜${fys[fys.length - 1]}`);
   const tooOld = await get('/v1/minimum-wage?prefecture=Tokyo&date=1990-01-01');
   ok(tooOld.status === 404, 'pre-2002 date returns 404', `got ${tooOld.status}`);
 }
@@ -2669,7 +2685,12 @@ for (const [p, want, label] of [
   // 履歴は過去の話なので、前縁の欠落とは無関係に引ける。
   const hist = await get('/v1/minimum-wage/history?prefecture=Tokyo');
   ok(hist.status === 200, 'the history is unaffected by the forward edge', `${hist.status}`);
-  ok(hist.body.history?.length >= 24, 'and still carries every year on record',
+  // **「24年分」は収録期間(FY2002〜FY2025)であって、行数ではない。**
+  // 据え置きの年は改定が無いので行も無い。期間で見る。
+  const fyList = (hist.body.history ?? []).map((r) => r.fiscal_year);
+  ok(fyList.length > 0 && Math.min(...fyList) === 2002
+     && Math.max(...fyList) - Math.min(...fyList) + 1 >= 24,
+     'and still spans every year on record',
      `${hist.body.history?.length}`);
 
   // 日付を渡さない既定は「今日」。今日が改定日を越えたら同じ扱いになる。
@@ -5938,6 +5959,89 @@ for (const [p, want, label] of [
     ok(b.bases.health === Math.floor(amt / 1000) * 1000,
        `標準賞与額 ${amt} は千円未満切捨て`, String(b.bases.health));
   }
+}
+
+{
+  // **据え置きの年に行を作ると、改定年度が1年ずれて返る。**
+  //
+  // 最低賃金には据え置きの年がある(平成15年度、令和2年度=コロナ)。
+  // そのとき「その年度の行」を前年の額と発効日で作っていたため、額も発効日も
+  // 同じ行が2つ並び、日付で引くと後の行が当たった。令和元年10月の改定が
+  // FY2020 と返る。**額と発効日は正しいので、検算では気づけない。**
+  // 実務で「令和元年度の最低賃金は」と聞かれて令和2年度と答える。
+  const wagePrefs = (await get('/v1/prefectures')).body.prefectures.map((x) => x.name);
+  let dupRows = 0, decreased = 0, total = 0;
+  const offYear = [];
+  for (const pref of wagePrefs) {
+    const hist = (await get(`/v1/minimum-wage/history?prefecture=${pref}`)).body.history;
+    const seen = new Set();
+    let prev = null;
+    for (const r of hist) {
+      total++;
+      const key = `${r.hourly_wage}@${r.effective_from}`;
+      if (seen.has(key)) dupRows++;
+      seen.add(key);
+      // 最低賃金は引き下げられない。
+      if (prev && r.hourly_wage < prev.hourly_wage) decreased++;
+      // 発効年が年度と違うのは、年度をまたぐ発効(秋田の3月31日など)だけ。
+      if (!r.effective_from.startsWith(String(r.fiscal_year))) offYear.push(`${pref} FY${r.fiscal_year} ${r.effective_from}`);
+      prev = r;
+    }
+  }
+  ok(total > 1000, '最低賃金の履歴を読めている', `${total} 件`);
+  ok(dupRows === 0, '額も発効日も同じ行が二重に無い', `${dupRows} 件`);
+  ok(decreased === 0, '最低賃金が時系列で下がらない', `${decreased} 件`);
+  // 年度をまたぐ発効は実在するが、多ければ据え置きの複製が戻った印。
+  ok(offYear.length <= 10,
+     '発効年が年度と違うのは、年度をまたぐ発効だけ',
+     `${offYear.length} 件: ${offYear.slice(0, 3).join(' / ')}`);
+
+  // 改定年度が実際の改定年と合うこと。**ここが1年ずれていた。**
+  for (const [pref, date, fy] of [
+    ['Tokyo', '2019-10-01', 2019],
+    ['Hokkaido', '2002-10-01', 2002],
+    ['Tokyo', '2020-06-01', 2019],   // 令和2年度は据え置きなので令和元年度の額が続く
+  ]) {
+    const r = (await get(`/v1/minimum-wage?prefecture=${pref}&date=${date}`)).body;
+    ok(r.fiscal_year === fy, `${pref} ${date} は FY${fy} の改定`,
+       `FY${r.fiscal_year} ${r.era_year}`);
+  }
+}
+
+{
+  // **時系列データは、値が正しくても構造が壊れる。**
+  //
+  // 19件目(最低賃金の履歴に据え置き年の複製行)は、額も発効日も正しいので
+  // 値の検算では出なかった。重複・欠落・順序という**外から言える性質**で出た。
+  // 同じ形が他の時系列に無いかを見る。
+
+  // 消費税: 期間が重ならず、国税+地方税が合計になり、引き下げが無い。
+  const cth = (await get('/v1/consumption-tax/history')).body.history;
+  ok(cth.length >= 4, '消費税の履歴を読めている', `${cth.length} 期間`);
+  const ctBad = [];
+  for (let i = 0; i < cth.length; i++) {
+    const r = cth[i], s = r.standard;
+    if (Math.abs((s.national + s.local) - s.total) > 1e-9)
+      ctBad.push(`${r.effective_from}: 国+地方≠合計`);
+    if (i + 1 < cth.length) {
+      if (r.effective_to === null) ctBad.push(`${r.effective_from}: 途中に終期なし`);
+      else if (r.effective_to >= cth[i + 1].effective_from)
+        ctBad.push(`${r.effective_to} と ${cth[i + 1].effective_from} が重なる`);
+      if (cth[i + 1].standard.total < s.total) ctBad.push(`${r.effective_from} の次で税率が下がる`);
+    }
+  }
+  ok(ctBad.length === 0, '消費税の履歴が期間としても筋が通る', ctBad.join(' | ') || 'none');
+  ok(cth[cth.length - 1].effective_to === null, '最後の期間だけ終期が無い');
+
+  // 祝日: 同じ日が二度出ない、日付順、別の年が混ざらない。
+  const holBad = [];
+  for (const y of [1955, 1973, 1989, 2000, 2019, 2020, 2021, 2026, 2027]) {
+    const ds = (await get(`/v1/holidays?year=${y}`)).body.holidays.map((h) => h.date);
+    if (new Set(ds).size !== ds.length) holBad.push(`${y}: 同じ日が二度`);
+    if (ds.join() !== [...ds].sort().join()) holBad.push(`${y}: 日付順でない`);
+    if (ds.some((d) => !d.startsWith(String(y)))) holBad.push(`${y}: 別の年の日付`);
+  }
+  ok(holBad.length === 0, '祝日が重複・順序・年のどれでも崩れない', holBad.join(' | ') || 'none');
 }
 
 {

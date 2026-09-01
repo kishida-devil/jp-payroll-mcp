@@ -4,7 +4,7 @@
 47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、休業中の保険料免除、
 割増賃金、年次有給休暇、最低賃金、営業日計算まで。**答えには根拠の条文または通知が付きます。**
 
-公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,536件** の検証を実行します。
+公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,549件** の検証を実行します。
 
 ## 使いかたは2通り
 
@@ -43,7 +43,7 @@ premiums for all 47 prefectures, withholding tax, standard remuneration decision
 revisions, leave exemptions, minimum wage — with the statute or ministerial notice each
 answer rests on.
 
-Verified against the published tables cell by cell: **4,536 assertions** on every change.
+Verified against the published tables cell by cell: **4,549 assertions** on every change.
 
 ## Two ways in
 
@@ -287,7 +287,7 @@ provision to back it fails the build rather than silently returning nothing.
 
 ## Verification
 
-`test/verify.mjs` runs 4,536 assertions against a live server. The core of it compares the
+`test/verify.mjs` runs 4,549 assertions against a live server. The core of it compares the
 API's computed premiums to the **amounts printed in the official 協会けんぽ workbook** for
 250 combinations (5 prefectures × 50 grades) — the published half-share figures, not a
 reimplementation of the formula. It also checks:
