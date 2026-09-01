@@ -2649,6 +2649,27 @@ app.get('/v1/annual-leave', (c) => {
           ? '出勤率は0から1で渡してください。八割以上で付与が生じます (労働基準法第39条第1項)。'
           : undefined);
 
+  // **週4日以下と伝えた人に、黙って本則を適用してはいけない。**
+  //
+  // 比例付与は「週30時間未満 かつ 週4日以下」が要件(施行規則第24条の3)なので、
+  // 時間が分からなければ判定できない。それ自体は正しいが、判定できないときに
+  // 通常付与を返していた。`weekly_days=1` で 10日、6年半で 20日。
+  // **週1日の人に20日は過大付与で、そのまま使えば違法状態になる。**
+  //
+  // /v1/payroll が年齢なしを400で断るのと同じ理由。仮定を置いた計算は、
+  // それらしい数字が出るぶん、指摘されるまで気づかない。
+  if (c.req.query('weekly_days') !== undefined
+      && c.req.query('weekly_hours') === undefined
+      && c.req.query('annual_days') === undefined
+      && weeklyDays.value !== null && weeklyDays.value <= 4)
+    return bad(c,
+      `週の所定労働日数が ${weeklyDays.value} 日なら、weekly_hours か annual_days も要ります。`,
+      '比例付与は「週30時間未満かつ週4日以下」が要件です(労働基準法施行規則第24条の3)。'
+      + '所定労働時間が分からないと、比例付与と通常付与のどちらかを決められません。'
+      + `週30時間以上なら日数が少なくても通常付与になるので、ここで仮定すると`
+      + `週${weeklyDays.value}日の人に通常付与の日数(6年半で20日)を返してしまいます。`,
+      'missing_parameter');
+
   const decision = judgeAnnualLeave({
     hired_on: hired, as_of: asOf!,
     attendance_rate: rate.value, weekly_days: weeklyDays.value,

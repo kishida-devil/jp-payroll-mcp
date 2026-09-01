@@ -76,9 +76,14 @@ export function proportionalRow(input: {
   const hours = input.weekly_hours ?? null;
   // 週30時間以上なら日数にかかわらず通常付与 (施行規則第24条の3)。
   if (hours !== null && hours >= PROPORTIONAL_HOURS_LIMIT) return null;
-  if (hours === null) return null;
 
+  // **`hours === null` で即 return していたので、annual_days の分岐に到達しなかった。**
+  // 年間の所定労働日数は、週の日数が一定でない人のための代替指標として
+  // 別表そのものが持っている欄で、それ単独で行が決まる。時間が要るのは
+  // 「週4日以下でも30時間以上なら通常付与」を除くためであって、
+  // 年間日数で引くときには関係しない。年52日(週1日相当)に20日を返していた。
   if (input.weekly_days != null) {
+    if (hours === null) return null;   // 日数だけでは30時間以上かを判定できない
     if (input.weekly_days >= 5) return null;
     return PROPORTIONAL_TABLE.find((r) => r.weekly_days === Math.floor(input.weekly_days!)) ?? null;
   }

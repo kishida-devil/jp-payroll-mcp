@@ -5839,6 +5839,43 @@ for (const [p, want, label] of [
 }
 
 {
+  // **週1日の人に20日の有給を返していた。**
+  //
+  // 比例付与は「週30時間未満かつ週4日以下」が要件(施行規則第24条の3)。
+  // 時間が分からなければ判定できないのは正しいが、判定できないときに
+  // 通常付与を返していた。`weekly_days=1` で6年半なら20日。**過大付与になる。**
+  // /v1/payroll が年齢なしを断るのと同じで、仮定を置いた計算はそれらしい
+  // 数字が出るぶん、指摘されるまで気づかない。
+  for (const wd of [1, 2, 3, 4]) {
+    const r = await get(`/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&weekly_days=${wd}`);
+    ok(r.status === 400 && r.body?.code === 'missing_parameter',
+       `週${wd}日だけでは判定せず断る`, `${r.status} ${r.body?.code}`);
+  }
+  // 週5日以上は本則で決まるので、そのまま答えてよい。
+  const full = await get('/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&weekly_days=5');
+  ok(full.status === 200 && full.body.current.days === 20,
+     '週5日は本則で20日', `${full.status} ${full.body?.current?.days}`);
+
+  // **`annual_days` は単独で別表の行が決まる。**
+  // 時間がないと使えない作りになっていて、年52日(週1日相当)に20日を返していた。
+  // 別表の年間日数の欄は、週の日数が一定でない人のための代替指標。
+  for (const [days, want] of [[200, 15], [150, 11], [100, 7], [52, 3]]) {
+    const r = await get(`/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&annual_days=${days}`);
+    ok(r.status === 200 && r.body.current.days === want && r.body.proportional.applies === true,
+       `年${days}日は比例付与で${want}日`, `${r.body?.current?.days} / ${r.body?.proportional?.applies}`);
+  }
+  const many = await get('/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&annual_days=250');
+  ok(many.body.current.days === 20 && many.body.proportional.applies === false,
+     '年217日以上は通常付与', `${many.body?.current?.days}`);
+
+  // 週の日数と時間が揃えば、これまでどおり比例付与になること。
+  const both = await get(
+    '/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&weekly_days=1&weekly_hours=7');
+  ok(both.body.current.days === 3 && both.body.proportional.applies === true,
+     '週1日7時間なら3日', `${both.body?.current?.days}`);
+}
+
+{
   // ここが最後。pass + fail が確定しているのはこの位置だけ。
   // 名乗る数は、実際に通した数と同じでなければならない。**近いではなく同じ。**
   // 揃えるのは `python scripts/sync-counts.py <数>`(全12箇所を1回で書き換える)。
