@@ -5876,6 +5876,71 @@ for (const [p, want, label] of [
 }
 
 {
+  // **法令の側から答えを作って当てる。**
+  //
+  // 16・17件目はこのやり方で出た。「利用者として触る」と製品が返す形に沿って
+  // 見てしまうが、表を外から組めば法令の側から見ることになる。
+  // 一度確かめただけでは、次の年度更新で崩れても気づけないので残す。
+
+  // 雇用保険: 失業等給付は労使折半、事業主はそこに二事業分を上乗せする。
+  // 率そのものを書き写さない。**内訳から合計が導けることを見る。**
+  for (const bt of ['general', 'agriculture_forestry_fishery_sake', 'construction']) {
+    const e = (await get(`/v1/employment-insurance?business_type=${bt}`)).body;
+    const r = e.rates, b = e.breakdown;
+    const near = (a, x) => Math.abs(a - x) < 1e-12;
+    ok(near(b.unemployment_benefits_employee, b.unemployment_benefits_employer),
+       `${bt}: 失業等給付は労使折半`,
+       `${b.unemployment_benefits_employee} / ${b.unemployment_benefits_employer}`);
+    ok(near(r.employee, b.unemployment_benefits_employee),
+       `${bt}: 労働者負担は失業等給付分だけ`, String(r.employee));
+    ok(near(r.employer, b.unemployment_benefits_employer + b.two_projects_employer),
+       `${bt}: 事業主負担は給付分+二事業分`, String(r.employer));
+    ok(near(r.total, r.employee + r.employer), `${bt}: 合計が内訳と合う`, String(r.total));
+  }
+  {
+    const t = async (bt) => (await get(`/v1/employment-insurance?business_type=${bt}`)).body;
+    const gen = await t('general');
+    const agr = await t('agriculture_forestry_fishery_sake');
+    const con = await t('construction');
+    ok(gen.rates.total < agr.rates.total && agr.rates.total <= con.rates.total,
+       '一般 < 農林水産・清酒 ≦ 建設',
+       `${gen.rates.total} / ${agr.rates.total} / ${con.rates.total}`);
+    ok(con.breakdown.two_projects_employer > gen.breakdown.two_projects_employer,
+       '建設の二事業率だけ高い',
+       `${con.breakdown.two_projects_employer} vs ${gen.breakdown.two_projects_employer}`);
+  }
+
+  // 労災: 全額事業主負担。**率の換算と、給与計算に載る額が一致すること。**
+  {
+    const wc = (await get('/v1/workers-compensation')).body;
+    const rows = wc.business_types;
+    ok(wc.count === rows.length, '労災の count が行数と一致', `${wc.count}/${rows.length}`);
+    const mismatch = rows.filter((r) => Math.abs(r.rate - r.rate_per_1000 / 1000) > 1e-12);
+    ok(mismatch.length === 0, '労災の rate が rate_per_1000/1000 と一致',
+       `${mismatch.length} 行ずれ`);
+    const nums = rows.map((r) => r.number);
+    ok(new Set(nums).size === nums.length, '事業の種類の番号に重複がない', `${nums.length} 件`);
+    for (const pick of [
+      rows.reduce((a, b) => (a.rate_per_1000 <= b.rate_per_1000 ? a : b)),
+      rows.reduce((a, b) => (a.rate_per_1000 >= b.rate_per_1000 ? a : b)),
+    ]) {
+      const p = (await get(
+        `/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&workers_comp_type=${pick.number}`)).body;
+      ok(Math.abs(p.totals.workers_compensation_employer - Math.round(300000 * pick.rate)) <= 1,
+         `労災 ${pick.number} の額が率どおり`,
+         `${p.totals.workers_compensation_employer} vs ${Math.round(300000 * pick.rate)}`);
+    }
+  }
+
+  // 端数処理は2種類あって別物。**混同すると数円ずれ続ける。**
+  for (const amt of [500999, 500001, 500000, 499999, 999]) {
+    const b = (await get(`/v1/bonus-insurance?prefecture=Tokyo&bonus=${amt}&age=40`)).body;
+    ok(b.bases.health === Math.floor(amt / 1000) * 1000,
+       `標準賞与額 ${amt} は千円未満切捨て`, String(b.bases.health));
+  }
+}
+
+{
   // ここが最後。pass + fail が確定しているのはこの位置だけ。
   // 名乗る数は、実際に通した数と同じでなければならない。**近いではなく同じ。**
   // 揃えるのは `python scripts/sync-counts.py <数>`(全12箇所を1回で書き換える)。
