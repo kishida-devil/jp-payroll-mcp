@@ -881,6 +881,102 @@ for (const [name, args, check] of [
      '日付を取るツールは as_of を受ける(呼び手は揃っているほうに寄せる)',
      onlyDate.join(', ') || 'none');
 }
+{
+  // **MCP と HTTP が違う答えを返したら、どちらかが嘘をついている。**
+  //
+  // 見つかった最初のバグがこの形だった。`get_minimum_wage` だけ日付引数の名前が
+  // `date` で、兄弟6本は `as_of`。`as_of` で 2015 年を指定した呼び出しが黙って
+  // 現在値(1,226円/正しくは888円)を返していた。
+  // 同じ形の再発を防ぐには、両方を呼んで突き合わせるしかない。
+  const PAIRS = [
+    ['calculate_payslip', { prefecture: 'Tokyo', monthly_salary: 300000, age: 40 },
+     '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40'],
+    ['calculate_bonus', { prefecture: 'Tokyo', bonus: 500000, age: 40 },
+     '/v1/bonus-insurance?prefecture=Tokyo&bonus=500000&age=40'],
+    ['get_minimum_wage', { prefecture: 'Tokyo', as_of: '2015-06-01' },
+     '/v1/minimum-wage?prefecture=Tokyo&date=2015-06-01'],
+    ['consumption_tax', { as_of: '2026-04-01' }, '/v1/consumption-tax?date=2026-04-01'],
+    ['check_insurance_eligibility', { month: '2026-03', left_on: '2026-03-31' },
+     '/v1/eligibility?month=2026-03&left_on=2026-03-31'],
+    ['get_age_milestones', { birth_date: '1986-04-01' }, '/v1/age-milestones?birth_date=1986-04-01'],
+  ];
+  // 実行ごとに変わるものは比べない。
+  const VOLATILE = /^(checked_at|days_until_revision|as_of|queried_at|generated_at)$/;
+  const strip = (o) => {
+    if (Array.isArray(o)) return o.map(strip);
+    if (o && typeof o === 'object') {
+      const out = {};
+      for (const k of Object.keys(o).sort()) if (!VOLATILE.test(k)) out[k] = strip(o[k]);
+      return out;
+    }
+    return o;
+  };
+  // MCPサーバが向いている先と同じ所を叩く。別の所を叩いたら照合にならない。
+  const toolSource = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8');
+  const fallbackBase = /\?\?\s*'([^']+)'/.exec(
+    toolSource.slice(toolSource.indexOf('const BASE')))?.[1];
+  const API_BASE = (process.env.JP_PAYROLL_API_URL ?? fallbackBase).replace(/\/+$/, '');
+  ok(!!API_BASE, '照合先のAPIを特定できている', API_BASE);
+
+  let mismatched = [];
+  for (const [tool, args, path] of PAIRS) {
+    let r = null;
+    try {
+      const res = await client.callTool({ name: tool, arguments: args });
+      r = JSON.parse((res.content ?? []).map((c) => c.text ?? '').join(''));
+    } catch { /* 下で落とす */ }
+    const http = await (await fetch(API_BASE + path)).json();
+    if (r === null) { mismatched.push(`${tool}: MCPが答えない`); continue; }
+    if (JSON.stringify(strip(r)) !== JSON.stringify(strip(http)))
+      mismatched.push(`${tool} ${JSON.stringify(args)}`);
+  }
+  ok(mismatched.length === 0,
+     'MCP と HTTP が同じ答えを返す', mismatched.join(' | ') || `${PAIRS.length} 対一致`);
+}
+{
+  // **ツールの説明文は、AIが「何ができるか」を判断する唯一の材料。**
+  // そこに書いた具体的な数字が実物とずれたら、AIは間違った案内をする。
+  // 説明文から数字を拾い、実物に当てる。**数字を検査側に書き写さない**
+  // (書き写すと、実装と検査の2箇所に同じ数を持つことになる)。
+  const claims = new Map();
+  for (const t of tools) {
+    for (const m of (t.description ?? '').matchAll(/([\d][\d,]{2,})\s*yen/g))
+      claims.set(`${t.name}:${m[1]}`, Number(m[1].replace(/,/g, '')));
+  }
+  ok(claims.size >= 4, '説明文が具体的な金額を挙げている', `${claims.size} 件`);
+
+  const nums = [...claims.values()];
+  const api = process.env.JP_PAYROLL_API_URL ?? 'https://japan-payroll-api.tsumugi.workers.dev';
+  const j = async (p) => (await fetch(api + p)).json();
+
+  // 賞与の上限は健保が年度累計、厚年が1回。**性質が違うので別々に確かめる。**
+  if (nums.includes(5730000)) {
+    const b = await j('/v1/bonus-insurance?prefecture=Tokyo&bonus=1000000&age=40&fiscal_year_to_date=5730000');
+    ok(b.bases.health === 0, '説明文の 5,730,000 が健保の年度上限として効く',
+       String(b.bases.health));
+  }
+  if (nums.includes(1500000)) {
+    const b = await j('/v1/bonus-insurance?prefecture=Tokyo&bonus=2000000&age=40');
+    ok(b.bases.pension === 1500000, '説明文の 1,500,000 が厚年の1回あたり上限として効く',
+       String(b.bases.pension));
+  }
+  if (nums.includes(665000)) {
+    const over = await j('/v1/standard-remuneration?remuneration=700000');
+    const under = await j('/v1/standard-remuneration?remuneration=650000');
+    ok(over.pension.clamped === true && under.pension.clamped === false,
+       '説明文の 665,000 で厚年の等級表が尽きる',
+       `${over.pension.clamped} / ${under.pension.clamped}`);
+  }
+  if (nums.includes(88000)) {
+    const on = await j('/v1/worker-type?weekly_hours=20&monthly_wage=88000&employment_months=12&is_student=false&workplace_insured_count=51');
+    const off = await j('/v1/worker-type?weekly_hours=20&monthly_wage=87999&employment_months=12&is_student=false&workplace_insured_count=51');
+    ok(on.insured === true && off.insured === false,
+       '説明文の 88,000円 が被保険者の境目として効く',
+       `${on.insured} / ${off.insured}`);
+  }
+}
+
+
 
 
 

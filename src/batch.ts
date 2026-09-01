@@ -83,14 +83,34 @@ export function readRow(
     return fail(prefRaw ? 'unknown_prefecture' : 'missing_parameter',
       prefRaw ? `該当する都道府県がありません: 「${prefRaw}」` : 'prefecture は必須です。この行か defaults に入れてください。');
 
+  // **500人の名簿で3行だけ壊れているとき、「必須です」では直せない。**
+  // 都道府県はすでに渡された値を見せている(「該当する都道府県がありません:
+  // 「Nowhere」」)。金額と年齢だけが取り残されていた。
+  // GET 側は13件目で直したので、こちらも同じ水準に揃える。
+  // 名簿からは `300,000`・`３０００００`・`300000円` がそのまま入る。
+  const whyBad = (raw: unknown): string => {
+    const t = String(raw);
+    if (/[０-９]/.test(t)) return '全角の数字が混じっています。';
+    if (/,/.test(t)) return '桁区切りのカンマは外してください。';
+    if (/[^\d.eE+\-\s]/.test(t)) return '数字以外の文字が混じっています(単位は付けないでください)。';
+    return '数として読めません。';
+  };
+
   const salary = Number(row.monthly_salary);
-  if (row.monthly_salary === undefined || !Number.isFinite(salary) || salary < 0)
-    return fail('invalid_request', 'monthly_salary は必須で、0以上の数で渡してください。');
+  if (row.monthly_salary === undefined || row.monthly_salary === null)
+    return fail('missing_parameter',
+      'monthly_salary は必須です。この行か defaults に入れてください。');
+  if (!Number.isFinite(salary) || salary < 0)
+    return fail('invalid_request',
+      `monthly_salary に「${row.monthly_salary}」が渡されました。` +
+      `${whyBad(row.monthly_salary)}0以上の半角数字だけで渡してください。`);
 
   const ageRaw = row.age ?? defaults.age;
   const age = ageRaw === undefined || ageRaw === null ? null : Number(ageRaw);
   if (age !== null && (!Number.isFinite(age) || age < 0 || age > 120))
-    return fail('invalid_request', 'age は0から120の数で渡してください。');
+    return fail('invalid_request',
+      `age に「${ageRaw}」が渡されました。` +
+      (Number.isFinite(age) ? '0から120の範囲で渡してください。' : whyBad(ageRaw)));
 
   const birthRaw = row.birth_date ?? defaults.birth_date;
   const birth = birthRaw === undefined || birthRaw === null ? null : parseDate(String(birthRaw));

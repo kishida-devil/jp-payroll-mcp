@@ -69,5 +69,48 @@ case "${1:-count}" in
     t=$(curl -s -o /dev/null -w '%{time_total}' "http://127.0.0.1:$PORT/v1/data-freshness")
     echo "1本だけ起動。応答 ${t}s"
     ;;
-  *) echo "usage: dev-server.sh {restart|count|stop}"; exit 2 ;;
+  supervise)
+    # **wrangler dev は、この負荷で落ちる。**空のエラーで ProxyController が死ぬ
+    # (4.125.0 でも 4.127.1 でも起きる。本文が無いので原因は追えない)。
+    # スイートは 3,500〜3,750 件あたりで5回死に、そのたびに50分が消えた。
+    # 上流の不具合なのでこちらでは直せない。**落ちたら立て直す。**
+    #
+    # 多重起動しないこと。待ち受けが 0 のときだけ起こす。
+    # 呼び出し側で `&` を付けて背後に置き、終わったら supervise-stop で止める。
+    : "${DEV_LOG:=${TMPDIR:-/tmp}/jp-payroll-dev.log}"
+    FLAG="${TMPDIR:-/tmp}/jp-payroll-supervise.on"
+    # **見張りが多重に走ると、立て直しが競合して同じ秒に何度も再起動する。**
+    # 実際そうなった(5本走り、11:26以降 1分おきに立て直しの記録が出た)。
+    # **多重起動を防ぐために作ったものが、多重起動していた。**
+    # 旗が既にあるなら、他が見張っている。何もせず戻る。
+    if [ -f "$FLAG" ]; then
+      echo "すでに見張りが動いている。二重には起こさない"
+      exit 0
+    fi
+    echo $$ > "$FLAG"
+    # 自分の番号を旗に書き、毎周それが自分か確かめる。
+    # 旗が消えたか他人のものになったら降りる。**止め忘れが積み上がらない。**
+    trap 'rm -f "$FLAG"' EXIT
+    echo "見張り開始 (pid $$)。$PORT が空いたら立て直す(止めるには supervise-stop)"
+    # **待ち受けの数で判定してはいけない。**workerd が死んでも親の node が
+    # ポートを掴んだままなので「1本ある」と数えられ、実際は何も答えない。
+    # 実測でそうなった(count は 1本、curl は 000)。**答えるかどうかで見る。**
+    while [ "$(cat "$FLAG" 2>/dev/null)" = "$$" ]; do
+      if ! curl -s --max-time 3 -o /dev/null "http://127.0.0.1:$PORT/v1/data-freshness"; then
+        echo "$(date +%H:%M:%S) 応答が無い。全部落として立て直す" >> "$DEV_LOG.supervise"
+        kill_all
+        npx wrangler dev --port "$PORT" --local >>"$DEV_LOG" 2>&1 &
+        for _ in $(seq 1 60); do
+          curl -s --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/v1/data-freshness" && break
+          sleep 1
+        done
+      fi
+      sleep 2
+    done
+    ;;
+  supervise-stop)
+    rm -f "${TMPDIR:-/tmp}/jp-payroll-supervise.on"
+    echo "見張りを止めた"
+    ;;
+  *) echo "usage: dev-server.sh {restart|count|stop|supervise|supervise-stop}"; exit 2 ;;
 esac

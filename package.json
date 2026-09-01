@@ -23,7 +23,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260825.1",
     "typescript": "^5.7.2",
-    "wrangler": "^4.125.0"
+    "wrangler": "^4.127.1"
   },
   "repository": {
     "type": "git",

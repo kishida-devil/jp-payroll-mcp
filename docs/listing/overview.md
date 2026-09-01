@@ -123,8 +123,8 @@ e-Gov は「厚生年金法」ですが、実務では「厚年法」と書き�
 | 祝日 | 内閣府 |
 | 改定の規則 | e-Gov 法令検索、厚生労働省 法令等データベース、日本年金機構 |
 
-**変更のたびに4,440件の表明**を実行します。中核は、協会けんぽの保険料額表に印刷された額と
-**250通りの都道府県×等級**を突き合わせ、国税庁の月額表の**公表2,079セル全部**と照合するものです。
+**変更のたびに4,501件の表明**を実行します。中核は、協会けんぽの保険料額表に印刷された額と
+**250通り(5都道府県×50等級)**を突き合わせ、国税庁の月額表の**公表2,079セル全部**と照合するものです。
 
 `GET /v1/data-freshness` が各データの収録範囲と次の改定時期を返すので、
 **古くなったことが黙って進行しません。**
@@ -165,8 +165,8 @@ e-Gov は「厚生年金法」ですが、実務では「厚年法」と書き�
 すべての判定は全プランに入っています。払うのは「給与計算を1回で回す」ことに対してで、
 最大500人、それを毎月やるだけの回数です。
 
-**帯域は別に従量課金なので、応答サイズは金額です。**500人のバッチは詳細ありで約1MB、
-`?detail=compact` で約140KB。応答は**自分の大きさと、compact にした場合の見込み**を返します。
+**帯域は別に従量課金なので、応答サイズは金額です。**500人のバッチは詳細ありで約920KB、
+`?detail=compact` で約135KB(実測。およそ14.5%)。応答は**自分の大きさと、compact にした場合の見込み**を返します。
 内訳ではなく支払額が要るときは compact を使ってください。
 
 プランと価格は Pricing タブが正です。古くならないよう、ここには書いていません。
@@ -209,9 +209,9 @@ minimum wage back to FY2002, consumption tax by date, holidays with business-day
 arithmetic, and corporate/invoice number validation. 43 endpoints, OpenAPI 3.0.
 
 Every figure is extracted programmatically from the official government source and
-verified against the values printed in it — 250 prefecture × grade combinations
+verified against the values printed in it — 250 combinations (5 prefectures × 50 grades)
 against the 協会けんぽ workbook, all 2,079 published cells of the National Tax
-Agency withholding table, 4,440 assertions on every change.
+Agency withholding table, 4,501 assertions on every change.
 
 Every answer names the statute or ministerial notice it rests on, and
 `?include=statute_text` attaches the actual text of whatever it cited. Judgements

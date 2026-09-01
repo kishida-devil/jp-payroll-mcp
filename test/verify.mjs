@@ -617,6 +617,10 @@ for (const [p, want, label] of [
 {
   const wh = (await import('./withholding-fixture.json', { with: { type: 'json' } })).default;
   ok(wh.length === 231, 'fixture covers all 231 table rows', `got ${wh.length}`);
+  // 都道府県×等級のほうも同じ。「250通り」は5県×50等級。
+  const officialRows = (await import('./official-fixture.json', { with: { type: 'json' } })).default;
+  ok(officialRows.length === 250,
+     '説明文が名乗る 250通りの都道府県×等級がある', `${officialRows.length}`);
 
   // Sample the midpoint of every bracket: 231 rows x (8 kou columns + otsu).
   let checked = 0, mismatched = 0;
@@ -638,6 +642,10 @@ for (const [p, want, label] of [
     }
   }
   ok(mismatched === 0, `every published cell matches (${checked} checked)`, `${mismatched} mismatched`);
+  // **「2,079セル全部」は5つの面で名乗っている信頼性の根拠。**
+  // 照合の規模が縮んでも説明文は気づかない。231行×9欄をここで固定する。
+  ok(checked === 2079,
+     '説明文が名乗る 2,079 セルを実際に照合している', `${checked}`);
   pass += checked - 1; // each cell is its own assertion
 
   // Boundaries: `to` belongs to the next bracket, `from` to this one.
@@ -884,8 +892,15 @@ for (const [p, want, label] of [
      `${mixed.body.succeeded}/${mixed.body.failed}`);
   const codes = mixed.body.errors.map((e) => e.code);
   ok(codes.includes('unknown_prefecture'), 'the bad prefecture is named');
-  ok(codes.filter((x) => x === 'invalid_request').length === 3, 'the other three are invalid_request',
-     JSON.stringify(codes));
+  // **原因ごとに code が分かれること。**「4件中3件が invalid_request」と数だけ
+  // 見ていたが、15件目で「渡していない」を missing_parameter に分けたら落ちた。
+  // 数ではなく、**どの行がどの理由で落ちたか**を見る。
+  const byId = Object.fromEntries(mixed.body.errors.map((e) => [e.id, e.code]));
+  ok(byId.nosalary === 'missing_parameter',
+     '渡していない行は missing_parameter', byId.nosalary);
+  ok(byId.neg === 'invalid_request', '範囲外の値は invalid_request', byId.neg);
+  ok(byId.baddep === 'invalid_request', '整数でない扶養人数も invalid_request', byId.baddep);
+  ok(byId.nowhere === 'unknown_prefecture', '知らない都道府県は専用の code', byId.nowhere);
   ok(mixed.body.errors.every((e) => Number.isInteger(e.index)), 'errors carry the input index');
   ok(mixed.body.errors.find((e) => e.id === 'nowhere').index === 2, 'the index points at the right row');
   ok(mixed.body.summary.employees === 1, 'the summary ignores failed rows');
@@ -4940,9 +4955,35 @@ for (const [p, want, label] of [
      'and says where the paid line actually is');
 
   // 帯域は従量。応答サイズは買い手の請求額に直結する。
-  ok(/detail=compact/.test(listing) && /140KB/.test(listing) && /1MB/.test(listing),
-     'and gives the response sizes, because bandwidth is metered',
-     'compact の案内あり');
+  //
+  // **数字をリテラルで固定していた(140KB / 1MB)。**実測が 920KB / 135KB に
+  // 変わっても検査は古い数字のほうを守り、直したときに落ちた。
+  // 出品文が正しいかを見るには、**実測と突き合わせるしかない。**
+  ok(/detail=compact/.test(listing),
+     'and points at compact, because bandwidth is metered');
+  const quotedKB = [...listing.matchAll(/約\s*([\d,]+)\s*KB/g)]
+    .map((m) => Number(m[1].replace(/,/g, '')));
+  ok(quotedKB.length >= 2, 'そして500人の応答サイズを名乗っている', quotedKB.join('/'));
+  if (quotedKB.length >= 2) {
+    const big = { employees: Array.from({ length: 500 }, (_, i) => (
+      { prefecture: 'Tokyo', monthly_salary: 300000 + i, age: 40 })) };
+    const measure = async (p) => {
+      const r = await tryFetch(BASE + p, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(big),
+      });
+      return new TextEncoder().encode(await r.text()).length / 1024;
+    };
+    const fullKB = await measure('/v1/payroll/batch');
+    const compKB = await measure('/v1/payroll/batch?detail=compact');
+    const near = (claim, actual) => Math.abs(claim - actual) / actual < 0.15;
+    const hi = Math.max(...quotedKB), lo = Math.min(...quotedKB);
+    ok(near(hi, fullKB), '名乗る詳細ありのサイズが実測の15%以内',
+       `${hi}KB / 実測 ${fullKB.toFixed(0)}KB`);
+    ok(near(lo, compKB), '名乗る compact のサイズが実測の15%以内',
+       `${lo}KB / 実測 ${compKB.toFixed(0)}KB`);
+  }
 }
 {
   // 払った人が最初に叩く機能。**ここが落ちれば最初の顧客は即座に離れる。**
@@ -5436,6 +5477,365 @@ for (const [p, want, label] of [
   const codes = (enums.error_codes ?? []).map((x) => x.value ?? x);
   ok(codes.includes('method_not_allowed'),
      'そして新しい code が /v1/enums に載っている', codes.join(',').slice(0, 60));
+}
+
+{
+  // **`/v1/enums` に無い値は、呼び手にとって存在しない。**
+  // 「400を返されてから知るのではなく、作るときに読める」ためのものだと
+  // 自分で名乗っている。そこから `employment_type` が漏れていた。
+  // 役員を既定の employee で計算すると雇用保険を余分に引く(月4,050円)。
+  //
+  // 仕様書に enum があるのに enums に無いものを数える。名前が一致しない場合が
+  // あるので(column は月額表と日額表で欄が違い、kind は leave_kind として出る)、
+  // **値の集合で照合する。**名前で照合すると、この2つで誤検知する。
+  const enumsBody = (await get('/v1/enums')).body;
+  const published = [];
+  for (const [k, v] of Object.entries(enumsBody)) {
+    if (!Array.isArray(v)) continue;
+    const vals = v.map((x) => (x && typeof x === 'object' ? x.value : x)).filter(Boolean);
+    if (vals.length) published.push([k, new Set(vals)]);
+  }
+  ok(published.length >= 8, 'enums が集合を並べている', `${published.length} 種`);
+
+  // spec は他のブロックの局所変数なので、ここで取り直す。
+  const enumSpec = await (await tryFetch(`${BASE}/openapi.json`)).json();
+  const specEnums = new Map();
+  for (const ops of Object.values(enumSpec.paths)) {
+    for (const op of Object.values(ops)) {
+      if (!op?.parameters) continue;
+      for (const q of op.parameters) {
+        const e = q.schema?.enum;
+        if (e) {
+          const s = specEnums.get(q.name) ?? new Set();
+          e.forEach((x) => s.add(x));
+          specEnums.set(q.name, s);
+        }
+      }
+    }
+  }
+
+  const missing = [];
+  for (const [name, want] of specEnums) {
+    if (name === 'detail' || name === 'include') continue; // 横断引数は別に検査済み
+    // どれかの集合が、この enum の値をすべて含んでいれば載っている。
+    const covered = published.some(([, have]) => [...want].every((v) => have.has(v)));
+    if (!covered) missing.push(`${name}: ${[...want].join('/')}`);
+  }
+  ok(missing.length === 0,
+     '仕様書の enum が全部 /v1/enums に載っている', missing.join(' | ') || 'none');
+
+  // 役員の扱いが実際に効いていること。載せるだけでは意味がない。
+  const asEmployee = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
+  const asDirector = (await get(
+    '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&employment_type=director')).body;
+  ok(asDirector.deductions.employment_insurance.employee === 0,
+     '役員には雇用保険がかからない(雇用保険法第4条)',
+     String(asDirector.deductions.employment_insurance.employee));
+  ok(asEmployee.totals.social_insurance_combined
+     > asDirector.totals.social_insurance_combined,
+     'そのぶん労使合計が下がる',
+     `${asEmployee.totals.social_insurance_combined} → ${asDirector.totals.social_insurance_combined}`);
+}
+
+
+{
+  // **`detail` の説明は全経路に付いている。約束した以上、例外を作らない。**
+  //
+  // 「compact は attribution・notes・条文の引用を落とし、落としたものと戻し方を
+  //   omitted に載せる。黙って消さない」と全43経路の仕様書に書いてある。
+  // 実際は /v1/enums と /v1/data-freshness だけ何も落ちず omitted も付かなかった。
+  // 落とす一覧に `notes` はあって `note`(単数)が無く、その2経路は単数で返す。
+  //
+  // 経路名を書かない。**書くと、次に増えた経路が漏れる。**
+  const detailSpec = await (await tryFetch(`${BASE}/openapi.json`)).json();
+  const DROPPABLE = ['attribution', 'notes', 'note', 'guidance', 'statutes'];
+  const broken = [];
+  let honoured = 0, noop = 0;
+  for (const [path, ops] of Object.entries(detailSpec.paths)) {
+    const op = ops.get;
+    if (!op) continue;
+    const q = new URLSearchParams();
+    for (const prm of op.parameters ?? []) {
+      if (prm.in !== 'query' || prm.name === 'detail' || prm.name === 'include') continue;
+      const ex = prm.example ?? prm.schema?.example ?? prm.schema?.enum?.[0];
+      if (ex !== undefined && ex !== null) q.set(prm.name, String(ex));
+    }
+    const qs = q.toString();
+    const full = await get(path + (qs ? `?${qs}` : ''));
+    if (full.status !== 200 || !full.body) continue;
+    const comp = await get(path + (qs ? `?${qs}&` : '?') + 'detail=compact');
+    if (comp.status !== 200 || !comp.body) continue;
+
+    const had = DROPPABLE.filter((k) => full.body[k] !== undefined);
+    if (!had.length) { noop++; continue; }          // 落とすものが無いのは正しい
+    const gone = had.filter((k) => comp.body[k] === undefined);
+    if (!gone.length) broken.push(`${path}: ${had.join(',')} が落ちない`);
+    else if (comp.body.omitted === undefined) broken.push(`${path}: omitted が無い`);
+    else honoured++;
+  }
+  ok(honoured >= 20, 'compact を守る経路を数えられている', `${honoured} 経路 / no-op ${noop}`);
+  ok(broken.length === 0,
+     'detail=compact が全経路で約束どおり動く', broken.slice(0, 5).join(' | ') || 'none');
+}
+
+{
+  // **`GET /` の一覧は、全部の404が案内する先。**
+  // 「そのエンドポイントはありません。エンドポイントの一覧は GET / を見てください」
+  // と書いてある以上、迷った人が最初にコピーするのはこの一覧の行になる。
+  // そこに載っていた bonus-tax の例は bonus_insurance が抜けていて、
+  // コピーすると400になった。**行き止まりに案内していた。**
+  //
+  // 一覧から例を取り出して全部叩く。1本ずつ書くと、増えた例が漏れる。
+  const rootBody = (await get('/')).body;
+  const calls = [];
+  const collect = (o) => {
+    if (Array.isArray(o)) return o.forEach(collect);
+    if (o && typeof o === 'object') {
+      for (const [k, v] of Object.entries(o)) {
+        if (/^GET \/v1\//.test(k)) calls.push(k.slice(4));
+        collect(v);
+      }
+    }
+  };
+  collect(rootBody);
+  ok(calls.length >= 30, 'GET / が例つきで経路を並べている', `${calls.length} 本`);
+
+  const dead = [];
+  for (const path of calls) {
+    const r = await get(path);
+    if (r.status !== 200 || r.body?.error)
+      dead.push(`${path.slice(0, 54)} → ${r.status} ${r.body?.code ?? ''}`);
+  }
+  ok(dead.length === 0,
+     'その例が全部そのまま動く', dead.slice(0, 4).join(' | ') || `${calls.length} 本すべて200`);
+}
+
+{
+  // **帯域は従量課金なので、size_hint の見積もりは金額そのもの。**
+  //
+  // `compact_estimate_bytes` は「compact に切り替えるといくら浮くか」を
+  // 判断するための数字で、係数 0.133 が古く、実測 0.1445 に対して一貫して
+  // 8%小さかった。**小さすぎる見積もりは、切り替えても想定ほど安くならない
+  // という形で利用者に不利に働く。**
+  //
+  // 係数を書かない。書くと、実装と同じ数を2箇所に持つことになる。
+  // **両方を実際に叩いて、見積もりが実測に近いかだけを見る。**
+  const many = { employees: Array.from({ length: 400 }, (_, i) => (
+    { prefecture: 'Tokyo', monthly_salary: 300000 + i, age: 40 })) };
+  const post = async (p) => {
+    const r = await tryFetch(BASE + p, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(many),
+    });
+    const text = await r.text();
+    return { bytes: new TextEncoder().encode(text).length, body: JSON.parse(text) };
+  };
+  const full = await post('/v1/payroll/batch');
+  const comp = await post('/v1/payroll/batch?detail=compact');
+
+  const hint = full.body.size_hint;
+  ok(!!hint, '大きな応答は size_hint を返す', String(full.bytes));
+  if (hint) {
+    ok(Math.abs(hint.bytes - full.bytes) / full.bytes < 0.02,
+       'size_hint.bytes が実際の応答の大きさと一致する',
+       `${hint.bytes} vs ${full.bytes}`);
+    const err = (hint.compact_estimate_bytes - comp.bytes) / comp.bytes;
+    ok(Math.abs(err) < 0.05,
+       'compact の見積もりが実測の5%以内',
+       `見積 ${hint.compact_estimate_bytes} / 実測 ${comp.bytes} (${(err * 100).toFixed(1)}%)`);
+    // **向きも見る。**低く出るのは利用者に不利。高く出るのは損しない。
+    ok(err > -0.03,
+       'そして低く見積もらない(切り替えても安くならない、を防ぐ)',
+       `${(err * 100).toFixed(1)}%`);
+  }
+}
+
+{
+  // **同じ事実を2つの経路で聞いたら、同じ答えでなければならない。**
+  //
+  // 見つかった11件の傾向は「面ごとにずれる」だった。文書と実物、MCPとHTTP、
+  // 5つの説明文どうし。**経路どうしでも同じことが起きうる。**
+  // 料率を単体で公表しておいて、給与計算では別の率を使っていたら、
+  // 利用者が検算した瞬間に信用を失う。
+  const prefs = (await get('/v1/prefectures')).body.prefectures.map((x) => x.name);
+  ok(prefs.length === 47, '照合対象の都道府県を取れている', String(prefs.length));
+
+  const drift = [];
+  for (const pref of prefs) {
+    const rates = (await get(`/v1/insurance-rates?prefecture=${pref}`)).body.rates;
+    const pay = (await get(
+      `/v1/payroll?prefecture=${pref}&monthly_salary=300000&age=40`)).body;
+    const smr = pay.standard_remuneration.health;
+    for (const key of ['health_insurance', 'long_term_care', 'pension', 'child_support']) {
+      const want = Math.round(smr * rates[key]);
+      const got = pay.deductions[key].total;
+      if (Math.abs(want - got) > 1) drift.push(`${pref}/${key}: ${want} vs ${got}`);
+    }
+  }
+  ok(drift.length === 0,
+     '公表した料率×標準報酬が、給与計算が引いた額と一致する(47県×4保険)',
+     drift.slice(0, 4).join(' | ') || '188通り一致');
+
+  // 単体で引ける値が、まとめて計算した中の値と同じであること。
+  const pairs = [];
+  {
+    const one = (await get('/v1/minimum-wage?prefecture=Akita')).body;
+    const hist = (await get('/v1/minimum-wage/history?prefecture=Akita')).body.history;
+    const last = hist[hist.length - 1];
+    if (one.hourly_wage !== last.hourly_wage) pairs.push('最低賃金 単体 vs 履歴末尾');
+    if (one.effective_from !== last.effective_from) pairs.push('最低賃金の発効日');
+  }
+  {
+    const p = (await get(
+      '/v1/payroll?prefecture=Tokyo&monthly_salary=350000&age=40&dependants=2&income_tax=true')).body;
+    const w = (await get(
+      `/v1/withholding-tax?taxable_amount=${p.income_tax.taxable_amount}&dependants=2`)).body;
+    if (w.tax !== p.income_tax.tax) pairs.push('源泉税 単体 vs 給与計算');
+  }
+  {
+    const a = (await get('/v1/age-milestones?birth_date=1986-04-01')).body;
+    const p = (await get(
+      '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&birth_date=1986-04-01')).body;
+    if (a.long_term_care !== p.long_term_care_applicable) pairs.push('介護保険の該当');
+  }
+  {
+    const s = (await get('/v1/standard-remuneration?remuneration=300000')).body;
+    const p = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40')).body;
+    if (s.health.grade !== p.standard_remuneration.health_grade) pairs.push('健保の等級');
+    if (s.pension.grade !== p.standard_remuneration.pension_grade) pairs.push('厚年の等級');
+  }
+  ok(pairs.length === 0,
+     '単体で引いた値と、計算の中で使われた値が一致する', pairs.join(' | ') || 'none');
+}
+
+{
+  // **「渡していない」と「渡したが読めない」は違う。**
+  //
+  // 実務の名簿からは `300,000`・`３０００００`・`300000円` がそのまま貼られる。
+  // どれも400で断るのは正しいが、文面が「クエリパラメータ『monthly_salary』は
+  // **必須で**、0以上の数(円)で渡してください」だった。渡している人に
+  // 「必須」と言っても、何を直せばよいか分からない。
+  //
+  // このAPIは綴り間違いに「『prefecture』の間違いではありませんか」まで返す。
+  // 金額だけ水準が低い理由がない。
+  for (const [raw, want] of [
+    ['300,000', 'カンマ'],
+    ['３０００００', '全角'],
+    ['300000円', '数字以外'],
+  ]) {
+    const r = await get(
+      `/v1/payroll?prefecture=Tokyo&monthly_salary=${encodeURIComponent(raw)}&age=40`);
+    ok(r.status === 400, `${want}混じりの金額を断る`, String(r.status));
+    ok((r.body?.error ?? '').includes(raw),
+       'and shows what was actually passed', (r.body?.error ?? '').slice(0, 50));
+    ok(!/必須/.test(r.body?.error ?? ''),
+       'and does not call it missing when it was supplied');
+    ok((r.body?.hint ?? '').includes('300000'),
+       'and shows the shape that works', (r.body?.hint ?? '').slice(0, 40));
+  }
+
+  // 本当に渡していないときは「必須」でよい。**区別が付かなければ直した意味がない。**
+  const none = await get('/v1/payroll?prefecture=Tokyo&age=40');
+  ok(none.status === 400 && /必須/.test(none.body?.error ?? ''),
+     '渡していないときは必須と言う', (none.body?.error ?? '').slice(0, 40));
+  ok(none.body?.code === 'missing_parameter',
+     'and codes it as missing rather than malformed', none.body?.code);
+
+  // 賞与も同じ扱いであること。片方だけ直すと、次に触った人が気づけない。
+  const b = await get(`/v1/bonus-insurance?prefecture=Tokyo&bonus=${encodeURIComponent('500,000')}&age=40`);
+  ok(b.status === 400 && (b.body?.error ?? '').includes('500,000'),
+     '賞与でも渡された値を見せる', (b.body?.error ?? '').slice(0, 46));
+}
+
+{
+  // **enums は双方向でなければ意味がない。**
+  //
+  // 「実装されているのに載っていない」は8件目で見つけた(employment_type。
+  // 役員を既定で計算すると雇用保険を月4,050円多く引く)。
+  // 逆に「載っているのに動かない」も、作るときに読んだ人が400を食うので同じく困る。
+  // 仕様書との突き合わせは別ブロックでやっているので、ここは**実際に渡す**。
+  const enumsAll = (await get('/v1/enums')).body;
+  const PROBES = {
+    business_type: (v) => `/v1/employment-insurance?business_type=${v}`,
+    column: (v) => `/v1/withholding-tax?taxable_amount=300000&dependants=0&column=${v}`,
+    daily_column: (v) => `/v1/withholding-tax/daily?taxable_amount=12000&column=${v}`,
+    fixed_pay_change: (v) =>
+      '/v1/standard-remuneration/revision?current_remuneration=300000'
+      + `&months=380000:31,380000:30,380000:31&fixed_pay_change=${v}`,
+    leave_kind: (v) => `/v1/leave-exemption?kind=${v}&start=2026-04-01&end=2026-06-30`,
+    detail: (v) => `/v1/prefectures?detail=${v}`,
+    include: (v) => `/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&include=${v}`,
+    calendar: (v) => `/v1/holidays/check?date=2026-01-02&calendar=${v}`,
+    employment_type: (v) => `/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40&employment_type=${v}`,
+  };
+  const rejected = [];
+  let tried = 0;
+  for (const [key, mk] of Object.entries(PROBES)) {
+    const vals = enumsAll[key];
+    ok(Array.isArray(vals), `/v1/enums に ${key} がある`);
+    if (!Array.isArray(vals)) continue;
+    for (const item of vals) {
+      const v = typeof item === 'object' ? item.value : item;
+      const r = await get(mk(v));
+      tried++;
+      if (r.status !== 200 || r.body?.error) rejected.push(`${key}=${v} → ${r.status} ${r.body?.code ?? ''}`);
+    }
+  }
+  ok(tried >= 20, 'enums の値を実際に渡せている', `${tried} 通り`);
+  ok(rejected.length === 0,
+     'enums に載っている値は全部そのまま通る', rejected.slice(0, 4).join(' | ') || 'none');
+}
+
+{
+  // **片方だけ直すのが、この製品で繰り返し起きている形。**
+  //
+  // 13件目で GET の金額の断り方を直した(渡された値を見せる)。
+  // POST の一括処理は取り残されていて、500人の名簿で3行だけカンマ付きだった人が
+  // 「monthly_salary は必須で」とだけ言われた。**どの値が悪いか分からない。**
+  // 都道府県はすでに値を見せていたので、金額と年齢だけが遅れていた。
+  //
+  // GET と POST に同じものを渡して、**同じ水準で断ることを見る。**
+  for (const raw of ['300,000', '３０００００', '300000円']) {
+    const g1 = await get(
+      `/v1/payroll?prefecture=Tokyo&monthly_salary=${encodeURIComponent(raw)}&age=40`);
+    const r = await tryFetch(`${BASE}/v1/payroll/batch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ employees: [{ prefecture: 'Tokyo', monthly_salary: raw, age: 40 }] }),
+    });
+    const b = await r.json();
+    const rowError = (b.errors ?? [])[0]?.error ?? '';
+    ok((g1.body?.error ?? '').includes(raw), `GET が「${raw}」を見せる`);
+    ok(rowError.includes(raw), `POST も「${raw}」を見せる`, rowError.slice(0, 56));
+    ok(!/必須/.test(rowError), 'and does not call a supplied value missing', rowError.slice(0, 40));
+  }
+
+  // 行番号が付くこと。**どの行かが分からなければ、500人分を探すことになる。**
+  const mixed = await tryFetch(`${BASE}/v1/payroll/batch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ employees: [
+      { prefecture: 'Tokyo', monthly_salary: 300000, age: 40 },
+      { prefecture: 'Tokyo', monthly_salary: '300,000', age: 40 },
+      { prefecture: 'Osaka', monthly_salary: 280000, age: 30 },
+    ] }),
+  });
+  const mb = await mixed.json();
+  ok(mb.count === 3 && mb.succeeded === 2 && mb.failed === 1,
+     '壊れた行だけが落ち、残りは計算される', `${mb.count}/${mb.succeeded}/${mb.failed}`);
+  ok((mb.errors ?? [])[0]?.index === 1,
+     'そして何行目かが分かる', String((mb.errors ?? [])[0]?.index));
+
+  // 本当に渡していない行は「必須」でよい。**区別が付かなければ直した意味がない。**
+  const none = await tryFetch(`${BASE}/v1/payroll/batch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ employees: [{ prefecture: 'Tokyo', age: 40 }] }),
+  });
+  const nb = await none.json();
+  ok((nb.errors ?? [])[0]?.code === 'missing_parameter',
+     '渡していない行は missing_parameter', (nb.errors ?? [])[0]?.code);
 }
 
 {

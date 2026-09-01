@@ -263,7 +263,11 @@ app.use('*', async (c, next) => {
     const type = c.res.headers.get('content-type') ?? '';
     if (type.includes('application/json')) {
       const body: any = await c.res.clone().json();
-      const DROP = ['attribution', 'notes', 'guidance', 'statutes', 'notice',
+      // `notes` はあるのに `note`(単数)が無かった。/v1/enums と
+      // /v1/data-freshness はどちらも単数で返すので、この2経路だけ
+      // detail=compact が何も落とさず、omitted も付かなかった。
+      // **説明文は全経路に付いている。**約束した以上、例外を作らない。
+      const DROP = ['attribution', 'notes', 'note', 'guidance', 'statutes', 'notice',
                     'not_required_for', 'excludable_allowances', 'reference',
                     'headcount_schedule', 'revisions', 'idempotency'];
       const dropped = DROP.filter((k) => body[k] !== undefined);
@@ -274,6 +278,10 @@ app.use('*', async (c, next) => {
           why: '毎回同じ内容なので省いています。数字と判定は省いていません。',
           how_to_get: 'detail を外すか detail=full を付けると、すべて返ります。',
         };
+        // 落とすものが短い経路(/v1/enums など)では omitted のほうが長くなり、
+        // compact のほうが数十バイト大きくなる。**それでも常に落とす。**
+        // detail はクライアントが一律に付ける引数なので、経路によって
+        // 形が変わるほうが扱いにくい。効くのは一括処理で、そこでは10分の1になる。
         c.res = new Response(JSON.stringify(body), {
           status: c.res.status,
           headers: c.res.headers,
@@ -450,6 +458,29 @@ const bad = (c: any, message: string, hint?: string, code = 'invalid_request') =
  *
  * 片方だけ厳しい検証は、緩いほうから入られる。同じ範囲に揃える。
  */
+/**
+ * 金額の引数が読めないときに、**何が悪かったかを言う。**
+ *
+ * 「必須で、0以上の数(円)で渡してください」とだけ返していた。
+ * `300,000` や `３０００００` や `300000円` を渡した人は**渡している**ので、
+ * 「必須」と言われても何を直せばよいか分からない。実務の名簿からは
+ * この3つがそのまま貼られる。
+ *
+ * このAPIは綴り間違いに「「prefecture」の間違いではありませんか」まで返す。
+ * 金額だけ水準が低い理由がない。
+ */
+const badAmount = (c: any, name: string, raw: string | undefined): any => {
+  if (raw === undefined || raw === '')
+    return bad(c, `クエリパラメータ「${name}」は必須です。0以上の数(円)で渡してください。`,
+      undefined, 'missing_parameter');
+  const why = /[０-９]/.test(raw) ? '全角の数字が混じっています。'
+    : /,/.test(raw) ? '桁区切りのカンマは外してください。'
+    : /[^\d.eE+\-\s]/.test(raw) ? '数字以外の文字が混じっています(単位は付けないでください)。'
+    : '数として読めません。';
+  return bad(c, `「${name}」に「${raw}」が渡されました。${why}`,
+    `0以上の半角数字だけで渡してください(例: ${name}=300000)。`);
+};
+
 const badBirthDate = (c: any, birth: Date | null): any => {
   if (!birth) return null;
   // 基準日は as_of。過去の給与を組み直す人がいるので、「今日」で判定すると
@@ -576,7 +607,12 @@ app.get('/', (c) => {
       'GET /v1/eligibility?month=2026-03&left_on=2026-03-30': '入社月・退職月に社会保険料がかかるかどうか',
       'GET /v1/age-milestones?birth_date=1986-04-01': '40歳・65歳・70歳・75歳の到達日と、それぞれ何が変わるか',
       'GET /v1/bonus-insurance?prefecture=Tokyo&bonus=800000&age=40': '賞与の社会保険料。年度累計と1回あたりの上限つき',
-      'GET /v1/bonus-tax?bonus=500000&previous_month_pay=350000&previous_month_insurance=55750&dependants=2': '賞与にかかる源泉所得税(賞与の算出率表)',
+      // **この一覧は、全部の404が「一覧は GET / を見てください」と案内する先。**
+      // 迷った人がコピーするのはこの行なので、そのままで動かなければならない。
+      // bonus_insurance が必須なのに抜けていて、コピーすると400になっていた。
+      // 値は GET /v1/bonus-insurance?prefecture=Tokyo&bonus=500000&age=40 の
+      // totals.employee(賞与にかかる社会保険料の本人負担)。
+      'GET /v1/bonus-tax?bonus=500000&previous_month_pay=350000&previous_month_insurance=55750&bonus_insurance=75000&dependants=2': '賞与にかかる源泉所得税(賞与の算出率表)',
       'GET /v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=20&night_hours=5': '割増賃金 — 時間外25%、月60時間超50%、法定休日35%、深夜はこれに25%上乗せ(労基法37条)',
       'GET /v1/workers-compensation?business_type=98&wage_total=3600000': '労災保険料 — 全額が事業主負担。率は事業の種類によって1,000分の2.5から88まで開く',
       'GET /v1/commuting-allowance?amount=12000&distance_km=12&parking=3000': '通勤手当の非課税限度額 — 社会保険は全額を報酬に算入し、所得税は限度額を超えた分にだけかかる。この表は12か月で2度、うち1度は遡って改定された',
@@ -885,7 +921,7 @@ app.get('/v1/payroll', (c) => {
   const salaryRaw = c.req.query('monthly_salary');
   const salary = Number(salaryRaw);
   if (!salaryRaw || !Number.isFinite(salary) || salary < 0)
-    return bad(c, 'クエリパラメータ「monthly_salary」は必須で、0以上の数(円)で渡してください。');
+    return badAmount(c, 'monthly_salary', salaryRaw);
 
   const ageRaw = c.req.query('age');
   const age = ageRaw === undefined ? null : Number(ageRaw);
@@ -1601,10 +1637,14 @@ function withSizeHint<T extends Record<string, unknown>>(body: T, detail: string
     ...body,
     size_hint: {
       bytes,
-      compact_estimate_bytes: Math.round(bytes * 0.133),
+      // **帯域は従量課金なので、この見積もりは金額そのもの。**
+      // 0.133 は古い実測で、いまは 0.1443〜0.1445(200/300/500人でほぼ一定)。
+      // 8%小さく見積もっていた。**小さすぎる見積もりは、compact に切り替えても
+      // 想定ほど安くならないという形で利用者に不利に働く。**実測に合わせる。
+      compact_estimate_bytes: Math.round(bytes * 0.145),
       how: '?detail=compact',
       note: 'この応答の大きさです。内訳を使わないなら ?detail=compact で'
-        + 'およそ13%まで小さくなります(500人の実測で 1,045KB → 139KB)。'
+        + 'およそ14.5%まで小さくなります(500人の実測で 944KB → 136KB)。'
         + '落とした項目と取り戻し方は omitted に載ります。',
     },
   };
@@ -2947,7 +2987,7 @@ app.get('/v1/bonus-insurance', (c) => {
   const bonusRaw = c.req.query('bonus');
   const bonus = Number(bonusRaw);
   if (!bonusRaw || !Number.isFinite(bonus) || bonus < 0)
-    return bad(c, 'クエリパラメータ「bonus」は必須で、0以上の数(円)で渡してください。');
+    return badAmount(c, 'bonus', bonusRaw);
 
   const ytdRaw = c.req.query('fiscal_year_to_date') ?? '0';
   const ytd = Number(ytdRaw);
@@ -3063,7 +3103,7 @@ app.get('/v1/bonus-tax', (c) => {
 
   const bonus = n('bonus');
   if (bonus === undefined || Number.isNaN(bonus) || bonus < 0)
-    return bad(c, 'クエリパラメータ「bonus」は必須で、0以上の数(円)で渡してください。');
+    return badAmount(c, 'bonus', c.req.query('bonus'));
 
   const prev = n('previous_month_pay');
   if (prev === undefined || Number.isNaN(prev) || prev < 0)
@@ -3151,6 +3191,21 @@ app.get('/v1/enums', (c) => {
       {
         value: 'short_time_insured', label_ja: '特定適用事業所の短時間労働者', payment_basis_days: 11,
         description: '健康保険法施行規則第24条の2。11日の要件は定時決定・随時改定・休業終了時改定のいずれにも及びます。',
+      },
+    ],
+    // **ここに無い値は、呼び手にとって存在しない。**enums は「400を返されてから
+    // 知るのではなく、作るときに読める」ためのもので、それが名乗り。
+    // employment_type はそこから漏れていた。役員を既定の employee で計算すると
+    // 雇用保険を余分に引く(東京・月給30万円で月4,050円)。
+    employment_type: [
+      { value: 'employee', label_ja: '従業員', description: '既定。雇用保険の適用があります。' },
+      {
+        value: 'director', label_ja: '役員',
+        description: '雇用保険の適用外です(雇用保険法第4条)。健康保険と厚生年金はかかります。',
+      },
+      {
+        value: 'director_employee', label_ja: '兼務役員',
+        description: '従業員としての実態があれば雇用保険の適用があります。',
       },
     ],
     fixed_pay_change: [
