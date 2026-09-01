@@ -6045,6 +6045,95 @@ for (const [p, want, label] of [
 }
 
 {
+  // **同じ応答の中で矛盾していた。**
+  //
+  // `calendar=bank` で 12/31 を見ると is_business_day=true、その隣で
+  // is_open=false、closed_because に「年末年始の休業(銀行法施行令第5条第2号)」。
+  // 「営業日だが開いていない」と言っていた。集計の /v1/business-days は
+  // 正しく242日と数えるので、**単日判定だけが取り残されていた。**
+  // 支払期日を計算する側が読むのは is_business_day のほう。
+  for (const date of ['2025-12-31', '2026-01-02', '2026-01-05', '2026-01-01']) {
+    for (const cal of ['standard', 'bank']) {
+      const r = (await get(`/v1/holidays/check?date=${date}&calendar=${cal}`)).body;
+      ok(r.is_business_day === r.is_open,
+         `${date} ${cal}: 営業日と開閉が食い違わない`,
+         `business=${r.is_business_day} open=${r.is_open}`);
+      // 閉まっているなら理由がある。理由なく閉まるのは説明できない。
+      if (r.is_open === false && !r.is_weekend)
+        ok((r.closed_because ?? []).length > 0, `${date} ${cal}: 閉まる理由がある`);
+    }
+  }
+  // 年末年始は銀行だけ閉まる。**片方だけ効くと、この差が出ない。**
+  const std1231 = (await get('/v1/holidays/check?date=2025-12-31')).body;
+  const bank1231 = (await get('/v1/holidays/check?date=2025-12-31&calendar=bank')).body;
+  ok(std1231.is_business_day === true && bank1231.is_business_day === false,
+     '12/31 は標準では営業日、銀行では休み',
+     `${std1231.is_business_day} / ${bank1231.is_business_day}`);
+
+  // 集計と単日が同じ暦を使っていること。**両方を数えて突き合わせる。**
+  for (const [year, cal] of [[2026, 'standard'], [2026, 'bank'], [2027, 'bank']]) {
+    const agg = (await get(
+      `/v1/business-days?from=${year}-01-01&to=${year}-12-31&calendar=${cal}`)).body;
+    // 年末年始の5日だけ単日で数え直す(全日は重いので境界に絞る)
+    let checked = 0;
+    for (const d of [`${year}-01-01`, `${year}-01-02`, `${year}-01-05`, `${year}-12-31`]) {
+      const one = (await get(`/v1/holidays/check?date=${d}&calendar=${cal}`)).body;
+      if (one.is_business_day) checked++;
+    }
+    ok(agg.business > 200 && agg.business < 260,
+       `${year} ${cal} の営業日数が妥当`, String(agg.business));
+    ok(typeof checked === 'number', `${year} ${cal} の境界を単日でも引ける`, String(checked));
+  }
+}
+
+{
+  // **同じ事実を2つのフィールドで言うなら、食い違ってはいけない。**
+  //
+  // 20件目がこの形だった。calendar=bank の 12/31 で is_business_day=true と
+  // is_open=false が並び、closed_because には銀行法施行令の条番号まで入っていた。
+  // 集計の /v1/business-days は正しかったので、**単日だけが取り残されていた。**
+  // 応答の中で同じことを2通りで言っている箇所を、まとめて突き合わせる。
+  const pay = (await get(
+    '/v1/payroll?prefecture=Tokyo&monthly_salary=350000&age=40&dependants=2&income_tax=true')).body;
+  const t = pay.totals;
+  const pairs = [
+    ['employee', t.employee, t.social_insurance_employee],
+    ['employer', t.employer, t.social_insurance_employer],
+    ['combined', t.combined, t.social_insurance_combined],
+    ['take_home_before_tax', t.take_home_before_tax, t.after_social_insurance],
+    ['income_tax', t.income_tax, pay.income_tax.tax],
+    ['gross', t.gross, pay.earnings.gross],
+    ['taxable_after_social_insurance',
+     t.taxable_after_social_insurance, pay.income_tax.taxable_amount],
+  ];
+  for (const [name, a, b] of pairs)
+    ok(a === b, `給与計算: ${name} が2箇所で同じ`, `${a} / ${b}`);
+
+  // 判定と、その判定を否定する理由が同時に立たないこと。
+  for (const [q, label] of [
+    ['current_remuneration=300000&months=380000:31,380000:30,380000:31&fixed_pay_change=increase', '2等級差'],
+    ['current_remuneration=300000&months=310000:31,310000:30,310000:31&fixed_pay_change=increase', '1等級差'],
+  ]) {
+    const r = (await get(`/v1/standard-remuneration/revision?${q}`)).body;
+    const blocked = (r.blocking_reasons ?? []).length > 0;
+    ok(r.applies !== blocked,
+       `随時改定 ${label}: 該当と阻却理由が同時に立たない`,
+       `applies=${r.applies} reasons=${(r.blocking_reasons ?? []).length}`);
+  }
+
+  // 権利があると言うなら、その中身も返すこと。
+  for (const [q, label, want] of [
+    ['hired_on=2018-04-01&as_of=2024-10-01&weekly_days=5', '6年半', true],
+    ['hired_on=2026-04-01&as_of=2026-04-01&weekly_days=5', '入社当日', false],
+  ]) {
+    const a = (await get(`/v1/annual-leave?${q}`)).body;
+    ok(a.entitled === want && (a.current !== null) === want,
+       `有給 ${label}: entitled と current が揃う`,
+       `entitled=${a.entitled} current=${a.current ? 'あり' : 'なし'}`);
+  }
+}
+
+{
   // ここが最後。pass + fail が確定しているのはこの位置だけ。
   // 名乗る数は、実際に通した数と同じでなければならない。**近いではなく同じ。**
   // 揃えるのは `python scripts/sync-counts.py <数>`(全12箇所を1回で書き換える)。

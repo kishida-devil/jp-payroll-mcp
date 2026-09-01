@@ -1192,7 +1192,13 @@ app.get('/v1/holidays/check', (c) => {
     weekday: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getUTCDay()],
     is_holiday: h !== null,
     is_weekend: isWeekend(d),
-    is_business_day: isBusinessDay(d),
+    // **同じ応答の中で矛盾していた。**`isBusinessDay` はカレンダーを知らない
+    // 関数なので、calendar=bank でも 12/31 を「営業日」と答え、その隣で
+    // is_open=false と closed_because=「年末年始の休業(銀行法施行令第5条第2号)」
+    // を返していた。集計の /v1/business-days は isOpenOn を使っていて正しく
+    // 242日と数えるので、単日判定だけが取り残されていた。
+    // **支払期日を計算する側が読むのは is_business_day のほう。**
+    is_business_day: isOpenOn(d, cal),
     is_open: isOpenOn(d, cal),
     closed_because: reasons,
     holiday: h,
