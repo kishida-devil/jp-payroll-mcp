@@ -74,7 +74,7 @@ export type DailyResult = {
   dependants: number | null;
   tax: number;
   basis:
-    | { kind: 'below_minimum'; threshold: number }
+    | { kind: 'below_minimum'; threshold: number; rate?: number }
     | { kind: 'table'; bracket: { from: number; to: number } }
     | { kind: 'anchor'; anchor: number; anchor_tax: number; excess: number; rate: number };
   dependants_over_seven?: { count_over: number; deduction_per_person: number; deducted: number };
@@ -92,9 +92,18 @@ export function dailyWithholdingTax(
   };
 
   if (amount < DAILY_MIN) {
-    if (column === 'otsu') {
-      // 乙欄の最下段は表に金額が入る（丙・甲は0）。表の先頭区間の値を使う。
-      return { ...base, tax: 0, basis: { kind: 'below_minimum', threshold: DAILY_MIN } };
+    // **乙欄は0ではない。**日額表の最下段(3,500円未満)は、甲欄と丙欄が0円、
+    // 乙欄だけ「その日の社会保険料等控除後の給与等の金額の3.063%に相当する金額」。
+    // 額ではなく率なので、表を数値として読んだときに丸ごと落ちていた。
+    // 分岐は書いてあったが中身が甲欄と同じ0円で、注記も「表の先頭区間の値を使う」と
+    // 誤っていた(それだと120円固定になる)。月額表(105,000円未満)と同じ形。
+    // 日雇いで申告書の提出が無い人は、まさにこの範囲に入る。
+    const rate = RULES.below_minimum.otsu_rate;
+    if (column === 'otsu' && rate) {
+      return {
+        ...base, tax: yen(amount * rate),
+        basis: { kind: 'below_minimum', threshold: DAILY_MIN, rate },
+      };
     }
     return { ...base, tax: 0, basis: { kind: 'below_minimum', threshold: DAILY_MIN } };
   }

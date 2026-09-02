@@ -34,6 +34,21 @@ KOU_COLS = list(range(3, 11))
 OTSU_COL, HEI_COL = 11, 12
 
 
+
+def below_min_otsu_rate(sh):
+    """最下段の乙欄セルから率を読む。数値ではなく文章で入っている。"""
+    for r in range(min(sh.nrows, 30)):
+        for c in range(sh.ncols):
+            v = str(sh.cell_value(r, c))
+            # アンカーの文も「…相当する金額を加算した金額」と書く。あちらは必ず
+            # 「◯◯円を超える金額の」を含むので、それを除くと最下段だけが残る。
+            if "相当する金額" not in v or "超える" in v:
+                continue
+            m = re.search(r"([0-9]+\.[0-9]+)\s*[%％]", v)
+            if m:
+                return round(float(m.group(1)) / 100, 5)
+    raise SystemExit("最下段の乙欄に率が見つかりません。表の形が変わった可能性があります")
+
 def num(v):
     return int(v) if isinstance(v, (int, float)) and v else None
 
@@ -126,7 +141,15 @@ def main() -> int:
             },
         },
         "rules": {
-            "below_minimum": {"threshold": brackets[0]["from"], "kou": 0, "hei": 0},
+            # **乙欄を書き忘れていた。**最下段の乙欄は額ではなく率で、シートには
+            # 「その日の社会保険料等控除後の給与等の金額の3.063%に相当する金額」と
+            # 文章で入っている。数値セルだけを拾っていたので丸ごと落ち、0円になった。
+            # 月額表(105,000円未満)と同じ形。率は本文から読み、見つからなければ止める。
+            "below_minimum": {
+                "threshold": brackets[0]["from"], "kou": 0, "hei": 0,
+                "otsu_rate": below_min_otsu_rate(sh),
+                "note": f"{brackets[0]['from']:,}円未満は甲欄・丙欄0円、乙欄は金額の3.063%",
+            },
             "dependants_over_seven_deduction": 50,
             "max_dependants_in_table": 7,
         },
