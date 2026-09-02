@@ -25,6 +25,14 @@ UA = {
 }
 API = "https://japan-payroll-api.tsumugi.workers.dev"
 REPO = "kishida-devil/jp-payroll-mcp"
+# 期待する版は package.json から読む。"0.4.2" と決め打ちしていたので、
+# 0.4.3 を公開した翌日に「npm の latest が 0.4.2」で落ち、
+# MCPレジストリが 0.4.2 のまま(=まだ出ていない)なのに緑になっていた。
+# 逆向きの誤り2つ。期待値は手で書かず、公開したいものそのものから取る。
+from pathlib import Path
+PKG_VERSION = json.loads(
+    (Path(__file__).resolve().parent.parent / "mcp" / "package.json").read_text("utf-8")
+)["version"]
 
 results: list[tuple[bool, str, str]] = []
 
@@ -56,7 +64,7 @@ status, _, body = fetch("https://registry.npmjs.org/jp-payroll-mcp")
 if status == 200:
     pkg = json.loads(body)
     latest = pkg["dist-tags"]["latest"]
-    check(latest == "0.4.2", "npm の latest が 0.4.2", latest)
+    check(latest == PKG_VERSION, f"npm の latest が {PKG_VERSION}", latest)
     readme = pkg["versions"].get(latest, {}).get("readme") or pkg.get("readme", "")
     head = readme[:1200]
     check(ja_ratio(head) > 0.25, "npm が描画する README が日本語で始まる",
@@ -148,8 +156,8 @@ for term, before in (("\u7d66\u4e0e\u8a08\u7b97", 82), ("\u6a19\u6e96\u5831\u916
           else f"{total}件 (公開前は{before}件) — 上位300件に無い")
 
 # --- 収益17: MCP が公開版で価格を伝える -------------------------------------
-status, _, body = fetch("https://registry.npmjs.org/jp-payroll-mcp/0.4.2")
-check(status == 200, "npm に 0.4.2 が存在する", str(status))
+status, _, body = fetch(f"https://registry.npmjs.org/jp-payroll-mcp/{PKG_VERSION}")
+check(status == 200, f"npm に {PKG_VERSION} が存在する", str(status))
 
 status, _, body = fetch(
     "https://registry.modelcontextprotocol.io/v0/servers?search=jp-payroll")
@@ -164,8 +172,8 @@ if status == 200:
             "io.modelcontextprotocol.registry/official", {})
         if meta.get("isLatest"):
             reg_latest = f"{srv.get('version')} ({meta.get('status')})"
-check(reg_latest is not None and reg_latest.startswith("0.4.2"),
-      "公式MCPレジストリの latest が 0.4.2", reg_latest or str(status))
+check(reg_latest is not None and reg_latest.startswith(PKG_VERSION),
+      f"公式MCPレジストリの latest が {PKG_VERSION}", reg_latest or str(status))
 
 # --- 出力 -------------------------------------------------------------------
 ok_n = sum(1 for ok, _, _ in results if ok)
