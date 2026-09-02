@@ -50,6 +50,10 @@ const ALIASES: Record<string, string> = {
   健保則: '健康保険法施行規則',
   徴収法: '労働保険徴収法',
   労徴法: '労働保険徴収法',
+  // **正式名称からの逆方向が抜けていた。**参照キーを略称に寄せたのは正しいが、
+  // e-Gov からコピーしてきた人は正式名称で書く。他の7法令は正式名称で引けるのに、
+  // この法令だけ 400 out_of_coverage になっていた。
+  労働保険の保険料の徴収等に関する法律: '労働保険徴収法',
   子育て支援法: '子ども・子育て支援法',
 };
 
@@ -153,12 +157,35 @@ const CITATION = new RegExp(
   '(第?[0-9０-９]+条(?:の[0-9０-９]+)*)?',
   'g');
 
+/**
+ * 収録の有無にかかわらず、条文の引用らしい文字列を拾う網。
+ *
+ * `CITATION` は収録している8法令の名前から組み立てているので、**収録していない
+ * 法令の引用は、そもそも目に入らない**。労働基準法第39条は有給の応答が必ず引く
+ * のに、この網の外にいた。解決には使わない — 「見えている」ことだけが目的。
+ *
+ * 3文字以上に限るのは「同法第156条」を法令名として拾わないため。通達
+ * (「昭和63年1月1日 基発第150号」など)は法令ではないので対象外。
+ */
+const CITATION_ANY = new RegExp(
+  '([\u4e00-\u9fff\u30a1-\u30f6\u30fc]{3,14}(?:法|規則|令))' +
+  '(第[0-9０-９]+条(?:の[0-9０-９]+)*)', 'g');
+
 export function attachStatuteText(payload: unknown) {
   const refs = new Set<string>();
+  // **黙って捨てていた。**この関数の説明は最初から「解決できなかったものは
+  // `unresolved` に残す」と書いてあったのに、返り値にその欄が無かった。
+  // 引用したのに本文を返せない条文は、登録漏れとして見えている必要がある——
+  // 21件目(労働保険徴収法の正式名称)は、まさにこの欄が無かったから隠れていた。
+  const unresolved = new Set<string>();
   const scan = (s: string) => {
     for (const m of s.matchAll(CITATION)) {
       const hit = resolveStatute(m[0]);
       if (hit) refs.add(hit.ref);
+    }
+    for (const m of s.matchAll(CITATION_ANY)) {
+      const ref = m[1] + m[2];
+      if (!resolveStatute(ref)) unresolved.add(ref);
     }
   };
   const walk = (node: unknown): void => {
@@ -173,6 +200,16 @@ export function attachStatuteText(payload: unknown) {
   return {
     count: refs.size,
     provisions: resolved,
+    // 収録しているのは8法令で、それは設計どおり。**足りないことではなく、
+    // 足りないと言わないことが誤りだった。**引けなかった引用をそのまま返す。
+    unresolved: [...unresolved].sort(),
+    ...(refs.size === 0 && unresolved.size === 0
+      ? { note: 'この答えは条文を引用していないので、添える本文もありません。' }
+      : {}),
+    ...(unresolved.size > 0
+      ? { unresolved_note: 'これらは引用していますが本文を同梱していません。'
+          + '収録は8法令で、範囲外の条文は近いもので代用せず、そのまま名前だけを示します。' }
+      : {}),
     attribution: STATUTE_ATTRIBUTION,
   };
 }

@@ -143,6 +143,17 @@ def build_spec(recipe: dict[str, Any]) -> dict[str, Any]:
                         "Refused rather than answered with a stale figure."
                     ),
                 },
+                # **429 がどの操作にも載っていなかった。**上に自分で書いたとおり
+                # 「仕様書に無い応答は、生成したクライアントが扱えない」。しかも
+                # 無料枠は既定の経路で、本番で最初に当たるエラーはたいていこれ。
+                # 422 は44操作すべてに載せているのに、実際に出る 429 だけが無かった。
+                "429": {
+                    "description": (
+                        "Free-tier rate limit. The body carries code \"rate_limited\", "
+                        "the free-tier allowance and where to upgrade. "
+                        "Not returned to RapidAPI traffic, which is metered there instead."
+                    ),
+                },
             },
         }
         method = ep.get("method", "get").lower()

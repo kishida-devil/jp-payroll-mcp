@@ -101,8 +101,12 @@ app.all('/cdn-cgi/*', (c) => c.body(null, 204));
  * in the dashboard, and a channel that is working is indistinguishable from one
  * that nobody found.
  *
- * RapidAPI is identified by the headers its proxy adds, not by anything the
- * caller sets, so it cannot be spoofed into the wrong bucket by accident.
+ * RapidAPI is identified by the headers its proxy adds. **`x-rapidapi-host` is
+ * one any caller can set**, so this is not a trust boundary — a mislabelled row
+ * in a dashboard costs nothing, which is all this function is for. Anything that
+ * decides what somebody GETS must use `viaRapidApi` below instead. The comment
+ * here used to claim it could not be spoofed, while `entitlement` twenty lines
+ * down said the opposite; the rate limiter believed this one.
  */
 function channelOf(c: any): 'mcp' | 'rapidapi' | 'direct' {
   if (c.req.header('x-rapidapi-proxy-secret') || c.req.header('x-rapidapi-host')) return 'rapidapi';
@@ -188,6 +192,20 @@ const isLocal = (c: any) => {
  * and each such request is logged as unverified so the gap is visible rather
  * than silent.
  */
+/**
+ * 本当に RapidAPI の中継を通ってきたか。
+ *
+ * `channelOf` は集計のためのもので、`x-rapidapi-host` は誰でも付けられる。
+ * 中継しか送れないのは `x-rapidapi-proxy-secret` だけなので、そちらで判定する。
+ * secret を設定していない間は従来どおりに倒す —— 設定漏れで出品が壊れるほうが痛い。
+ * entitlement と同じ倒し方にしてあり、片方だけ厳しくなることがない。
+ */
+function viaRapidApi(c: any): boolean {
+  const configured = c.env?.RAPIDAPI_PROXY_SECRET;
+  if (!configured) return channelOf(c) === 'rapidapi';
+  return c.req.header('x-rapidapi-proxy-secret') === configured;
+}
+
 function entitlement(c: any): { paid: boolean; plan: string | null; verified: boolean } {
   if (isLocal(c)) return { paid: true, plan: 'local', verified: true };
 
@@ -211,10 +229,16 @@ app.use('*', async (c, next) => {
   // break something a customer already paid for.
   // 効いているかどうかを観測できるようにしておく。900回投げても429が出ないという
   // 状態が、設定漏れなのか判定漏れなのか、ログを見なければ切り分けられなかった。
+  //
+  // **免除を channelOf で決めていた。**それは `x-rapidapi-host` を読むだけなので、
+  // `curl -H "X-RapidAPI-Host: x"` で無料枠の上限が消えていた。entitlement は
+  // 同じ理由で proxy secret を使っているのに、ここだけが偽装できる側を見ていた。
+  // 「無料で何をもらえるか」を決める判断なので、entitlement と同じ根拠に寄せる。
+  const rapid = viaRapidApi(c);
   let rl: 'off' | 'skip' | 'pass' | 'block' = 'off';
-  if (channel === 'rapidapi' || local) rl = 'skip';
+  if (rapid || local) rl = 'skip';
   else if (!c.env?.FREE_TIER) rl = 'off';
-  if (channel !== 'rapidapi' && !local && c.env?.FREE_TIER) {
+  if (!rapid && !local && c.env?.FREE_TIER) {
     const key = c.req.header('cf-connecting-ip') ?? 'anonymous';
     const { success } = await c.env.FREE_TIER.limit({ key });
     rl = success ? 'pass' : 'block';
@@ -294,10 +318,13 @@ app.use('*', async (c, next) => {
     const body = await c.res.clone().json().catch(() => null);
     if (body && typeof body === 'object') {
       const attached = attachStatuteText(body);
-      if (attached.count > 0)
-        c.res = new Response(
-          JSON.stringify({ ...(body as object), statute_text: attached }),
-          { status: 200, headers: c.res.headers });
+      // **`count > 0` のときだけ足していた。**有給と割増賃金は労働基準法しか
+      // 引かず、それは収録範囲の外なので、`include=statute_text` を付けても
+      // 応答が何も変わらなかった。渡したのに効かないのは、黙って捨てるのと同じ。
+      // 頼まれたら必ず答える。引けなかったことも答えのうち。
+      c.res = new Response(
+        JSON.stringify({ ...(body as object), statute_text: attached }),
+        { status: 200, headers: c.res.headers });
     }
   }
 
@@ -1508,7 +1535,15 @@ app.get('/v1/withholding-tax/daily', (c) => {
     return bad(c, `該当する column がありません: 「${colRaw}」`,
       '「kou」「otsu」または「hei」(丙欄、日雇いや短期雇用の人)のいずれかです。');
 
-  const dependants = Number(c.req.query('dependants') ?? '0');
+  const depRaw = c.req.query('dependants');
+  // **仕様書は「丙欄に扶養人数を渡すのはエラー。黙って無視はしない」と書いてあった。**
+  // 実装は 200 を返して値を捨てていた。丙欄は日雇いのための欄で、
+  // 扶養親族等による段が表そのものに無い。渡した人は甲欄のつもりでいる可能性が高く、
+  // 黙って別の欄の額を返すのがいちばん危ない。公開した約束の側が正しかった。
+  if (colRaw === 'hei' && depRaw !== undefined)
+    return bad(c, '丙欄に「dependants」は渡せません。',
+      '丙欄(日雇い・短期雇用)には扶養親族等による区分がありません。扶養人数で税額が変わるのは甲欄だけです。');
+  const dependants = Number(depRaw ?? '0');
   if (!Number.isInteger(dependants) || dependants < 0 || dependants > 50)
     return bad(c, '「dependants」は0から50の整数で渡してください。');
 
@@ -3273,6 +3308,9 @@ app.get('/v1/enums', (c) => {
       { value: 'not_found', description: 'そのエンドポイントはありません。' },
       { value: 'method_not_allowed', description: `経路はありますが、そのHTTPメソッドでは呼べません。${ALLOW_HEADER} ヘッダに使えるものが入ります。` },
       { value: 'internal_error', description: '想定していない失敗です。' },
+      // **この一覧に無かった。**クライアントのエラー処理はここから作るのに、
+      // 無料枠は既定の経路で、本番で最もよく当たるエラーがこれだった。
+      { value: 'rate_limited', description: `無料枠の上限を超えました(HTTP 429)。目安は1分あたり ${FREE_TIER.requests_per_minute} 回で、RapidAPI 経由には適用されません。` },
     ],
     prefectures: '47件すべては GET /v1/prefectures を見てください。',
   }));

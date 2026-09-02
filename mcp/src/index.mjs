@@ -427,6 +427,10 @@ registerTool('calculate_withholding_tax', {
     return fail('電算機計算の特例は月額にだけ適用されます。日額表に特例はありません。');
   if (a.column === 'hei' && a.period !== 'daily')
     return fail('丙欄は日額表にしかありません。period を「daily」にしてください。');
+  // 模型は既定値を埋めたがるので、dependants: 0 を添えてきやすい。
+  // 丙欄には扶養の段が無い。黙って捨てると「効いている」と誤解される。
+  if (a.column === 'hei' && a.dependants !== undefined)
+    return fail('丙欄に扶養人数は渡せません。丙欄(日雇い・短期雇用)には扶養親族等による区分がありません。');
   const path = a.method === 'computer' ? '/v1/withholding-tax/computer'
     : a.period === 'daily' ? '/v1/withholding-tax/daily'
     : '/v1/withholding-tax';

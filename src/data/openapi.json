@@ -40,6 +40,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -98,6 +101,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -156,6 +162,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -224,6 +233,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -292,6 +304,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -350,6 +365,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -423,6 +441,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -501,6 +522,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -569,6 +593,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -811,6 +838,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -899,6 +929,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -957,6 +990,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1045,6 +1081,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1127,6 +1166,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1219,6 +1261,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1311,6 +1356,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1399,6 +1447,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1457,6 +1508,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1525,6 +1579,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1593,6 +1650,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1661,6 +1721,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1753,6 +1816,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1841,6 +1907,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -1934,6 +2003,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -2056,6 +2128,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -2174,6 +2249,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -2363,6 +2441,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -2471,6 +2552,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -2614,6 +2698,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -2731,6 +2818,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -2873,6 +2963,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3088,6 +3181,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3190,6 +3286,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3308,6 +3407,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3406,6 +3508,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3489,6 +3594,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3577,6 +3685,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3745,6 +3856,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -3873,6 +3987,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -4011,6 +4128,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -4099,6 +4219,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -4177,6 +4300,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -4245,6 +4371,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
@@ -4303,6 +4432,9 @@
      },
      "422": {
       "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
      }
     },
     "parameters": [
