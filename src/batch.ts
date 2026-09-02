@@ -205,6 +205,11 @@ export type Detail = 'full' | 'compact';
  */
 export function runBatch(rows: BatchRow[], defaults: BatchDefaults, detail: Detail = 'full') {
   const results: Array<Record<string, unknown>> = [];
+  // full のときも compact 版を並行して組み立てる。size_hint の「compact にしたら
+  // 何バイトか」を定数(14.5%)で見積もっていたが、応答に項目を足すたびに比率が
+  // ずれて、5%以内の約束を破った。見積もりではなく、その応答の compact 版を
+  // 実際に測って返す。行あたりの追加コストは小さなオブジェクト1つ。
+  const compact: Array<Record<string, unknown>> = [];
   const errors: RowError[] = [];
   const slips: Payslip[] = [];
 
@@ -217,25 +222,27 @@ export function runBatch(rows: BatchRow[], defaults: BatchDefaults, detail: Deta
     const slip = computePayslip(parsed.input);
     slips.push(slip);
     const id = typeof row.id === 'string' ? { id: row.id } : {};
+    const compactRow = {
+      ...id, index,
+      prefecture: parsed.input.prefecture,
+      gross: slip.totals.gross,
+      taxable_gross: slip.totals.taxable_gross,
+      non_taxable: slip.totals.non_taxable,
+      social_insurance_employee: slip.totals.social_insurance_employee,
+      social_insurance_employer: slip.totals.social_insurance_employer,
+      workers_compensation_employer: slip.totals.workers_compensation_employer,
+      employer_cost: slip.totals.employer_cost,
+      income_tax: slip.totals.income_tax,
+      resident_tax: slip.totals.resident_tax,
+      net_pay: slip.totals.net_pay,
+    } as any;
+    compact.push(compactRow);
     if (detail === 'compact') {
-      results.push({
-        ...id, index,
-        prefecture: parsed.input.prefecture,
-        gross: slip.totals.gross,
-        taxable_gross: slip.totals.taxable_gross,
-        non_taxable: slip.totals.non_taxable,
-        social_insurance_employee: slip.totals.social_insurance_employee,
-        social_insurance_employer: slip.totals.social_insurance_employer,
-        workers_compensation_employer: slip.totals.workers_compensation_employer,
-        employer_cost: slip.totals.employer_cost,
-        income_tax: slip.totals.income_tax,
-        resident_tax: slip.totals.resident_tax,
-        net_pay: slip.totals.net_pay,
-      } as any);
+      results.push(compactRow);
       return;
     }
     results.push({ ...id, index, input: parsed.input, ...slip });
   });
 
-  return { results, errors, summary: summarise(slips) };
+  return { results, compact, errors, summary: summarise(slips) };
 }

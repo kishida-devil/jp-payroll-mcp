@@ -5,7 +5,7 @@ import {
   resolvePrefecture, roundEmployeeShare, findGrade,
   pensionStandardRemuneration, isLtcInsured, minimumWageAt,
   PREFECTURE_FULL_JA, suggestPrefecture,
-  latestMinimumWageEffectiveFrom,
+  latestMinimumWageEffectiveFrom, employmentInsuranceAt,
   ATTRIBUTION, type PrefKey,
 } from './lib';
 import ctax from './data/consumption-tax.json';
@@ -471,9 +471,11 @@ const RATE_WINDOWS = {
     note: '協会けんぽの料率は毎年3月分(4月納付分)から切り替わる。',
   },
   employment_insurance: {
-    from: '2026-04-01', through: '2027-03-31',
-    label: '令和8年度の雇用保険料率',
-    note: '雇用保険料率は年度で切り替わる。',
+    // 令和7年度から履歴で持つ。3月は社保が新年度・雇用保険が旧年度になる月で、
+    // 令和8年度だけだと2026年3月分の給与が計算できなかった(33件目)。
+    from: '2025-04-01', through: '2027-03-31',
+    label: '令和7年度・令和8年度の雇用保険料率',
+    note: '雇用保険料率は年度(4月1日)で切り替わる。',
   },
   workers_compensation: {
     from: '2024-04-01', through: '2027-03-31',
@@ -494,7 +496,7 @@ function outsideRateWindow(c: any, set: RateSet, iso: string | null) {
     code: 'out_of_coverage',
     coverage: { from: w.from, through: w.through, table: w.label },
     hint: iso < w.from
-      ? `このAPIが持っている料率表は1つだけです — ${w.label}。${w.note} ` +
+      ? `このAPIが収録している料率は ${w.from} から ${w.through} までです — ${w.label}。${w.note} ` +
         '過去の日付に現行の料率を返せば、もっともらしい誤った数字になるため、返さずに拒否します。'
       : `${w.note} ${iso} 時点の料率はまだ公表されていません。出典が公表し次第ここに載ります。`,
   }, 422);
@@ -842,8 +844,7 @@ app.get('/v1/employment-insurance', (c) => {
   const unknownQ = rejectBadQuery(c, ['business_type', 'as_of'] as const);
   if (unknownQ) return unknownQ;
   const t = (c.req.query('business_type') ?? 'general').toLowerCase();
-  const bt = (empins.business_types as any)[t];
-  if (!bt)
+  if (!(empins.business_types as any)[t])
     return bad(c, `該当する business_type がありません: 「${t}」`,
       `次のいずれかです: ${Object.keys(empins.business_types).join(', ')}`);
 
@@ -853,14 +854,27 @@ app.get('/v1/employment-insurance', (c) => {
   const outside = outsideRateWindow(c, 'employment_insurance', asOfRaw ?? null);
   if (outside) return outside;
 
+  // 年度ごとの表から、その日のものを選ぶ。給与計算(payslip)も同じ関数を通す。
+  const table = employmentInsuranceAt(asOfRaw ?? null);
+  if (!table)
+    return c.json({ error: `${asOfRaw} 時点の雇用保険料率は収録されていません。`, code: 'out_of_coverage' }, 422);
+  const bt = table.business_types[t];
+
   return c.json({
     business_type: t, label_ja: bt.label_ja,
     ...(asOfRaw ? { as_of: asOfRaw } : {}),
-    fiscal_year: empins.meta.fiscal_year, effective_from: empins.meta.effective_from,
-    applies: RATE_WINDOWS.employment_insurance,
+    fiscal_year: table.fiscal_year, era_year: table.era_year,
+    effective_from: table.effective_from, effective_to: table.effective_to,
+    applies: {
+      from: table.effective_from, through: table.effective_to,
+      label: table.label_ja,
+      note: RATE_WINDOWS.employment_insurance.note,
+    },
+    coverage: RATE_WINDOWS.employment_insurance,
     rates: { employee: bt.employee_rate, employer: bt.employer_rate, total: bt.total_rate },
     breakdown: bt.breakdown,
     note: empins.meta.note,
+    source_url: table.source_url,
     freshness: freshnessOf('employment_insurance', new Date()),
     attribution: ATTRIBUTION.employment_insurance,
   });
@@ -1038,7 +1052,8 @@ app.get('/v1/payroll', (c) => {
     return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
   // as_of は年齢の判定だけでなく**どの料率表を使うか**でもある。載っていない
   // 時点を渡されて現行の率で答えるのは、間違いに気づく手がかりを消すこと。
-  const outsideRates = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
+  const outsideRates = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null)
+    ?? outsideRateWindow(c, 'employment_insurance', asOfRaw ?? null);
   if (outsideRates) return outsideRates;
 
   const pref = insurance.prefectures[r.pref];
@@ -1158,6 +1173,10 @@ app.get('/v1/payroll', (c) => {
     notes: {
       rounding: insurance.meta.rounding,
       basis: '社会保険料は標準報酬月額にかかります。雇用保険料と源泉所得税は実際の支給額にかかります。',
+      // 利用者として使って気づいた。as_of を「支給日」と読んで渡すと、翌月控除の
+      // 事業所では1か月ずれる(9月25日支給で控除するのは8月分の保険料)。
+      // 40歳到達の月などは、このずれがそのまま介護保険料の有無の違いになる。
+      premium_month: 'as_of は保険料の対象月(その月に被保険者である月)です。支給日ではありません。事業主は前月分の保険料を当月の報酬から控除できる(健康保険法第167条)ので、翌月控除の事業所では、支給日の前月の日付を as_of に渡してください。',
       income_tax: withTax
         ? '源泉所得税は社会保険料控除後の額から計算します。その控除はこのエンドポイントが行うので、総支給額を渡してください。income_tax=false を渡せば計算しません。'
         : '源泉所得税を出していません。含めるには income_tax=true を渡してください。',
@@ -1703,19 +1722,25 @@ function idempotencyNote(key: string | undefined) {
  *
  * 返す直前に測る。推測した数字を返さない。
  */
-function withSizeHint<T extends Record<string, unknown>>(body: T, detail: string): T {
+function withSizeHint<T extends Record<string, unknown>>(
+  body: T, detail: string, compactResults?: Array<Record<string, unknown>>,
+): T {
   if (detail === 'compact') return body;
-  const bytes = new TextEncoder().encode(JSON.stringify(body)).length;
+  const measure = (o: unknown) => new TextEncoder().encode(JSON.stringify(o)).length;
+  const bytes = measure(body);
   if (bytes < 200_000) return body;
+  // **帯域は従量課金なので、この見積もりは金額そのもの。**
+  // 定数(0.133 → 0.145)で見積もっていたが、応答に項目を足すたびに比率がずれる。
+  // 呼び出し側が compact 版の行を渡してきたら、それを同じ包みに入れて実際に測る。
+  // 渡してこない経路だけ、最後に測った比率を使う。
+  const compactBytes = compactResults
+    ? measure({ ...body, detail: 'compact', results: compactResults })
+    : Math.round(bytes * 0.145);
   return {
     ...body,
     size_hint: {
       bytes,
-      // **帯域は従量課金なので、この見積もりは金額そのもの。**
-      // 0.133 は古い実測で、いまは 0.1443〜0.1445(200/300/500人でほぼ一定)。
-      // 8%小さく見積もっていた。**小さすぎる見積もりは、compact に切り替えても
-      // 想定ほど安くならないという形で利用者に不利に働く。**実測に合わせる。
-      compact_estimate_bytes: Math.round(bytes * 0.145),
+      compact_estimate_bytes: compactBytes,
       how: '?detail=compact',
       note: 'この応答の大きさです。内訳を使わないなら ?detail=compact で'
         + 'およそ14.5%まで小さくなります(500人の実測で 944KB → 136KB)。'
@@ -1769,7 +1794,7 @@ app.post('/v1/payroll/batch', async (c) => {
     return bad(c, `該当する detail がありません: 「${detailRaw}」`,
       '保険料の内訳まで見るなら「full」、支払額だけなら「compact」を指定してください。');
 
-  const { results, errors, summary } = runBatch(rows as BatchRow[], defaults, detailRaw as Detail);
+  const { results, compact, errors, summary } = runBatch(rows as BatchRow[], defaults, detailRaw as Detail);
   return c.json(withSizeHint({
     run_id: await runId(c.req.path, payload),
     idempotency: idempotencyNote(c.req.header('idempotency-key')),
@@ -1789,7 +1814,7 @@ app.post('/v1/payroll/batch', async (c) => {
       resident_tax: '住民税は渡された額をそのまま使います。ここでは算出しません。',
     },
     attribution: { ...ATTRIBUTION, withholding_tax: WITHHOLDING_ATTRIBUTION },
-  }, detailRaw));
+  }, detailRaw, compact));
 });
 
 /**
@@ -2520,7 +2545,8 @@ app.get('/v1/annual-cost', (c) => {
   const asOf = asOfRaw === undefined ? new Date() : parseDate(asOfRaw);
   if (asOfRaw !== undefined && !asOf)
     return bad(c, '「as_of」はYYYY-MM-DD形式の日付で渡してください。');
-  const outside = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null);
+  const outside = outsideRateWindow(c, 'social_insurance', asOfRaw ?? null)
+    ?? outsideRateWindow(c, 'employment_insurance', asOfRaw ?? null);
   if (outside) return outside;
 
   const btKey = String(c.req.query('business_type') ?? 'general').toLowerCase();

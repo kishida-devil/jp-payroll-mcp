@@ -1,77 +1,78 @@
 {
- "_comment": "Every dataset declares where it came from, what it currently covers, and when it is next expected to change. The API reports this so callers can see staleness even if our monitoring misses a revision. Dates are the first day the new figures take effect.",
- "datasets": {
-  "social_insurance": {
-   "label": "協会けんぽ 都道府県別保険料率・標準報酬月額表",
-   "covers": "令和8年度 (FY2026)",
-   "effective_from": "2026-03-01",
-   "next_revision_expected": "2027-03-01",
-   "revision_cadence": "毎年改定。3月分の給与から適用",
-   "source_url": "https://www.kyoukaikenpo.or.jp/g7/cat330/sb3150/",
-   "watch_url": "https://www.kyoukaikenpo.or.jp/assets/r8ippan3.xlsx",
-   "extractor": "scripts/extract-insurance.py"
-  },
-  "employment_insurance": {
-   "label": "雇用保険料率",
-   "covers": "令和8年度 (FY2026)",
-   "effective_from": "2026-04-01",
-   "next_revision_expected": "2027-04-01",
-   "revision_cadence": "毎年度。4月1日以後、最初の賃金締切日から適用されます。",
-   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
-   "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
-   "extractor": "厚生労働省のPDFから手入力"
-  },
-  "minimum_wage": {
-   "label": "地域別最低賃金",
-   "covers": "令和7年度(FY2025)。47都道府県×24年分",
-   "effective_from": "2025-10-01",
-   "next_revision_expected": "2026-10-01",
-   "revision_cadence": "毎年改定。答申は8月下旬から公表され、発効日は都道府県ごとに異なる(10月から)",
-   "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
-   "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
-   "extractor": "scripts/extract-minimum-wage.py",
-   "note": "令和8年度の改定は2026年8月時点で都道府県ごとに順次公示されている最中でした。2026年10月より前にこのデータを更新する必要があります。"
-  },
-  "holidays": {
-   "label": "国民の祝日",
-   "covers": "1955-2027",
-   "effective_from": "1955-01-01",
-   "next_revision_expected": "2027-02-01",
-   "revision_cadence": "内閣府が毎年2月に翌年分を公表",
-   "source_url": "https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html",
-   "watch_url": "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv",
-   "extractor": "scripts/extract-holidays.py"
-  },
-  "consumption_tax": {
-   "label": "消費税率",
-   "covers": "1989年4月1日以降、4つの税率期間すべて",
-   "effective_from": "2019-10-01",
-   "next_revision_expected": null,
-   "revision_cadence": "法定税率が変わったときだけ。現時点で予定なし",
-   "source_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
-   "watch_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
-   "extractor": "国税庁タックスアンサーから手入力"
-  },
-  "corporate_number": {
-   "label": "法人番号チェックディジット",
-   "covers": "アルゴリズムのみ。データセットは持ちません",
-   "effective_from": null,
-   "next_revision_expected": null,
-   "revision_cadence": "法令上の算式。省令が変わらないかぎり変わらない",
-   "source_url": "https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf",
-   "watch_url": null,
-   "extractor": null
-  },
-  "pension_grade_table": {
-   "label": "厚生年金保険 標準報酬月額の等級区分",
-   "covers": "32等級、上限650,000円(令和2年政令第246号による第32級)",
-   "effective_from": "2020-09-01",
-   "next_revision_expected": "2027-09-01",
-   "revision_cadence": "法改正済み。令和7年法律第74号が上限を3段階で引き上げる",
-   "source_url": "https://laws.e-gov.go.jp/law/329AC0000000115",
-   "watch_url": null,
-   "extractor": "scripts/extract-insurance.py(等級は協会けんぽの保険料額表から)",
-   "note": "法改正済みで、e-Gov の未施行改正として本文が読めます。第33級 680,000円 (2027-09-01)、第34級 710,000円 (2028-09-01)、第35級 750,000円 (2029-09-01)。昭和36年保発第4号の随時改定の例外は第31級・第32級と665,000円を直接指しているため、そちらも改められる必要があります。"
+  "_comment": "Every dataset declares where it came from, what it currently covers, and when it is next expected to change. The API reports this so callers can see staleness even if our monitoring misses a revision. Dates are the first day the new figures take effect.",
+  "datasets": {
+    "social_insurance": {
+      "label": "協会けんぽ 都道府県別保険料率・標準報酬月額表",
+      "covers": "令和8年度 (FY2026)",
+      "effective_from": "2026-03-01",
+      "next_revision_expected": "2027-03-01",
+      "revision_cadence": "毎年改定。3月分の給与から適用",
+      "source_url": "https://www.kyoukaikenpo.or.jp/g7/cat330/sb3150/",
+      "watch_url": "https://www.kyoukaikenpo.or.jp/assets/r8ippan3.xlsx",
+      "extractor": "scripts/extract-insurance.py"
+    },
+    "employment_insurance": {
+      "label": "雇用保険料率",
+      "covers": "令和7年度・令和8年度 (FY2025–FY2026)",
+      "effective_from": "2026-04-01",
+      "next_revision_expected": "2027-04-01",
+      "revision_cadence": "毎年度。4月1日以後、最初の賃金締切日から適用されます。",
+      "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
+      "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
+      "extractor": "厚生労働省のPDFから手入力",
+      "history_from": "2025-04-01"
+    },
+    "minimum_wage": {
+      "label": "地域別最低賃金",
+      "covers": "令和7年度(FY2025)。47都道府県×24年分",
+      "effective_from": "2025-10-01",
+      "next_revision_expected": "2026-10-01",
+      "revision_cadence": "毎年改定。答申は8月下旬から公表され、発効日は都道府県ごとに異なる(10月から)",
+      "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
+      "watch_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/minimumichiran/",
+      "extractor": "scripts/extract-minimum-wage.py",
+      "note": "令和8年度の改定は2026年8月時点で都道府県ごとに順次公示されている最中でした。2026年10月より前にこのデータを更新する必要があります。"
+    },
+    "holidays": {
+      "label": "国民の祝日",
+      "covers": "1955-2027",
+      "effective_from": "1955-01-01",
+      "next_revision_expected": "2027-02-01",
+      "revision_cadence": "内閣府が毎年2月に翌年分を公表",
+      "source_url": "https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html",
+      "watch_url": "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv",
+      "extractor": "scripts/extract-holidays.py"
+    },
+    "consumption_tax": {
+      "label": "消費税率",
+      "covers": "1989年4月1日以降、4つの税率期間すべて",
+      "effective_from": "2019-10-01",
+      "next_revision_expected": null,
+      "revision_cadence": "法定税率が変わったときだけ。現時点で予定なし",
+      "source_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
+      "watch_url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6303.htm",
+      "extractor": "国税庁タックスアンサーから手入力"
+    },
+    "corporate_number": {
+      "label": "法人番号チェックディジット",
+      "covers": "アルゴリズムのみ。データセットは持ちません",
+      "effective_from": null,
+      "next_revision_expected": null,
+      "revision_cadence": "法令上の算式。省令が変わらないかぎり変わらない",
+      "source_url": "https://www.houjin-bangou.nta.go.jp/documents/checkdigit.pdf",
+      "watch_url": null,
+      "extractor": null
+    },
+    "pension_grade_table": {
+      "label": "厚生年金保険 標準報酬月額の等級区分",
+      "covers": "32等級、上限650,000円(令和2年政令第246号による第32級)",
+      "effective_from": "2020-09-01",
+      "next_revision_expected": "2027-09-01",
+      "revision_cadence": "法改正済み。令和7年法律第74号が上限を3段階で引き上げる",
+      "source_url": "https://laws.e-gov.go.jp/law/329AC0000000115",
+      "watch_url": null,
+      "extractor": "scripts/extract-insurance.py(等級は協会けんぽの保険料額表から)",
+      "note": "法改正済みで、e-Gov の未施行改正として本文が読めます。第33級 680,000円 (2027-09-01)、第34級 710,000円 (2028-09-01)、第35級 750,000円 (2029-09-01)。昭和36年保発第4号の随時改定の例外は第31級・第32級と665,000円を直接指しているため、そちらも改められる必要があります。"
+    }
   }
- }
 }

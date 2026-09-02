@@ -1,23 +1,136 @@
 {
- "meta":{
-  "fiscal_year":2026,"era_year":"R8","effective_from":"2026-04-01",
-  "note":"2026年4月1日以後、最初の賃金締切日から適用されます。",
-  "source":"厚生労働省 令和8年度の雇用保険料率について",
-  "source_url":"https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
-  "license":"公共データ利用規約(第1.0版)"
- },
- "business_types":{
-  "general":{
-   "label_ja":"一般の事業","employee_rate":0.005,"employer_rate":0.0085,"total_rate":0.0135,
-   "breakdown":{"unemployment_benefits_employee":0.005,"unemployment_benefits_employer":0.005,"two_projects_employer":0.0035}
+  "meta": {
+    "fiscal_year": 2026,
+    "era_year": "R8",
+    "effective_from": "2026-04-01",
+    "note": "2026年4月1日以後、最初の賃金締切日から適用されます。",
+    "source": "厚生労働省 令和8年度の雇用保険料率について",
+    "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
+    "license": "公共データ利用規約(第1.0版)"
   },
-  "agriculture_forestry_fishery_sake":{
-   "label_ja":"農林水産・清酒製造の事業","employee_rate":0.006,"employer_rate":0.0095,"total_rate":0.0155,
-   "breakdown":{"unemployment_benefits_employee":0.006,"unemployment_benefits_employer":0.006,"two_projects_employer":0.0035}
+  "business_types": {
+    "general": {
+      "label_ja": "一般の事業",
+      "employee_rate": 0.005,
+      "employer_rate": 0.0085,
+      "total_rate": 0.0135,
+      "breakdown": {
+        "unemployment_benefits_employee": 0.005,
+        "unemployment_benefits_employer": 0.005,
+        "two_projects_employer": 0.0035
+      }
+    },
+    "agriculture_forestry_fishery_sake": {
+      "label_ja": "農林水産・清酒製造の事業",
+      "employee_rate": 0.006,
+      "employer_rate": 0.0095,
+      "total_rate": 0.0155,
+      "breakdown": {
+        "unemployment_benefits_employee": 0.006,
+        "unemployment_benefits_employer": 0.006,
+        "two_projects_employer": 0.0035
+      }
+    },
+    "construction": {
+      "label_ja": "建設の事業",
+      "employee_rate": 0.006,
+      "employer_rate": 0.0105,
+      "total_rate": 0.0165,
+      "breakdown": {
+        "unemployment_benefits_employee": 0.006,
+        "unemployment_benefits_employer": 0.006,
+        "two_projects_employer": 0.0045
+      }
+    }
   },
-  "construction":{
-   "label_ja":"建設の事業","employee_rate":0.006,"employer_rate":0.0105,"total_rate":0.0165,
-   "breakdown":{"unemployment_benefits_employee":0.006,"unemployment_benefits_employer":0.006,"two_projects_employer":0.0045}
-  }
- }
+  "history": [
+    {
+      "fiscal_year": 2025,
+      "era_year": "R7",
+      "effective_from": "2025-04-01",
+      "effective_to": "2026-03-31",
+      "source": "厚生労働省 令和7年度の雇用保険料率について",
+      "source_url": "https://www.mhlw.go.jp/content/001401966.pdf",
+      "business_types": {
+        "general": {
+          "label_ja": "一般の事業",
+          "employee_rate": 0.0055,
+          "employer_rate": 0.009,
+          "total_rate": 0.0145,
+          "breakdown": {
+            "unemployment_benefits_employee": 0.0055,
+            "unemployment_benefits_employer": 0.0055,
+            "two_projects_employer": 0.0035
+          }
+        },
+        "agriculture_forestry_fishery_sake": {
+          "label_ja": "農林水産・清酒製造の事業",
+          "employee_rate": 0.0065,
+          "employer_rate": 0.01,
+          "total_rate": 0.0165,
+          "breakdown": {
+            "unemployment_benefits_employee": 0.0065,
+            "unemployment_benefits_employer": 0.0065,
+            "two_projects_employer": 0.0035
+          }
+        },
+        "construction": {
+          "label_ja": "建設の事業",
+          "employee_rate": 0.0065,
+          "employer_rate": 0.011,
+          "total_rate": 0.0175,
+          "breakdown": {
+            "unemployment_benefits_employee": 0.0065,
+            "unemployment_benefits_employer": 0.0065,
+            "two_projects_employer": 0.0045
+          }
+        }
+      },
+      "label_ja": "令和7年度の雇用保険料率"
+    },
+    {
+      "fiscal_year": 2026,
+      "era_year": "R8",
+      "effective_from": "2026-04-01",
+      "effective_to": "2027-03-31",
+      "source": "厚生労働省 令和8年度の雇用保険料率について",
+      "source_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000108634.html",
+      "business_types": {
+        "general": {
+          "label_ja": "一般の事業",
+          "employee_rate": 0.005,
+          "employer_rate": 0.0085,
+          "total_rate": 0.0135,
+          "breakdown": {
+            "unemployment_benefits_employee": 0.005,
+            "unemployment_benefits_employer": 0.005,
+            "two_projects_employer": 0.0035
+          }
+        },
+        "agriculture_forestry_fishery_sake": {
+          "label_ja": "農林水産・清酒製造の事業",
+          "employee_rate": 0.006,
+          "employer_rate": 0.0095,
+          "total_rate": 0.0155,
+          "breakdown": {
+            "unemployment_benefits_employee": 0.006,
+            "unemployment_benefits_employer": 0.006,
+            "two_projects_employer": 0.0035
+          }
+        },
+        "construction": {
+          "label_ja": "建設の事業",
+          "employee_rate": 0.006,
+          "employer_rate": 0.0105,
+          "total_rate": 0.0165,
+          "breakdown": {
+            "unemployment_benefits_employee": 0.006,
+            "unemployment_benefits_employer": 0.006,
+            "two_projects_employer": 0.0045
+          }
+        }
+      },
+      "label_ja": "令和8年度の雇用保険料率"
+    }
+  ]
 }

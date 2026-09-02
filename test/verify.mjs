@@ -242,6 +242,57 @@ for (const [age, want] of [[39, false], [40, true], [64, true], [65, false]]) {
 // ---- 7. payroll totals are internally consistent ----
 {
   const { body } = await get('/v1/payroll?prefecture=Tokyo&monthly_salary=350000&age=40');
+  // as_of を「支給日」と読むと、翌月控除の事業所では1か月ずれる。40歳到達の月は
+  // そのずれが介護保険料の有無になる。応答自身が「対象月であって支給日ではない」と
+  // 言い、根拠(健保法167条)を添えること。
+  ok(typeof body.notes?.premium_month === 'string'
+     && /支給日ではありません/.test(body.notes.premium_month)
+     && /第167条/.test(body.notes.premium_month),
+     'as_of は保険料の対象月であって支給日ではない、と応答が言う',
+     String(body.notes?.premium_month).slice(0, 80));
+
+  // **2026年3月分に、4月からの雇用保険料率を当てていた(33件目)。**
+  //
+  // 協会けんぽは3月分から、雇用保険は4月1日から切り替わる。3月は「社保は新年度・
+  // 雇用保険は旧年度」の月で、令和8年度の表しか持っていなかった payroll は、
+  // 日付を見ずにその表を使っていた。単体の /v1/employment-insurance は同じ日付を
+  // 「未公表」と断っていたので、片側だけ実装の型。
+  // バー: 厚労省「令和7年度の雇用保険料率」一般の事業 労働者 5.5/1000・事業主 9/1000、
+  //       「令和8年度」同 5/1000・8.5/1000。月給30万円で 1,650/2,700 と 1,500/2,550。
+  {
+    const mar = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=30&as_of=2026-03-15')).body;
+    const apr = (await get('/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=30&as_of=2026-04-15')).body;
+    ok(mar.deductions?.employment_insurance?.employee === 1650
+       && mar.deductions?.employment_insurance?.employer === 2700,
+       '2026年3月分の雇用保険料は令和7年度の率(5.5/9)',
+       JSON.stringify(mar.deductions?.employment_insurance));
+    ok(apr.deductions?.employment_insurance?.employee === 1500
+       && apr.deductions?.employment_insurance?.employer === 2550,
+       '2026年4月分は令和8年度の率(5/8.5)',
+       JSON.stringify(apr.deductions?.employment_insurance));
+    ok(mar.deductions?.employment_insurance?.fiscal_year === 2025
+       && apr.deductions?.employment_insurance?.fiscal_year === 2026,
+       'どの年度の表を当てたかを応答が言う',
+       `${mar.deductions?.employment_insurance?.fiscal_year} / ${apr.deductions?.employment_insurance?.fiscal_year}`);
+
+    // 単体エンドポイントも同じ表を同じ日付で選ぶ。
+    const ei = await get('/v1/employment-insurance?as_of=2026-03-31');
+    ok(ei.status === 200 && ei.body.fiscal_year === 2025 && ei.body.rates?.employee === 0.0055
+       && ei.body.rates?.employer === 0.009,
+       '/v1/employment-insurance も 2026-03-31 に令和7年度を返す',
+       `${ei.status} ${JSON.stringify(ei.body.rates)}`);
+    const agri = await get('/v1/employment-insurance?as_of=2025-06-01&business_type=agriculture_forestry_fishery_sake');
+    const cons = await get('/v1/employment-insurance?as_of=2025-06-01&business_type=construction');
+    ok(agri.body.rates?.employee === 0.0065 && agri.body.rates?.employer === 0.01
+       && cons.body.rates?.employee === 0.0065 && cons.body.rates?.employer === 0.011,
+       '令和7年度の農林水産(6.5/10)と建設(6.5/11)',
+       `${JSON.stringify(agri.body.rates)} ${JSON.stringify(cons.body.rates)}`);
+
+    // 収録より前は、直前の年度を黙って返さない。
+    const before = await get('/v1/employment-insurance?as_of=2025-03-31');
+    ok(before.status === 422 && before.body.code === 'out_of_coverage',
+       '2025-03-31(令和6年度)は収録外として断る', `${before.status} ${before.body.code}`);
+  }
   const d = body.deductions;
   const empSum = d.health_insurance.employee + d.long_term_care.employee + d.pension.employee +
     d.child_support.employee + d.employment_insurance.employee;
@@ -1855,9 +1906,12 @@ for (const [p, want, label] of [
     // 条文を引用していない。ここに条文が付いたら、拾い方が広すぎる。
     const payroll = (await get(
       '/v1/payroll?prefecture=Tokyo&monthly_salary=350000&age=40&include=statute_text')).body;
-    ok(payroll.statute_text === undefined || payroll.statute_text.count === 0,
-       'an endpoint that cites nothing gets nothing attached',
-       `${payroll.statute_text?.count}`);
+    // 例外は1つ: notes.premium_month が翌月控除の根拠として健康保険法第167条を引く
+    // (33件目と同時に足した)。それ以外の条文が付いたら、拾い方が広すぎる。
+    const attached = Object.keys(payroll.statute_text?.provisions ?? {});
+    ok(attached.every((k) => k === '健康保険法第167条'),
+       'an endpoint that cites nothing beyond the deduction rule gets nothing else attached',
+       attached.join(','));
 
     // 説明文の途中にある引用も拾えること。blocking_reasons は散文で、
     // その中の条文番号こそ読み手が確かめたいもの。
@@ -2459,8 +2513,11 @@ for (const [p, want, label] of [
   // 雇用保険料率は年度で切り替わる。
   ok((await get('/v1/employment-insurance?as_of=2026-05-01')).status === 200,
      'employment insurance answers inside its fiscal year');
-  ok((await get('/v1/employment-insurance?as_of=2026-03-31')).status === 422,
-     'and refuses the day before it takes effect');
+  // 令和7年度も履歴で持つようになった(33件目)。断るのは、収録している最初の表の前日。
+  ok((await get('/v1/employment-insurance?as_of=2026-03-31')).status === 200,
+     'the day before the current table is answered from the previous fiscal year');
+  ok((await get('/v1/employment-insurance?as_of=2025-03-31')).status === 422,
+     'and refuses the day before the earliest held table');
   ok((await get('/v1/employment-insurance?as_of=2027-04-01')).status === 422,
      'and the day after the fiscal year ends');
 

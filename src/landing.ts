@@ -94,11 +94,11 @@ footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color
 <tr><th>祝日</th><td>内閣府</td></tr>
 <tr><th>改定の規則</th><td>e-Gov 法令検索、日本年金機構</td></tr>
 </table>
-<p>すべて公式資料から機械的に抽出し、<strong>そこに印刷されている値と突き合わせて</strong>います。協会けんぽの保険料額表と250通り(5都道府県×50等級)、国税庁の月額表の公表2,079セル全部を照合し、変更のたびに <span class="n">4,614件</span> の検証を実行します。</p>
+<p>すべて公式資料から機械的に抽出し、<strong>そこに印刷されている値と突き合わせて</strong>います。協会けんぽの保険料額表と250通り(5都道府県×50等級)、国税庁の月額表の公表2,079セル全部を照合し、変更のたびに <span class="n">4,622件</span> の検証を実行します。</p>
 <p><a href="/v1/data-freshness">各データの収録範囲と次の改定時期</a>を返すので、古くなったことが黙って進行しません。収録範囲の外の日付は、古い数字を返さずに断ります。</p>
 
 <h2>料金</h2>
-<p>この URL は<strong>無料</strong>です。APIキーもアカウントも要りません。回数の上限はなく、違いは一括処理の人数だけです(無料は1回10人まで)。500人を1回で処理する必要が出たら <a href="https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants">RapidAPI の有料プラン</a>へ。</p>
+<p>この URL は<strong>無料</strong>です。APIキーもアカウントも要りません。上限は1分あたり300回の目安(超えると 429)と、一括処理の人数(無料は1回10人まで)の2つです。対話的な利用でどちらかに当たることはまずありません。500人を1回で処理する必要が出たら <a href="https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants">RapidAPI の有料プラン</a>へ。</p>
 
 <h2>正直に書いておくこと</h2>
 <ul>
@@ -106,6 +106,7 @@ footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color
 <li><strong>住民税は算出しません。</strong>前年所得と市区町村で決まり、事業主が計算するものではありません。</li>
 <li><strong>国民健康保険の額も返しません。</strong>市町村の条例で決まるため、全国一律の額が存在しません。</li>
 <li><strong>年末調整は対象外です。</strong></li>
+<li><strong>二以上の事業所に勤める人の按分は対象外です。</strong>保険料は各事業所の報酬で按分しますが、そのための他社の報酬額を受け取る口がありません。1事業所ぶんとして計算します。</li>
 <li><strong>政府機関の承認・関与・保証を受けたものではありません。</strong>法定の届出に用いる前に、出典と照合してください。</li>
 </ul>
 

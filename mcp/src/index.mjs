@@ -293,8 +293,11 @@ registerTool('calculate_payslip', {
       'because rates run from 2.5/1000 to 88/1000 and there is no safe default. ' +
       'list_workers_compensation_rates has the table.'),
     as_of: z.string().optional().describe(
-      'ISO date the pay relates to. Drives the age milestones and picks the rate table; a ' +
-      'date outside the published period returns 422 rather than the current table.'),
+      'The premium month: an ISO date in the month the person is insured for, NOT the pay ' +
+      'date. Employers may deduct the previous month\'s premium from this month\'s pay ' +
+      '(Health Insurance Act art. 167), so with next-month deduction pass a date in the month ' +
+      'before the pay date. Drives the age milestones and picks the rate table; a date ' +
+      'outside the published period returns 422 rather than the current table.'),
   },
 }, async (a) => {
   // 介護保険法第9条は40歳以上65歳未満を第2号被保険者と定める。年齢が無いと
@@ -908,16 +911,21 @@ registerTool('get_insurance_rates', {
     'Health insurance, long-term care, pension and child-support rates for a prefecture, plus ' +
     'the bonus caps and the employer-only child-care contribution. Health rates differ by ' +
     'prefecture and change each March; pension is national. Add business_type for the ' +
-    'employment insurance rates, which change each April.',
+    'employment insurance rates, which change each April — pass as_of to get the rate in ' +
+    'force on that date (FY2025 and FY2026 are held; March is the month where health rates ' +
+    'are already the new year\'s while employment insurance is still the old year\'s).',
   inputSchema: {
     prefecture,
     business_type: z.enum(['general', 'agriculture_forestry_fishery_sake', 'construction']).optional()
       .describe('Include employment insurance rates for this band.'),
+    as_of: z.string().optional().describe(
+      'ISO date. Selects the employment insurance fiscal year (April to March). ' +
+      'A date before the held tables returns out_of_coverage rather than a guess.'),
   },
 }, async (a) => {
   const rates = await call('/v1/insurance-rates' + qs({ prefecture: a.prefecture }));
   if (rates.isError || !a.business_type) return rates;
-  const emp = await call('/v1/employment-insurance' + qs({ business_type: a.business_type }));
+  const emp = await call('/v1/employment-insurance' + qs({ business_type: a.business_type, as_of: a.as_of }));
   if (emp.isError) return emp;
   return ok({
     social_insurance: JSON.parse(rates.content[0].text),

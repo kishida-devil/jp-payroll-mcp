@@ -244,9 +244,12 @@ RECIPE = {
                  )},
                 {"name": "as_of", "example": "2026-06-01",
                  "description": (
-                     "The date the pay relates to. Drives the age milestones and selects the rate "
-                     "table; a date outside the published period returns 422 rather than this "
-                     "year's rates."
+                     "The premium month: a date in the month the person is insured for, NOT the "
+                     "pay date. Employers may deduct the previous month's premium from this "
+                     "month's pay (Health Insurance Act art. 167), so with next-month deduction "
+                     "pass a date in the month before the pay date. Drives the age milestones "
+                     "and selects the rate table; a date outside the published period returns "
+                     "422 rather than this year's rates."
                  )},
             ],
         },

@@ -4,7 +4,7 @@
 47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、休業中の保険料免除、
 割増賃金、年次有給休暇、最低賃金、営業日計算まで。**答えには根拠の条文または通知が付きます。**
 
-公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,614件** の検証を実行します。
+公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,622件** の検証を実行します。
 
 ## 使いかたは2通り
 
@@ -43,7 +43,7 @@ premiums for all 47 prefectures, withholding tax, standard remuneration decision
 revisions, leave exemptions, minimum wage — with the statute or ministerial notice each
 answer rests on.
 
-Verified against the published tables cell by cell: **4,614 assertions** on every change.
+Verified against the published tables cell by cell: **4,622 assertions** on every change.
 
 ## Two ways in
 
@@ -258,10 +258,14 @@ provision to back it fails the build rather than silently returning nothing.
   「給与所得控除後の給与等の金額の表」 was not yet published as of 2026-08; the Tax Agency
   releases it around September. 令和8年度税制改正 also raises the minimum employment income
   deduction to 740,000 yen with effect from 2026-12-01, so that table changes too.
-- **FY2026 minimum wage is not included.** As of 2026-08, revisions were still being
-  issued prefecture by prefecture and take effect from October 2026. The API serves
-  FY2025, which is the rate currently in force. This must be refreshed once all 47
-  prefectures publish.
+- **FY2026 minimum wage is not included yet.** As of 2026-09-02, 46 of 47 prefectures had
+  issued their 答申 (Okinawa pending); the earliest take effect on 2026-10-01. The API serves
+  FY2025, which is the rate currently in force, and refuses dates on or after the first
+  revision with `out_of_coverage` rather than returning last year's figure. It will be
+  refreshed from the Ministry's list once all 47 are published.
+- **Workers employed at two or more establishments (二以上事業所勤務) are not apportioned.**
+  Premiums are split in proportion to remuneration at each establishment, but there is no
+  input for the other employer's figure; the API calculates as if for one establishment.
 - **Employment insurance history is FY2026 only.** Earlier years were not verified
   against a primary source, so they are omitted rather than guessed.
 - **Resident tax is out of scope.** It depends on the previous year's income and on
@@ -287,7 +291,7 @@ provision to back it fails the build rather than silently returning nothing.
 
 ## Verification
 
-`test/verify.mjs` runs 4,614 assertions against a live server. The core of it compares the
+`test/verify.mjs` runs 4,622 assertions against a live server. The core of it compares the
 API's computed premiums to the **amounts printed in the official 協会けんぽ workbook** for
 250 combinations (5 prefectures × 50 grades) — the published half-share figures, not a
 reimplementation of the formula. It also checks:

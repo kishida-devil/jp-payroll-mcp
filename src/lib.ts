@@ -161,6 +161,25 @@ export function latestMinimumWageEffectiveFrom(): string | null {
   return newest;
 }
 
+/**
+ * その日に効力を持つ雇用保険料率の表。
+ *
+ * **給与計算が2026年3月分に令和8年度(4月〜)の率を当てていた。**単体の
+ * `/v1/employment-insurance` は同じ日付を「未公表」と断るのに、`/v1/payroll` は
+ * 唯一持っていた表を日付を見ずに使っていた。片側だけ実装の型(33件目)。
+ * 表を年度ごとに持ち、ここで日付から選ぶ。どこにも当たらなければ null —
+ * 直前の年度を黙って返すと、それらしい誤った額になる。
+ */
+export function employmentInsuranceAt(isoDate?: string | null) {
+  const hist = ((empins as any).history ?? []) as Array<{
+    fiscal_year: number; era_year: string; label_ja: string;
+    effective_from: string; effective_to: string;
+    source: string; source_url: string; business_types: Record<string, any>;
+  }>;
+  const on = isoDate ?? new Date().toISOString().slice(0, 10);
+  return hist.find((h) => h.effective_from <= on && on <= h.effective_to) ?? null;
+}
+
 export function minimumWageAt(pref: PrefKey, isoDate?: string | null) {
   const hist = (minwage.prefectures as any)[pref].history as {
     fiscal_year: number; era_year: string; hourly_wage: number; effective_from: string | null;

@@ -1,6 +1,7 @@
 import {
-  insurance, empins,
+  insurance,
   findGrade, isLtcInsured, pensionStandardRemuneration, roundEmployeeShare,
+  employmentInsuranceAt,
   type PrefKey,
 } from './lib';
 import { withholdingTax, type Column } from './withholding';
@@ -70,7 +71,14 @@ const round2 = (v: number) => Math.round(v * 100) / 100;
 
 export function computePayslip(input: PayslipInput) {
   const pref = insurance.prefectures[input.prefecture];
-  const bt = (empins.business_types as any)[input.business_type];
+  // 雇用保険料率は年度で切り替わる(4月1日)。協会けんぽは3月分から切り替わるので、
+  // 3月だけ「社保は新年度・雇用保険は旧年度」になる。as_of を見ずに現行の表を
+  // 使うと、その月の雇用保険料が月給30万円で150円ずつ過少になる(33件目)。
+  const asOfIso = (input.as_of ?? new Date()).toISOString().slice(0, 10);
+  const eiTable = employmentInsuranceAt(asOfIso);
+  if (!eiTable)
+    throw new Error(`${asOfIso} 時点の雇用保険料率は収録されていません。`);
+  const bt = eiTable.business_types[input.business_type];
   const salary = input.monthly_salary;
 
   // 支給項目に分解する。手当が無ければ基本給1行になり、以前と同じ答えになる。
@@ -166,6 +174,10 @@ export function computePayslip(input: PayslipInput) {
       child_support: childSupport,
       employment_insurance: {
         employee: eiEmployee, employer: eiEmployer, total: round2(eiEmployee + eiEmployer),
+        // どの年度の率を当てたかを応答に残す。3月分と4月分で違う。
+        fiscal_year: eiTable.fiscal_year, effective_from: eiTable.effective_from,
+        effective_to: eiTable.effective_to,
+        rates: { employee: bt.employee_rate, employer: bt.employer_rate },
       },
       child_care_contribution: { employee: 0, employer: round2(childCareEmployer) },
       ...(workersComp ? { workers_compensation: workersComp } : {}),
