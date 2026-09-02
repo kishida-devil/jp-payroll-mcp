@@ -159,8 +159,14 @@ for term, before in (("\u7d66\u4e0e\u8a08\u7b97", 82), ("\u6a19\u6e96\u5831\u916
 status, _, body = fetch(f"https://registry.npmjs.org/jp-payroll-mcp/{PKG_VERSION}")
 check(status == 200, f"npm に {PKG_VERSION} が存在する", str(status))
 
+# 検索エンドポイント(?search=)はキャッシュが古く、0.4.3 を登録した直後も
+# 0.4.2 を isLatest:true で返した。出ているものを「出ていない」と言う向きの誤り。
+# その名前の版一覧(/servers/<name>/versions)はその場で 0.4.3 を latest と返す。
+# 名指しできるものは、検索ではなく名指しで取る。
 status, _, body = fetch(
-    "https://registry.modelcontextprotocol.io/v0/servers?search=jp-payroll")
+    "https://registry.modelcontextprotocol.io/v0/servers/"
+    + urllib.parse.quote("io.github.kishida-devil/jp-payroll-mcp", safe="")
+    + "/versions")
 # 「本文に 0.4.2 が含まれるか」では、なぜ落ちたのかが分からなかった。
 # 実際は 0.4.2 が active で latest だったのに 200 とだけ出て落ちていた。
 # どの版が latest かを名指しで見る。
