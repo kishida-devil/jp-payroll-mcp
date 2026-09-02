@@ -351,6 +351,22 @@ for (const [name, args, check] of [
     { taxable_amount: 12000, period: 'daily', method: 'computer' });
   ok(c.isError, 'the formula method is refused for the daily table');
 
+  // 丙欄に扶養親族等の段は無い。模型は既定値を埋めたがるので dependants: 0 を
+  // 添えやすく、黙って捨てると「効いている」と誤解される。HTTP 側も同じ理由で断る。
+  for (const d of [0, 2]) {
+    const h = await callTool('calculate_withholding_tax',
+      { taxable_amount: 12000, period: 'daily', column: 'hei', dependants: d });
+    ok(h.isError, `丙欄に dependants: ${d} は断られる`);
+  }
+  const plain = await callTool('calculate_withholding_tax',
+    { taxable_amount: 12000, period: 'daily', column: 'hei' });
+  ok(!plain.isError, 'そして丙欄そのものは通る');
+
+  // 日額表の乙欄(最低額未満は3.063%)は test/verify.mjs で見ている。
+  // **ここでは見ない。**この検査は配備済みのAPIを叩くので、直したばかりの
+  // 修正はまだ向こうに無く、落として当然のものを落とすことになる。
+  // MCP側だけで完結する判断(上の丙欄の拒否)は、配備を待たずに検査できる。
+
   const b = await callTool('business_days', { operation: 'count', from: '2026-01-01' });
   ok(b.isError, 'count without an end date is refused');
 }

@@ -95,13 +95,28 @@ case "${1:-count}" in
     # **待ち受けの数で判定してはいけない。**workerd が死んでも親の node が
     # ポートを掴んだままなので「1本ある」と数えられ、実際は何も答えない。
     # 実測でそうなった(count は 1本、curl は 000)。**答えるかどうかで見る。**
+    #
+    # **3秒では短すぎた。**負荷の最中は健全性検査そのものが待たされる。実測で
+    # 0.7〜1.4秒、スパイクではそれ以上。3秒で切ると、生きているサーバを落として
+    # 飛んでいた要求を全部殺し、スイートを遅くする。実際に1回の実行で2度やった。
+    # **見張りが、見張っている問題を起こしていた(2度目)。**
+    # 待つ時間は実測から決める。そのうえで、1回の失敗では動かない — 連続で
+    # 落ちたときだけ立て直す。反応は最大20秒遅れるが、スイート側は約40秒待つ。
+    misses=0
     while [ "$(cat "$FLAG" 2>/dev/null)" = "$$" ]; do
-      if ! curl -s --max-time 3 -o /dev/null "http://127.0.0.1:$PORT/v1/data-freshness"; then
-        echo "$(date +%H:%M:%S) 応答が無い。全部落として立て直す" >> "$DEV_LOG.supervise"
+      if curl -s --max-time 10 -o /dev/null "http://127.0.0.1:$PORT/v1/data-freshness"; then
+        misses=0
+      else
+        misses=$((misses + 1))
+        echo "$(date +%H:%M:%S) 応答が無い ($misses 回目)" >> "$DEV_LOG.supervise"
+      fi
+      if [ "$misses" -ge 2 ]; then
+        misses=0
+        echo "$(date +%H:%M:%S) 連続で応答が無い。全部落として立て直す" >> "$DEV_LOG.supervise"
         kill_all
         npx wrangler dev --port "$PORT" --local >>"$DEV_LOG" 2>&1 &
         for _ in $(seq 1 60); do
-          curl -s --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/v1/data-freshness" && break
+          curl -s --max-time 5 -o /dev/null "http://127.0.0.1:$PORT/v1/data-freshness" && break
           sleep 1
         done
       fi

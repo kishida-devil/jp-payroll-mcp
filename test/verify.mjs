@@ -120,6 +120,62 @@ for (const pref of [...new Set(fixture.map((f) => f.prefecture))]) {
   rateCache[pref] = (await get(`/v1/insurance-rates?prefecture=${pref}`)).body.rates;
 }
 
+/**
+ * 束ねて投げる。
+ *
+ * 検査は1件ずつ直列に投げていた。源泉徴収税額表の照合だけで 2,079 要求ある。
+ *
+ * **束ねてもほとんど速くならない。**`wrangler dev --local` は実質1本ずつ処理する
+ * ——実測で1本 1,805ms、4本同時 5,864ms(3.2倍。完全な直列なら4.0倍)。
+ * 縮むのは2割ほどで、「4倍速くなる」は測る前の思い込みだった。
+ * それでも2割は2割なので残すが、**実行時間は要求数にほぼ比例する**と考えること。
+ * 網羅を足すときは、そのぶん実行が延び、wrangler が落ちる余地も増える。
+ * 束を大きくしても頭打ちで、高い並列度で落ちるのを何度も見ている。4本で止める。
+ */
+const inBatches = async (items, fn, size = 4) => {
+  const out = [];
+  for (let i = 0; i < items.length; i += size)
+    out.push(...await Promise.all(items.slice(i, i + size).map(fn)));
+  return out;
+};
+
+// **公式資料と1円まで照合しているのは5県だけ。**残る42県は、率のデータが
+// 間違っていても検査を通る。元の保険料額表が手元に無いので値そのものは
+// 裏付けられないが、**その率が本当に使われているか**は確かめられる。
+//
+// 47県のうち健保率は41通りあり、東京と同率なのは青森だけ。どこかで既定値に
+// 落ちていれば46県で露見する。等級表と他の3率(介護・子ども子育て・厚生年金)は
+// 全国一律なので、県ごとに変わるのは健保率だけ。そこを全県で当てる。
+{
+  const rates = JSON.parse(
+    await readFile(new URL('../src/data/insurance-r8.json', import.meta.url), 'utf-8'));
+  const names = Object.keys(rates.prefectures);
+  ok(names.length === 47, '47都道府県ぶんの率がある', `${names.length}`);
+  const distinct = new Set(names.map((n) => rates.prefectures[n].health_insurance_rate));
+  ok(distinct.size >= 30,
+     `健保率は ${distinct.size} 通りある(既定値に落ちれば露見する)`, `${distinct.size}`);
+
+  const SMR = 300000;
+  const wrong = [], flat = [];
+  const got = await inBatches(names,
+    (n) => get(`/v1/payroll?prefecture=${n}&monthly_salary=${SMR}&age=30`));
+  names.forEach((n, i) => {
+    const r = got[i];
+    if (r.status !== 200) { wrong.push(`${n}: HTTP ${r.status}`); return; }
+    const want = (SMR * rates.prefectures[n].health_insurance_rate) / 2;
+    const half = r.body.deductions.health_insurance.employee;
+    if (!near(half, want, 0.51)) wrong.push(`${n}: ${half} vs ${want}`);
+    if (n !== 'Tokyo' && n !== 'Aomori'
+        && rates.prefectures[n].health_insurance_rate
+           !== rates.prefectures.Tokyo.health_insurance_rate
+        && half === (SMR * rates.prefectures.Tokyo.health_insurance_rate) / 2)
+      flat.push(n);
+  });
+  ok(wrong.length === 0, '47県すべてで、その県の健保率が実際に使われている',
+     wrong.slice(0, 3).join(' | ') || `${names.length} 県`);
+  ok(flat.length === 0, 'そして東京の率に落ちている県が無い', flat.slice(0, 5).join(', '));
+}
+
 for (const f of fixture) {
   const R = rateCache[f.prefecture];
   const expHealth = (f.smr * R.health_insurance) / 2;
@@ -640,22 +696,23 @@ for (const [p, want, label] of [
 
   // Sample the midpoint of every bracket: 231 rows x (8 kou columns + otsu).
   let checked = 0, mismatched = 0;
-  for (const row of wh) {
-    const mid = Math.floor((row.from + row.to) / 2);
-    for (let d = 0; d <= 7; d++) {
-      const r = await get(`/v1/withholding-tax?taxable_amount=${mid}&column=kou&dependants=${d}`);
+  {
+    const cells = [];
+    for (const row of wh) {
+      const mid = Math.floor((row.from + row.to) / 2);
+      for (let d = 0; d <= 7; d++)
+        cells.push({ q: `taxable_amount=${mid}&column=kou&dependants=${d}`,
+                     want: row.kou[d], what: `kou ${mid} dep${d}` });
+      cells.push({ q: `taxable_amount=${mid}&column=otsu`, want: row.otsu, what: `otsu ${mid}` });
+    }
+    const got = await inBatches(cells, (c) => get(`/v1/withholding-tax?${c.q}`));
+    cells.forEach((c, i) => {
       checked++;
-      if (r.body.tax !== row.kou[d]) {
+      if (got[i].body.tax !== c.want) {
         mismatched++;
-        if (mismatched <= 3) failures.push(`kou ${mid} dep${d}: got ${r.body.tax} want ${row.kou[d]}`);
+        if (mismatched <= 3) failures.push(`${c.what}: got ${got[i].body.tax} want ${c.want}`);
       }
-    }
-    const o = await get(`/v1/withholding-tax?taxable_amount=${mid}&column=otsu`);
-    checked++;
-    if (o.body.tax !== row.otsu) {
-      mismatched++;
-      if (mismatched <= 3) failures.push(`otsu ${mid}: got ${o.body.tax} want ${row.otsu}`);
-    }
+    });
   }
   ok(mismatched === 0, `every published cell matches (${checked} checked)`, `${mismatched} mismatched`);
   // **「2,079セル全部」は5つの面で名乗っている信頼性の根拠。**
@@ -664,11 +721,33 @@ for (const [p, want, label] of [
      '説明文が名乗る 2,079 セルを実際に照合している', `${checked}`);
   pass += checked - 1; // each cell is its own assertion
 
-  // Boundaries: `to` belongs to the next bracket, `from` to this one.
-  for (const row of wh.slice(0, 40)) {
-    const atFrom = await get(`/v1/withholding-tax?taxable_amount=${row.from}&column=kou&dependants=0`);
-    ok(atFrom.body.tax === row.kou[0], `lower bound ${row.from} is inside its bracket`,
-       `got ${atFrom.body.tax} want ${row.kou[0]}`);
+  // **境界は先頭40行の下端しか見ていなかった。**231区分の上下 = 691点ある。
+  // 実測では全部合っていたが、見ていない場所は壊れても気づけない。
+  // 上端は次の区分に属し、その1円手前はこの区分に属する。
+  // 下端も全区分。**先頭40行だけ見ていた。**231区分あるのに40行で止めると、
+  // 残り191区分は壊れても気づけない。上端・その1円手前・下端で1区分3点。
+  //
+  // 全部直列に投げると691要求 × 約0.5秒で6分近くかかり、実行そのものが
+  // 不安定になる(その間に wrangler が落ちる余地が増える)。4本ずつ束ねる。
+  // 束を大きくしすぎないのは、日額表の3本並列は安定して通っている一方、
+  // 高い並列度が wrangler を落とすのを何度も見ているため。
+  {
+    const edge = [];
+    const probes = [];
+    for (let i = 0; i < wh.length; i++) {
+      probes.push({ amt: wh[i].from, want: wh[i].kou[0], what: `${wh[i].from} は下端` });
+      if (i + 1 < wh.length) {
+        probes.push({ amt: wh[i].to, want: wh[i + 1].kou[0], what: `${wh[i].to} は次の区分` });
+        probes.push({ amt: wh[i].to - 1, want: wh[i].kou[0], what: `${wh[i].to - 1} はこの区分` });
+      }
+    }
+    const got = await inBatches(probes,
+      (b) => get(`/v1/withholding-tax?taxable_amount=${b.amt}&column=kou&dependants=0`));
+    probes.forEach((b, j) => {
+      if (got[j].body.tax !== b.want) edge.push(`${b.what}: ${got[j].body.tax} vs ${b.want}`);
+    });
+    ok(edge.length === 0, `月額表 全${wh.length}区分の境界 ${probes.length} 点が公表値どおり`,
+       edge.slice(0, 3).join(' | ') || `${probes.length} 点`);
   }
 }
 
@@ -1184,6 +1263,21 @@ for (const [p, want, label] of [
   const low = (await d('taxable_amount=3499&column=kou')).body;
   ok(low.tax === 0 && low.basis.kind === 'below_minimum', 'below the floor 甲 is zero');
 
+  // **乙欄は0ではない。**最下段だけ額でなく率で書かれているので、表を数値として
+  // 読むと丸ごと落ちる。実際落ちていて、日雇いで申告書の提出が無い人に0円を返していた。
+  // 月額表(105,000円未満=3.063%)には同じ検査があり、日額表だけ無かった。
+  for (const amt of [1, 1000, 2900, 3499]) {
+    const o = (await d(`taxable_amount=${amt}&column=otsu`)).body;
+    ok(o.tax === Math.floor(amt * 0.03063),
+       `日額 乙欄 ${amt}円 は3.063%`, `got ${o.tax} want ${Math.floor(amt * 0.03063)}`);
+    ok(o.basis.kind === 'below_minimum' && o.basis.rate === 0.03063,
+       `${amt}円の根拠に率が出る`, JSON.stringify(o.basis));
+    const h = (await d(`taxable_amount=${amt}&column=hei`)).body;
+    ok(h.tax === 0, `日額 丙欄 ${amt}円 は0円`, `got ${h.tax}`);
+  }
+  // 0円に0%を掛けても0円。率が効いているのは金額があるときだけ。
+  ok((await d('taxable_amount=0&column=otsu')).body.tax === 0, '0円なら乙欄も0円');
+
   // 甲 is non-increasing in dependants.
   let prev = Infinity;
   for (let n = 0; n <= 7; n++) {
@@ -1207,6 +1301,27 @@ for (const [p, want, label] of [
      '丙 has its own anchor at 26,500, not 甲’s', JSON.stringify(hiHei.basis));
   ok(hiHei.tax === Math.floor(1001 + (30000 - 26500) * 0.2042),
      '丙 above 26,500 adds 20.42% of the excess', `${hiHei.tax}`);
+
+  // **205区分あるのに、代表値を数点しか見ていなかった。**月額表は全区分の
+  // 上端下端を見ているのに、日額表には同じ検査が無い。表の一行が壊れても通る。
+  // 甲(扶養0)・乙・丙を、全区分の下端で公表値と突き合わせる。
+  {
+    const table = JSON.parse(
+      await readFile(new URL('../src/data/withholding-daily-r8.json', import.meta.url), 'utf-8'));
+    const bad = [];
+    for (const row of table.brackets) {
+      const [k, o, h] = await Promise.all([
+        d(`taxable_amount=${row.from}&column=kou&dependants=0`),
+        d(`taxable_amount=${row.from}&column=otsu`),
+        d(`taxable_amount=${row.from}&column=hei`),
+      ]);
+      if (k.body.tax !== row.kou[0]) bad.push(`甲 ${row.from}: ${k.body.tax}/${row.kou[0]}`);
+      if (o.body.tax !== row.otsu) bad.push(`乙 ${row.from}: ${o.body.tax}/${row.otsu}`);
+      if (h.body.tax !== row.hei) bad.push(`丙 ${row.from}: ${h.body.tax}/${row.hei}`);
+    }
+    ok(bad.length === 0, `日額表 全${table.brackets.length}区分の甲乙丙が公表値と一致`,
+       bad.slice(0, 3).join(' | '));
+  }
 
   for (const [q, want] of [
     ['', 400], ['taxable_amount=-1', 400], ['taxable_amount=12000&column=tei', 400],
@@ -5280,6 +5395,71 @@ for (const [p, want, label] of [
   ok(html.includes('4,349') || /(\d[\d,]*)件<\/span> の検証/.test(html),
      'and it states how many assertions back it');
 
+  // **頁が「データ由来」と自分で印を付けた数字は、全部照合する。**
+  // 印は class="n"。6つあるうち検査していたのは 95,130 と件数の2つだけで、
+  // 46,500 / 48,630 / 1,031円 / 2026-03-31 は誰も見ていなかった。
+  // 保険料率は毎年3月に、最低賃金は毎年秋に変わる。変わった日に頁が黙って嘘になる。
+  {
+    const marked = [...html.matchAll(/class="n">([^<]+)</g)].map((m) => m[1]);
+    const akita = (await get('/v1/minimum-wage?prefecture=Akita&date=2026-08-31')).body;
+    const known = new Map([
+      [`${pay.totals.social_insurance_combined.toLocaleString('en-US')}円`, '労使合計'],
+      [`${pay.totals.social_insurance_employee.toLocaleString('en-US')}円`, '従業員'],
+      [`${pay.totals.social_insurance_employer.toLocaleString('en-US')}円`, '事業主'],
+      [`${akita.hourly_wage.toLocaleString('en-US')}円`, '秋田の最低賃金'],
+      [akita.effective_from, '秋田の発効日'],
+      // 件数そのものは、6つの面が同じ数を名乗っているかを実行の最後で照合している。
+      // ここでは「件数の印が1つある」ことだけを認め、値の裏付けはそちらに任せる。
+      [`${(html.match(/class="n">([\d,]+)件</) ?? [])[1] ?? '?'}件`,
+       '検査の件数(値は実行末尾で照合)'],
+    ]);
+    const unverified = marked.filter((v) => !known.has(v));
+    ok(unverified.length === 0,
+       `頁が印を付けた ${marked.length} 個の数字が、すべて API とデータから裏付けられる`,
+       unverified.join(' | '));
+    // 印を付けずに数字を足されると上の検査をすり抜ける。数も固定する。
+    ok(marked.length === known.size,
+       `頁の印付き数字はちょうど ${known.size} 個(増えたら裏付けを足すこと)`,
+       `${marked.length}`);
+  }
+
+  // **仕様書が「断る」と書いた場所は、本当に断らなければならない。**
+  // 8つ書いてあって、7つは守られ、1つ(丙欄に扶養人数)は 200 を返していた。
+  // 約束を増やしたときに検査を忘れないよう、数も固定する。
+  {
+    const spec = (await get('/openapi.json')).body;
+    const PROMISE = /is an error|is rejected|refuses?|rather than a silently|returns 400|error rather|it refuses/i;
+    let promises = 0;
+    for (const ops of Object.values(spec.paths)) {
+      for (const op of Object.values(ops)) {
+        if (!op || typeof op !== 'object') continue;
+        const texts = [op.description ?? '', ...(op.parameters ?? []).map((q) => q.description ?? '')];
+        for (const t of texts) for (const sent of String(t).split(/(?<=[.。])\s+/))
+          if (PROMISE.test(sent)) promises++;
+      }
+    }
+    ok(promises === 3, '仕様書が名指しで断ると書いているのは3箇所', `${promises}`);
+    for (const [q, why] of [
+      ['/v1/withholding-tax/daily?taxable_amount=12000&column=hei&dependants=2',
+       '丙欄に扶養人数は渡せない'],
+      ['/v1/withholding-tax/daily?taxable_amount=12000&column=hei&dependants=0',
+       '0でも同じ(渡したこと自体が誤解の印)'],
+      ['/v1/national-insurance?city=Tokyo-Shinjuku&income=3000000&as_of=2019-01-01',
+       '収録年の外は古い数字を出さずに断る'],
+      ['/v1/statute?ref=民法第709条', '収録外の条文は近いもので代用しない'],
+      ['/v1/payroll?prefecture=Tokyo&monthly_salary=350000', '年齢か生年月日が要る'],
+      ['/v1/bonus-insurance?prefecture=Tokyo&bonus=500000', '賞与も同じ'],
+      ['/v1/annual-cost?prefecture=Tokyo&monthly_salary=350000', '年間費用も同じ'],
+    ]) {
+      const r = await get(q);
+      ok(r.status >= 400, `仕様書の約束どおり断る: ${why}`, `HTTP ${r.status}`);
+    }
+    // 逆向き。渡さなければ通ること(断りが広すぎないこと)。
+    const fine = await get('/v1/withholding-tax/daily?taxable_amount=12000&column=hei');
+    ok(fine.status === 200 && fine.body.dependants === null,
+       'そして丙欄そのものは通る', `HTTP ${fine.status}`);
+  }
+
   // 頁から出るリンクが、この API の中で死んでいないこと。
   const internal = [...html.matchAll(/href="(\/[^"]*)"/g)].map((m) => m[1]);
   ok(internal.length >= 3, '頁から中のリンクが出ている', `${internal.length} 本`);
@@ -5394,6 +5574,54 @@ for (const [p, want, label] of [
   const past = await get(
     '/v1/payroll?prefecture=Tokyo&monthly_salary=300000&birth_date=2026-06-01&as_of=2026-05-01');
   ok(past.status === 400, 'as_of より後の生年月日は、その基準で断る', String(past.status));
+}
+
+{
+  // **引用したのに本文を返せない条文が、黙って消えていた。**
+  //
+  // 収録は8法令で、それは設計どおり。誤りは足りないことではなく、
+  // 足りないと言わないこと。`include=statute_text` を付けても、1件も解決
+  // できない経路(有給・割増賃金は労働基準法しか引かない)では欄ごと消えて
+  // いたので、渡した引数が効かないのと同じに見えていた。
+  //
+  // 21件目(労働保険徴収法の正式名称が引けない)は、この欄が無かったから
+  // 隠れていた。**見えていれば、次の登録漏れは自分から名乗る。**
+  const CASES = [
+    ['/v1/annual-leave?hired_on=2020-04-01&as_of=2026-08-31', '労働基準法第39条'],
+    ['/v1/overtime-pay?base_monthly_pay=300000&monthly_scheduled_hours=160&overtime_hours=10',
+     '労働基準法第37条'],
+    ['/v1/eligibility?left_on=2026-03-31', '厚生年金保険法第19条'],
+  ];
+  for (const [path, want] of CASES) {
+    const r = await get(`${path}&include=statute_text`);
+    ok(r.body.statute_text !== undefined,
+       `${path.split('?')[0]} は include=statute_text に必ず応える`);
+    const un = r.body.statute_text?.unresolved ?? [];
+    ok(un.some((x) => x.startsWith(want)),
+       `引用したのに本文を返せない条文が、名前で見えている (${want})`, un.join(' | '));
+  }
+  // 収録している法令を引く経路では、本文が実際に付く。
+  const el = await get('/v1/eligibility?left_on=2026-03-31&include=statute_text');
+  ok(el.body.statute_text.count >= 3, 'そして収録している条文の本文は付く',
+     `${el.body.statute_text.count}`);
+  // 引数を渡さなければ付かない。
+  const plain = await get('/v1/eligibility?left_on=2026-03-31');
+  ok(plain.body.statute_text === undefined, '頼まなければ付かない');
+  // 引用が1つも無い答えでも、頼まれた以上は答える。
+  const none = await get('/v1/consumption-tax?amount=1000&include=statute_text');
+  ok(none.body.statute_text !== undefined && none.body.statute_text.count === 0,
+     '引用の無い答えでも、頼まれたら欄は返す');
+
+  // **収録の外にある引用は、コード全体で何件あるのか。**増えたら気づけるように数を置く。
+  {
+    const seen = new Set();
+    for (const [path] of CASES) {
+      const r = await get(`${path}&include=statute_text`);
+      for (const u of r.body.statute_text?.unresolved ?? []) seen.add(u);
+    }
+    ok(seen.size >= 3, `収録外の引用を ${seen.size} 件、名前で示せている`,
+       [...seen].join(' | '));
+  }
 }
 
 {
@@ -6131,6 +6359,43 @@ for (const [p, want, label] of [
        `有給 ${label}: entitled と current が揃う`,
        `entitled=${a.entitled} current=${a.current ? 'あり' : 'なし'}`);
   }
+}
+
+{
+  // **正式名称で引けない法令が1つあった。**
+  //
+  // 参照キーを略称に寄せたのは正しい(実務では「労働保険徴収法第11条」と書く)。
+  // だが e-Gov からコピーしてきた人は「労働保険の保険料の徴収等に関する法律」と
+  // 書く。他の7法令は正式名称で引けるのに、この法令だけ out_of_coverage だった。
+  //
+  // 法令名を1本ずつ書かない。**書くと、次に増えた法令が漏れる。**
+  // 収録データから正式名称と略称を取り、条項ごとに全部試す。
+  const corpusAll = JSON.parse(
+    await readFile(new URL('../src/data/statutes.json', import.meta.url), 'utf8'));
+  const toFull = (s) => s.replace(/[0-9]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) + 0xfee0));
+  const unresolved = [];
+  let tried = 0;
+  for (const [ref, rec] of Object.entries(corpusAll.provisions)) {
+    const lawName = rec.law;
+    const info = corpusAll.laws[lawName] ?? {};
+    const article = ref.slice(lawName.length);
+    if (!article) continue;                       // 条番号を持たない条項は対象外
+    const forms = [ref, `${lawName}${article}`];
+    if (info.abbrev) forms.push(`${info.abbrev}${article}`);
+    forms.push(`${lawName}${article.replace('第', '')}`);
+    forms.push(`${lawName}${toFull(article)}`);
+    for (const f of forms) {
+      const r = await get(`/v1/statute?ref=${encodeURIComponent(f)}`);
+      tried++;
+      if (r.status !== 200 || r.body?.ref !== ref)
+        unresolved.push(`${f} → ${r.status} ${r.body?.ref ?? r.body?.code}`);
+    }
+  }
+  ok(tried >= 100, '条文の参照形を網羅できている', `${tried} 通り`);
+  ok(unresolved.length === 0,
+     '正式名称・略称・「第」略・全角のどれでも同じ条項に解決する',
+     unresolved.slice(0, 4).join(' | ') || 'none');
 }
 
 {
