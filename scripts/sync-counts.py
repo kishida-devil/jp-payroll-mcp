@@ -36,6 +36,10 @@ TARGETS = [
     ("recipes/jp-payroll/rapidapi-docs.md", r"([\d,]+) assertions on every change"),
     ("docs/articles/qiita-rate-table.md", r"\*\*([\d,]+)件\*\* の検証"),
     ("docs/articles/zenn-payroll-traps.md", r"\*\*([\d,]+)件\*\* の検証"),
+    # ディレクトリ掲載文(mcp.so / Glama / Smithery / PulseMCP)。英日それぞれ。
+    ("docs/listing/directories.md", r"([\d,]+) assertions"),
+    ("docs/listing/directories.md", r"照合\(([\d,]+)件\)"),
+    ("docs/listing/directories.md", r"([\d,]+)件\)は"),
 ]
 
 
