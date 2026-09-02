@@ -127,7 +127,18 @@ export function judgeAnnualLeave(input: AnnualLeaveInput) {
   const deadline = latest ? iso(addMonths(new Date(latest.on + 'T00:00:00Z'), 12)) : null;
 
   return {
-    entitled: latest !== null && metAttendance !== false,
+    // **判定していない要件を、通ったことにして true と言っていた。**
+    // 第39条第1項の付与は「六箇月継続勤務」と「全労働日の八割以上出勤」の
+    // 両方が要る。attendance_rate を渡されなければ後者は判定できないのに、
+    // `metAttendance !== false` として true を返していた。
+    //
+    // MCP のツール説明はこう約束している —
+    //   Without one the tool reports the eighty per cent test as not judged
+    //   rather than assuming it passed.
+    // `attendance.met` は null で守っていたが、**見出しの entitled が破っていた**。
+    // 28件目(worker-type の insured)と同じ形。判定していないなら null。
+    // 付与日が来ていなければ、出勤率にかかわらず false。
+    entitled: latest === null ? false : metAttendance,
     proportional: row
       ? {
           applies: true,

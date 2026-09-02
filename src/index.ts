@@ -2858,7 +2858,8 @@ app.get('/v1/worker-type', (c) => {
     monthly_days: monthlyDays.value,
     normal_monthly_days: normalMonthlyDays.value,
     monthly_wage: wage.value,
-    is_student: studentRaw === 'true',
+    // 未指定は null。false と同じにすると「学生でない」と断定してしまう。
+    is_student: studentRaw === undefined ? null : studentRaw === 'true',
     workplace_insured_count: headcount.value,
     employment_months: months.value,
   });
@@ -2870,7 +2871,9 @@ app.get('/v1/worker-type', (c) => {
       ...(monthlyDays.given ? { monthly_days: monthlyDays.value } : {}),
       ...(normalMonthlyDays.given ? { normal_monthly_days: normalMonthlyDays.value } : {}),
       ...(wage.given ? { monthly_wage: wage.value } : {}),
-      is_student: studentRaw === 'true',
+      // 隣の任意引数は渡されなければ省いている。ここだけ常に false を返すと
+      // 「渡した」ことになってしまう。渡されたときだけ返す。
+      ...(studentRaw !== undefined ? { is_student: studentRaw === 'true' } : {}),
       ...(headcount.given ? { workplace_insured_count: headcount.value } : {}),
       ...(months.given ? { employment_months: months.value } : {}),
     },

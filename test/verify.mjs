@@ -4663,11 +4663,71 @@ for (const [p, want, label] of [
   const cannot = await get(`${base.replace('&monthly_wage=100000', '')}&weekly_hours=25`);
   ok(cannot.body.insured === null, '判定できないときの insured は null',
      `${cannot.body.insured}`);
+
+  // **学生かどうかを勝手に決めない。**
+  //
+  // is_student を渡さないとき `passed: !(input.is_student ?? false)` で
+  // 「学生でない」= 合格にしていた。隣の3つ(賃金・事業所規模・雇用期間)は
+  // 未指定なら null を返して「判定できない」と言うのに、ここだけ黙って通す。
+  // 学生は第9号ハで適用除外なので、答えがひっくり返る要件。
+  {
+    const noFlag = await get(`${base}&weekly_hours=25`);
+    const t = (noFlag.body.tests ?? []).find((x) => x.key === 'is_student');
+    ok(t?.passed === null, 'is_student を渡さなければ、その要件は未判定', `${t?.passed}`);
+    ok(noFlag.body.insured === null, 'そして結論も断定しない', `${noFlag.body.insured}`);
+    ok((noFlag.body.reason ?? '').includes('is_student'),
+       'どの要件が足りないかを名前で言う', noFlag.body.reason);
+    ok(noFlag.body.input?.is_student === undefined,
+       '渡していない引数を、渡したことにして返さない',
+       JSON.stringify(noFlag.body.input));
+
+    const notStudent = await get(`${base}&weekly_hours=25&is_student=false`);
+    ok(notStudent.body.insured === true, '学生でないと伝えれば被保険者',
+       `${notStudent.body.insured}`);
+    const student = await get(`${base}&weekly_hours=25&is_student=true`);
+    ok(student.body.insured === false, '学生と伝えれば適用除外',
+       `${student.body.insured}`);
+  }
+
+  // **要件として並べたものは、渡されなければ未判定でなければならない。**
+  //
+  // 28・30・31件目は同じ誤りだった —— 判定できない要件を通ったことにして
+  // 結論を断定する。個別に3件直したが、4件目が同じ形で入るのを防げない。
+  // `tests[]` を応答から読んで全要件に当てるので、要件が増えても自動で covered。
+  {
+    const full = '/v1/worker-type?weekly_hours=25&monthly_wage=100000'
+      + '&workplace_insured_count=51&employment_months=12&is_student=false';
+    const all = (await get(full)).body;
+    ok((all.tests ?? []).length >= 4, `要件が ${all.tests?.length} 件並んでいる`);
+    ok(all.insured === true, 'すべて揃えば結論が出る', `${all.insured}`);
+    const leaky = [];
+    for (const t of all.tests ?? []) {
+      const without = full.replace(new RegExp(`&${t.key}=[^&]*`), '');
+      if (without === full) continue;           // 必須で落とせないものは対象外
+      const r = await get(without);
+      if (r.status !== 200) continue;           // 落とすと400になるなら断っている
+      const mine = (r.body.tests ?? []).find((x) => x.key === t.key);
+      if (mine?.passed !== null) leaky.push(`${t.key}: passed=${mine?.passed}`);
+      if (r.body.insured !== null) leaky.push(`${t.key}: insured=${r.body.insured}`);
+      if (!(r.body.reason ?? '').includes(t.key)) leaky.push(`${t.key}: 理由が名前を言わない`);
+    }
+    ok(leaky.length === 0,
+       '渡さなかった要件は未判定で、結論も断定せず、名前で言う',
+       leaky.slice(0, 3).join(' | '));
+  }
   ok((cannot.body.reason ?? '').includes('判定できません'), 'そして理由が判定不能と言う');
+  // **確定で落ちた要件を、未判定の要件が隠してはならない(32件目)。**
+  //
+  // 31件目で is_student を未判定にした途端、賃金5万円の人が「判定できません」に
+  // なった。式が `unknown.length ? null : ...` で、未判定を先に見ていたから。
+  // 要件は全部「かつ」なので、1つ確定で落ちていれば、他を聞いていなくても false。
+  // ここでは is_student をわざと渡さない。
   const no = await get(`${base.replace('100000', '50000')}&weekly_hours=25`);
-  ok(no.body.insured === false, '本当に非該当なら false', `${no.body.insured}`);
-  const yes = await get(`${base}&weekly_hours=25`);
-  ok(yes.body.insured === true, '該当なら true', `${yes.body.insured}`);
+  ok(no.body.insured === false, '本当に非該当なら、他が未判定でも false', `${no.body.insured}`);
+  ok((no.body.reason ?? '').includes('被保険者になりません'),
+     'そして理由は不該当を言い、判定不能とは言わない', no.body.reason);
+  const yes = await get(`${base}&weekly_hours=25&is_student=false`);
+  ok(yes.body.insured === true, '全部揃って該当なら true', `${yes.body.insured}`);
 }
 
 {
@@ -6413,14 +6473,43 @@ for (const [p, want, label] of [
   }
 
   // 権利があると言うなら、その中身も返すこと。
+  // 出勤率を渡す —— 渡さないと八割要件が未判定になり、entitled は null になる(下で見る)。
   for (const [q, label, want] of [
-    ['hired_on=2018-04-01&as_of=2024-10-01&weekly_days=5', '6年半', true],
-    ['hired_on=2026-04-01&as_of=2026-04-01&weekly_days=5', '入社当日', false],
+    ['hired_on=2018-04-01&as_of=2024-10-01&weekly_days=5&attendance_rate=0.9', '6年半', true],
+    ['hired_on=2026-04-01&as_of=2026-04-01&weekly_days=5&attendance_rate=0.9', '入社当日', false],
   ]) {
     const a = (await get(`/v1/annual-leave?${q}`)).body;
     ok(a.entitled === want && (a.current !== null) === want,
        `有給 ${label}: entitled と current が揃う`,
        `entitled=${a.entitled} current=${a.current ? 'あり' : 'なし'}`);
+  }
+
+  // **判定していない要件で断定しない。**
+  //
+  // 第39条第1項の付与は「六箇月継続勤務」と「全労働日の八割以上出勤」の両方が要る。
+  // attendance_rate を渡されなければ後者は判定できないのに、entitled は true を
+  // 返していた。MCP のツール説明は「判定していないと報告し、通ったとは仮定しない」と
+  // 約束していて、attendance.met は null で守っていたが、見出しが破っていた。
+  {
+    const noRate = (await get(
+      '/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&weekly_days=5')).body;
+    ok(noRate.entitled === null, '出勤率が無ければ entitled は null', `${noRate.entitled}`);
+    ok(noRate.attendance.met === null, 'そして八割要件も未判定のまま');
+    ok(noRate.current !== null, 'それでも付与日数は返す(条件付きであることは note が言う)');
+    ok((noRate.attendance.note ?? '').includes('判定していません'),
+       'なぜ判定できないかを言う', noRate.attendance.note);
+
+    const met = (await get(
+      '/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&weekly_days=5&attendance_rate=0.9')).body;
+    ok(met.entitled === true, '八割を満たせば true');
+    const missed = (await get(
+      '/v1/annual-leave?hired_on=2018-04-01&as_of=2024-10-01&weekly_days=5&attendance_rate=0.7')).body;
+    ok(missed.entitled === false, '八割に届かなければ false');
+
+    // 付与日が来ていなければ、出勤率にかかわらず false。
+    const tooEarly = (await get(
+      '/v1/annual-leave?hired_on=2026-04-01&as_of=2026-04-01&weekly_days=5')).body;
+    ok(tooEarly.entitled === false, '付与日前は、出勤率を渡さなくても false');
   }
 }
 

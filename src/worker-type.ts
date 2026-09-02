@@ -67,7 +67,7 @@ export type WorkerTypeInput = {
   monthly_days?: number | null;
   normal_monthly_days?: number | null;
   monthly_wage?: number | null;
-  is_student?: boolean;
+  is_student?: boolean | null;
   workplace_insured_count?: number | null;
   employment_months?: number | null;
 };
@@ -139,8 +139,16 @@ export function judgeWorkerType(input: WorkerTypeInput) {
     {
       key: 'is_student',
       label: '学生でない',
-      passed: !(input.is_student ?? false),
-      value: input.is_student ?? false,
+      // **渡されなければ「学生でない」と決めつけていた。**
+      // 隣の3つ(賃金・事業所規模・雇用期間)は未指定なら null を返して
+      // 「判定できない」と言うのに、ここだけ黙って合格にしていた。
+      // 学生は第9号ハで適用除外なので、答えがひっくり返る要件。
+      // MCP のツール説明はこう約束している —
+      //   Ask rather than assume; the tool applies the tests to what you
+      //   pass and names any it could not evaluate.
+      // 28・30件目と同じ「判定していない要件を通ったことにする」型。
+      passed: input.is_student == null ? null : !input.is_student,
+      value: input.is_student ?? null,
       threshold: false,
       basis: '健康保険法第3条第1項第9号ハ(学校教育法に規定する学生等であること)',
     },
@@ -173,8 +181,14 @@ export function judgeWorkerType(input: WorkerTypeInput) {
   // どちらも false だった。`insured` だけを読む呼び出し側には区別が付かない。
   // このプロジェクトの他の判定は、判定していない項目を null で返している
   // (有給の attendance.met、下の tests[].passed)。ここだけ揃っていなかった。
+  //
+  // **確定で落ちた要件を、未判定の要件が隠していた(32件目)。**
+  // 上の式は `unknown.length ? null : ...` だった。要件はすべて「かつ」なので、
+  // 賃金が8.8万円未満と分かっていれば、学生かどうかを聞いていなくても
+  // 被保険者にならない。それを「判定できません」と言っていた。
+  // 順序は、確定の不該当 → 未判定 → 該当。reason も同じ順で書く。
   const insured: boolean | null =
-    unknown.length ? null : failed.length === 0;
+    failed.length ? false : unknown.length ? null : true;
 
   return {
     insured,
@@ -190,9 +204,9 @@ export function judgeWorkerType(input: WorkerTypeInput) {
     tests,
     reason: insured
       ? '四分の三基準は満たしませんが、第9号イからハのいずれにも当たらず、特定適用事業所に使用されるため被保険者です。定時決定の支払基礎日数は11日で判定します。'
-      : unknown.length
-        ? `判定できません。${unknown.map((t) => t.key).join(', ')} が渡されていません。四分の三基準を満たさない人は、これらすべてを見ないと被保険者かどうかが決まりません。`
-        : `被保険者になりません。${failed.map((t) => t.label).join(' / ')} を満たしていないためです。`,
+      : failed.length
+        ? `被保険者になりません。${failed.map((t) => t.label).join(' / ')} を満たしていないためです。`
+        : `判定できません。${unknown.map((t) => t.key).join(', ')} が渡されていません。四分の三基準を満たさない人は、これらすべてを見ないと被保険者かどうかが決まりません。`,
     headcount_schedule: HEADCOUNT_SCHEDULE,
   };
 }
