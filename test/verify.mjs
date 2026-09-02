@@ -4608,6 +4608,69 @@ for (const [p, want, label] of [
      kindReq.join(','));
 }
 {
+  // **綴り違いに、いちばん近い引数を勧める。**
+  //
+  // 候補選びが「先頭4文字が一致する最初の1つ」だった。近さを見ないので
+  // `weekly_hours` の打ち間違いに `weekly_days` を、`monthly_wage` に
+  // `monthly_days` を勧めていた。151通り試して16件が誤り。意味の違う引数を
+  // 勧めると、値の範囲が重なる組(賃金と日数、保険料と支給額)では
+  // 遠回りでは済まない。1文字足しただけの綴り違いなら、正解は必ずその引数自身。
+  const spec = (await get('/openapi.json')).body;
+  const wrong = [];
+  let tried = 0;
+  for (const [path, ops] of Object.entries(spec.paths)) {
+    if (!ops.get) continue;
+    const probe = await get(`${path}?zzz_probe=1`);
+    const m = /ここで受け付けるのは (.+?) です/.exec(probe.body?.hint ?? '');
+    if (!m) continue;
+    for (const a of m[1].split('、').map((x) => x.trim()).filter(Boolean)) {
+      if (a === 'detail' || a === 'include') continue;
+      const r = await get(`${path}?${a}x=1`);
+      const hit = /「[a-z_]+x」は「([a-z_]+)」の間違い/.exec(r.body?.hint ?? '');
+      tried++;
+      if (hit?.[1] !== a) wrong.push(`${path} ${a}x → ${hit?.[1] ?? '候補なし'}`);
+    }
+  }
+  ok(tried >= 140, `綴り違いを ${tried} 通り試した`, `${tried}`);
+  ok(wrong.length === 0, 'どれもいちばん近い引数を勧める',
+     wrong.slice(0, 3).join(' | '));
+  // 助言はどの引数についてのものかを言う。3つ不明で助言が1つだけ出ると読めなかった。
+  const three = await get('/v1/eligibility?prefecture=Tokyo&monthly_salary=300000&age=40');
+  ok(/「[a-z_]+」は「[a-z_]+」の間違い/.test(three.body.hint ?? ''),
+     '助言は、どの引数についてのものかを言う', three.body.hint);
+}
+
+{
+  // **物理的にあり得ない値を素通ししていた。**同じ量を扱う /v1/annual-leave は
+  // 週200時間も週8日も断るのに、/v1/worker-type は通して `general` を返していた。
+  // 説明文自身が「日本の給与計算がいちばん間違えるところ」と書いている分類。
+  const base = '/v1/worker-type?workplace_insured_count=51&employment_months=12&monthly_wage=100000';
+  for (const [q, key, max] of [
+    ['&weekly_hours=200', 'weekly_hours', 168],
+    ['&weekly_hours=25&monthly_days=32', 'monthly_days', 31],
+    ['&weekly_hours=25&normal_weekly_hours=169', 'normal_weekly_hours', 168],
+    ['&weekly_hours=25&monthly_days=20&normal_monthly_days=32', 'normal_monthly_days', 31],
+  ]) {
+    const r = await get(base + q);
+    ok(r.status === 400, `${key} の上限 ${max} を超えたら断る`, `HTTP ${r.status}`);
+    ok((r.body.error ?? '').includes(String(max)),
+       `そして上限がいくつかを言う`, r.body.error);
+  }
+  ok((await get(`${base}&weekly_hours=25`)).status === 200, 'まともな値は通る');
+
+  // **「判定できない」を false と言っていた。**「被保険者にならない」とは別の答え。
+  // このプロジェクトの他の判定は、判定していない項目を null で返している。
+  const cannot = await get(`${base.replace('&monthly_wage=100000', '')}&weekly_hours=25`);
+  ok(cannot.body.insured === null, '判定できないときの insured は null',
+     `${cannot.body.insured}`);
+  ok((cannot.body.reason ?? '').includes('判定できません'), 'そして理由が判定不能と言う');
+  const no = await get(`${base.replace('100000', '50000')}&weekly_hours=25`);
+  ok(no.body.insured === false, '本当に非該当なら false', `${no.body.insured}`);
+  const yes = await get(`${base}&weekly_hours=25`);
+  ok(yes.body.insured === true, '該当なら true', `${yes.body.insured}`);
+}
+
+{
   // 受け付けるなら、効かなければならない。
   //
   // 許可リストに載っているのに何にも使われていない引数が7件あった。

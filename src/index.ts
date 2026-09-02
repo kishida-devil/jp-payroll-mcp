@@ -404,13 +404,46 @@ function rejectBadQuery(c: any, allowed: readonly string[]) {
   // 6本の許可リストから漏れており、仕様書に載せた途端そこだけ嘘になった。
   const unknown = seen.filter((k) => k !== 'detail' && k !== 'include' && !allowed.includes(k));
   if (!unknown.length) return null;
-  const near = (k: string) =>
-    allowed.find((a) => a.startsWith(k.slice(0, 4)) || k.startsWith(a.slice(0, 4)));
+  // **先頭4文字が一致する「最初の1つ」を返していた。**近さを見ていないので、
+  // `weekly_hours` の打ち間違いに `weekly_days` を、`monthly_wage` に `monthly_days` を
+  // 勧めていた。151通りの綴り違いを試して16件が誤り。意味の違う引数を勧めると、
+  // 値の範囲が重なる組(賃金と日数、保険料と支給額)では遠回りどころか誤答になる。
+  //
+  // 近い順に選ぶ。編集距離が近いものを最優先し、次に「一方が他方を含む」もの
+  // (salary → monthly_salary)、最後に先頭一致の中で最も近いもの。
+  // どれも遠ければ黙る —— 見当違いの助言は、助言が無いより悪い。
+  const editDistance = (a: string, b: string) => {
+    const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let diag = prev[0];
+      prev[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const t = prev[j];
+        prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1,
+                           diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diag = t;
+      }
+    }
+    return prev[b.length];
+  };
+  const near = (k: string) => {
+    const byDistance = allowed
+      .map((a) => ({ a, d: editDistance(k, a) }))
+      .sort((x, y) => x.d - y.d || x.a.length - y.a.length);
+    if (byDistance.length && byDistance[0].d <= 2) return byDistance[0].a;
+    const contains = allowed.filter((a) => a.includes(k) || k.includes(a));
+    if (contains.length === 1) return contains[0];
+    const prefix = byDistance.filter(({ a }) =>
+      a.startsWith(k.slice(0, 4)) || k.startsWith(a.slice(0, 4)));
+    return prefix.length ? prefix[0].a : undefined;
+  };
   return bad(c,
     `受け付けないクエリパラメータです: ${unknown.map((u) => `「${u}」`).join('、')}`,
+    // どの引数についての助言かを言う。3つ不明なのに助言が1つだけ出ると、
+    // それがどれのことか読み手には分からなかった。
     unknown.map((u) => {
       const s = near(u);
-      return s ? `「${s}」の間違いではありませんか。` : null;
+      return s ? `「${u}」は「${s}」の間違いではありませんか。` : null;
     }).filter(Boolean).join(' ') ||
       (allowed.length
         // POST は本文で受けるのでクエリを取らない。空の一覧をそのまま並べると
@@ -2760,11 +2793,22 @@ app.get('/v1/worker-type', (c) => {
   ] as const);
   if (unknownQ) return unknownQ;
 
+  // **上限が無かった。**同じ量を扱う /v1/annual-leave は週200時間も週8日も断るのに、
+  // ここは素通しし、`weekly_hours=200`(20の打ち間違い)で `general` を返していた。
+  // これは説明文自身が「日本の給与計算がいちばん間違えるところ」と書いている分類で、
+  // **静かに間違えるのがいちばん高くつく場所**。1週は168時間、1か月は31日を超えない。
+  const MAX: Record<string, number> = {
+    weekly_hours: 168, normal_weekly_hours: 168,
+    monthly_days: 31, normal_monthly_days: 31,
+    employment_months: 1200,
+  };
   const num = (key: string, { positive = false } = {}) => {
     const raw = c.req.query(key);
     if (raw === undefined) return { given: false, value: null as number | null, bad: false };
     const value = Number(raw);
-    return { given: true, value, bad: !Number.isFinite(value) || value < 0 || (positive && value === 0) };
+    const max = MAX[key];
+    return { given: true, value, bad: !Number.isFinite(value) || value < 0
+      || (positive && value === 0) || (max !== undefined && value > max) };
   };
 
   const weekly = num('weekly_hours');
@@ -2786,10 +2830,23 @@ app.get('/v1/worker-type', (c) => {
     ['monthly_wage', wage], ['workplace_insured_count', headcount],
     ['employment_months', months],
   ] as const)
-    if (f.bad)
-      return bad(c, key.startsWith('normal_')
-        ? `「${key}」は0より大きい数で渡してください。`
-        : `「${key}」は0以上の数で渡してください。`);
+    if (f.bad) {
+      // 上限で弾いたのに「0以上の数で」とだけ言うと、何が悪いのか伝わらない。
+      // 15件目で学んだのと同じ —— 断るなら、渡された値のどこが読めないのかを言う。
+      const max = MAX[key];
+      const over = max !== undefined && Number.isFinite(f.value as number)
+        && (f.value as number) > max;
+      return bad(c, over
+        ? `「${key}」が範囲外です。渡されたのは ${f.value} で、上限は ${max} です。`
+        : key.startsWith('normal_')
+          ? `「${key}」は0より大きい数で渡してください。`
+          : `「${key}」は0以上の数で渡してください。`,
+        over
+          ? (key.includes('hours') ? '1週間は168時間を超えません。'
+             : key.includes('days') ? '1か月は31日を超えません。'
+             : undefined)
+          : undefined);
+    }
 
   const studentRaw = c.req.query('is_student');
   if (studentRaw !== undefined && studentRaw !== 'true' && studentRaw !== 'false')

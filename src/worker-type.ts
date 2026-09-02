@@ -168,7 +168,13 @@ export function judgeWorkerType(input: WorkerTypeInput) {
 
   const failed = tests.filter((t) => t.passed === false);
   const unknown = tests.filter((t) => t.passed === null);
-  const insured = failed.length === 0 && unknown.length === 0;
+  // **判定できないときも false と言っていた。**「被保険者にならない」と
+  // 「判定できない」は違う答えで、reason は書き分けていたのに boolean は
+  // どちらも false だった。`insured` だけを読む呼び出し側には区別が付かない。
+  // このプロジェクトの他の判定は、判定していない項目を null で返している
+  // (有給の attendance.met、下の tests[].passed)。ここだけ揃っていなかった。
+  const insured: boolean | null =
+    unknown.length ? null : failed.length === 0;
 
   return {
     insured,
