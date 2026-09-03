@@ -116,7 +116,7 @@ footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color
 </ul>
 
 <footer>
-<p><a href="https://github.com/kishida-devil/jp-payroll-mcp">GitHub</a> ・ <a href="https://www.npmjs.com/package/jp-payroll-mcp">npm</a> ・ <a href="https://zenn.dev/kishida_devil/articles/9d5a645a105c0b">解説記事</a> ・ <a href="/openapi.json">OpenAPI 仕様書</a> ・ <a href="/v1/data-freshness">データの鮮度</a></p>
+<p><a href="https://github.com/kishida-devil/jp-payroll-mcp">GitHub</a> ・ <a href="https://www.npmjs.com/package/jp-payroll-mcp">npm</a> ・ <a href="https://smithery.ai/servers/kishida-devil/jp-payroll-mcp">Smithery</a> ・ <a href="https://qiita.com/kishida-devil/items/48364f9b39304997bbb0">解説記事(Qiita)</a> ・ <a href="https://zenn.dev/kishida_devil/articles/9d5a645a105c0b">Zenn</a> ・ <a href="/openapi.json">OpenAPI 仕様書</a> ・ <a href="/v1/data-freshness">データの鮮度</a></p>
 <p>このURLに <code>Accept: application/json</code> で来ると、エンドポイント一覧のJSONを返します。間違いを見つけたら GitHub に issue をください。</p>
 </footer>
 
