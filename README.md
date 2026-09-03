@@ -2,19 +2,19 @@
 
 **日本の給与計算・社会保険・労務を、表を引くのではなく計算して返すAPIとMCPサーバーです。**
 47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、休業中の保険料免除、
-割増賃金、年次有給休暇、最低賃金、営業日計算まで。**答えには根拠の条文または通知が付きます。**
+割増賃金、年次有給休暇、最低賃金、営業日計算、令和8年分の年末調整まで。**答えには根拠の条文または通知が付きます。**
 
-公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,622件** の検証を実行します。
+公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,661件** の検証を実行します。
 
 ## 使いかたは2通り
 
-**MCPサーバー** — AIアシスタントに日本語で聞く。28ツール、無料、APIキー不要:
+**MCPサーバー** — AIアシスタントに日本語で聞く。29ツール、無料、APIキー不要:
 
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 ```
 
-**HTTP API** — ソフトウェアに組み込む。43エンドポイント、OpenAPI 3.0、一括処理:
+**HTTP API** — ソフトウェアに組み込む。44エンドポイント、OpenAPI 3.0、一括処理:
 
 ```bash
 curl "https://japan-payroll-api.tsumugi.workers.dev/v1/payroll?prefecture=Tokyo&monthly_salary=350000&birth_date=1986-04-01"
@@ -43,17 +43,17 @@ premiums for all 47 prefectures, withholding tax, standard remuneration decision
 revisions, leave exemptions, minimum wage — with the statute or ministerial notice each
 answer rests on.
 
-Verified against the published tables cell by cell: **4,622 assertions** on every change.
+Verified against the published tables cell by cell: **4,661 assertions** on every change.
 
 ## Two ways in
 
-**As an MCP server**, for asking questions through an AI assistant. 28 tools, free, no key:
+**As an MCP server**, for asking questions through an AI assistant. 29 tools, free, no key:
 
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 ```
 
-**As an HTTP API**, for building it into software. 43 endpoints, OpenAPI 3.0, batch:
+**As an HTTP API**, for building it into software. 44 endpoints, OpenAPI 3.0, batch:
 
 ```bash
 curl "https://japan-payroll-api.tsumugi.workers.dev/v1/payroll?prefecture=Tokyo&monthly_salary=350000&birth_date=1986-04-01"
@@ -143,6 +143,8 @@ is where the traffic for Japanese statutory data measurably is.
 | `GET /v1/standard-remuneration/revision?current_remuneration=&months=&fixed_pay_change=` | Is a 随時改定 (月額変更) due? |
 | `GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=&months=` | Revision on returning from leave |
 | `POST /v1/standard-remuneration/annual-average` | 年間平均による保険者算定, for seasonal work |
+| **Year-end adjustment** | |
+| `POST /v1/year-end-adjustment` | 年末調整 (令和8年分): every box of the 源泉徴収簿 from ⑦ to ㉗ |
 | **Eligibility and leave** | |
 | `GET /v1/eligibility?month=2026-03&left_on=2026-03-30` | Is a premium due in a joining or leaving month? |
 | `GET /v1/leave-exemption?kind=childcare&start=&end=` | Which months a maternity or childcare leave exempts |
@@ -254,10 +256,10 @@ provision to back it fails the build rather than silently returning nothing.
 
 ### Known gaps
 
-- **The year-end adjustment tables are not included.** 令和8年分's
-  「給与所得控除後の給与等の金額の表」 was not yet published as of 2026-08; the Tax Agency
-  releases it around September. 令和8年度税制改正 also raises the minimum employment income
-  deduction to 740,000 yen with effect from 2026-12-01, so that table changes too.
+- **Year-end adjustment covers 令和8年分 only**, from the Tax Agency's booklet published
+  2026-08-31 (minimum employment income deduction 740,000 yen, basic deduction up to
+  1,040,000 yen, the new 特定親族特別控除, the under-23 life-insurance rule). Medical,
+  donation and casualty-loss deductions are outside 年末調整 by law and are not computed.
 - **FY2026 minimum wage is not included yet.** As of 2026-09-02, 46 of 47 prefectures had
   issued their 答申 (Okinawa pending); the earliest take effect on 2026-10-01. The API serves
   FY2025, which is the rate currently in force, and refuses dates on or after the first
@@ -291,7 +293,7 @@ provision to back it fails the build rather than silently returning nothing.
 
 ## Verification
 
-`test/verify.mjs` runs 4,622 assertions against a live server. The core of it compares the
+`test/verify.mjs` runs 4,661 assertions against a live server. The core of it compares the
 API's computed premiums to the **amounts printed in the official 協会けんぽ workbook** for
 250 combinations (5 prefectures × 50 grades) — the published half-share figures, not a
 reimplementation of the formula. It also checks:

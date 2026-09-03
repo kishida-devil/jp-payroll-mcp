@@ -1,6 +1,6 @@
 # jp-payroll-mcp
 
-MCP server for Japanese payroll and labour law. Gives an AI assistant 28 tools for
+MCP server for Japanese payroll and labour law. Gives an AI assistant 29 tools for
 social insurance premiums, withholding income tax, standard remuneration decisions
 and revisions, leave premium exemptions, minimum wage and business-day arithmetic.
 
@@ -80,6 +80,7 @@ Requires Node 18 or later.
 | `decide_regular_remuneration_batch` | The same for a whole office — June decides everyone at once |
 | `judge_leave_end_revision` | Revision on returning from maternity or childcare leave — one grade is enough |
 | `judge_annual_average` | 年間平均による保険者算定, for seasonal work |
+| `calculate_year_end_adjustment` | Year-end adjustment for 2026: every box of the 源泉徴収簿 from ⑦ to ㉗, matching the Tax Agency's worked example |
 | `lookup_standard_remuneration` | Grade for an amount, or the whole 50-grade table |
 
 **Eligibility, leave and age**
@@ -160,7 +161,7 @@ formula.
 | Public holidays | 内閣府 |
 | Revision rules | e-Gov 法令検索, 厚生労働省 法令等データベース, 日本年金機構 |
 
-The API behind these tools runs **4,622 assertions** on every change. The core of it
+The API behind these tools runs **4,661 assertions** on every change. The core of it
 compares computed premiums against the amounts printed in the 協会けんぽ workbook for
 250 combinations (5 prefectures × 50 grades), and against all 2,079 published cells of the
 National Tax Agency withholding table.
@@ -174,7 +175,7 @@ National Tax Agency withholding table.
   conclusion.
 - **Resident tax is never derived.** It depends on the previous year's income and the
   municipality. Pass the figure from the 特別徴収税額通知書.
-- **Year-end adjustment (年末調整) is not covered.**
+- **Year-end adjustment (年末調整) is computed for 2026 (令和8年分).** Medical, donation and casualty-loss deductions are outside 年末調整 by law; only what the employee declared is deducted — no spouse or dependant is assumed.
 - **A passing invoice check digit does not identify a corporation.** Sole proprietors
   satisfy exactly the same rule.
 - **A few practice points could not be sourced to a primary document** and are returned

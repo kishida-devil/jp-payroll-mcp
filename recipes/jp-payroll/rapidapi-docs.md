@@ -64,7 +64,7 @@ curl -X GET \
 | **条文** | answers が引用した条項の全文(e-Gov より) |
 | **メタ** | 受け付ける値の一覧、データの鮮度 |
 
-**43エンドポイント。**全スキーマは Endpoints タブに、OpenAPI 3.0 の仕様書は
+**44エンドポイント。**全スキーマは Endpoints タブに、OpenAPI 3.0 の仕様書は
 `https://japan-payroll-api.tsumugi.workers.dev/openapi.json` で配信しています。
 
 **応答は小さくできます。**どのエンドポイントにも `?detail=compact` を付けると、出典・注記・
@@ -123,7 +123,7 @@ e-Gov は「厚生年金法」ですが、実務では「厚年法」と書き�
 | 祝日 | 内閣府 |
 | 改定の規則 | e-Gov 法令検索、厚生労働省 法令等データベース、日本年金機構 |
 
-**変更のたびに4,622件の表明**を実行します。中核は、協会けんぽの保険料額表に印刷された額と
+**変更のたびに4,661件の表明**を実行します。中核は、協会けんぽの保険料額表に印刷された額と
 **250通り(5都道府県×50等級)**を突き合わせ、国税庁の月額表の**公表2,079セル全部**と照合するものです。
 
 `GET /v1/data-freshness` が各データの収録範囲と次の改定時期を返すので、
@@ -179,7 +179,7 @@ e-Gov は「厚生年金法」ですが、実務では「厚年法」と書き�
   **日本年金機構による保険者算定は、なお別の結論に至ることがあります。**
 - **住民税は算出しません。**前年所得と市区町村で決まり、事業主が計算するものではありません。
   `/v1/payroll` は渡された額をそのまま差し引きます。
-- **年末調整は対象外です。**
+- **年末調整は令和8年分に対応しています。**医療費控除・寄附金控除・雑損控除は年末調整の対象外(確定申告)です。
 - **チェックディジットが通っても法人とは限りません。**個人事業者の登録番号も同じ規則を
   満たすため、番号から保有者は判別できません。
 - **一次資料に辿れなかった実務論点**は、断定せず `guidance.fixed_pay.unverified` として
@@ -206,12 +206,12 @@ Japanese payroll, social insurance and labour law as an HTTP API. Premiums for a
 47 prefectures, withholding income tax, standard remuneration decisions and
 revisions (定時決定・随時改定), leave premium exemptions, overtime, annual leave,
 minimum wage back to FY2002, consumption tax by date, holidays with business-day
-arithmetic, and corporate/invoice number validation. 43 endpoints, OpenAPI 3.0.
+arithmetic, and corporate/invoice number validation. 44 endpoints, OpenAPI 3.0.
 
 Every figure is extracted programmatically from the official government source and
 verified against the values printed in it — 250 combinations (5 prefectures × 50 grades)
 against the 協会けんぽ workbook, all 2,079 published cells of the National Tax
-Agency withholding table, 4,622 assertions on every change.
+Agency withholding table, 4,661 assertions on every change.
 
 Every answer names the statute or ministerial notice it rests on, and
 `?include=statute_text` attaches the actual text of whatever it cited. Judgements

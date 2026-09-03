@@ -229,6 +229,14 @@ export const ATTRIBUTION = {
     licence: PDL10,
     attribution_ja: '出典：厚生労働省ホームページを加工して作成',
   },
+  year_end_adjustment: {
+    source: '国税庁 令和8年分 年末調整のしかた(給与所得控除後の給与等の金額の表、算出所得税額の速算表、各控除額の表)',
+    source_url: 'https://www.nta.go.jp/publication/pamph/gensen/nencho2026/01.htm',
+    year: 2026,
+    licence: PDL10,
+    attribution_ja: '出典：国税庁ホームページを加工して作成',
+    note: '復興特別所得税(2.1%)を含む年調年税額を返します。住民税・確定申告で行う控除(医療費控除・寄附金控除・雑損控除)は年末調整の対象外です。',
+  },
   employment_insurance: {
     source: empins.meta.source,
     source_url: empins.meta.source_url,

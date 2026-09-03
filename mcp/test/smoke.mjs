@@ -169,6 +169,15 @@ for (const [name, args, check] of [
   ['lookup_standard_remuneration', { remuneration: 350000 }, (j) => j?.health?.grade > 0],
   ['get_insurance_rates', { prefecture: 'Osaka', business_type: 'general' },
    (j) => j?.social_insurance && j?.employment_insurance],
+  // 国税庁の設例(令和8年分 年末調整のしかた 57〜59ページ): 年調年税額 41,400円、超過額 115,270円。
+  ['calculate_year_end_adjustment', {
+    total_pay: 8970000, withheld_tax: 156670, social_insurance: 1386102,
+    life_insurance: { new_general: 80000, old_general: 35000, care_medical: 80000, new_pension: 30000, old_pension: 90000 },
+    earthquake_insurance: { earthquake: 42000, old_long_term: 14800 },
+    spouse: { income: 500000 },
+    dependants: { general: 1, specified: 1, elderly_cohabiting_parent: 1, under_23: 1 },
+    disabilities: { general: 1 }, specified_relatives: [1000000], housing_loan_credit: 76500,
+  }, (j) => j?.result?.annual_tax === 41400 && j?.result?.refund === 115270],
   ['get_minimum_wage', { prefecture: 'Tokyo' }, (j) => j?.minimum_wage > 0 || j?.hourly_wage > 0],
   ['business_days', { operation: 'count', from: '2026-01-01', to: '2026-03-31' }, (j) => j?.business > 0],
   ['business_days', { operation: 'shift', date: '2026-01-01', days: 1 }, (j) => !!j],

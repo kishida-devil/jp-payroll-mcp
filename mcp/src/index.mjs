@@ -728,8 +728,8 @@ registerTool('calculate_annual_cost', {
     'Each row comes back with what was counted, whether it was cut, and how much of the year ' +
     'remains, so the answer can be explained rather than just quoted.\n\n' +
     'Income tax here is the monthly figure times twelve. Bonus withholding is a separate ' +
-    'calculation (calculate_bonus with include_tax) and the year-end adjustment is not ' +
-    'covered at all — say so rather than presenting this as take-home pay for the year.',
+    'calculation (calculate_bonus with include_tax) and the year-end adjustment is a ' +
+    'separate tool (calculate_year_end_adjustment) — say so rather than presenting this as take-home pay for the year.',
   inputSchema: {
     prefecture,
     monthly_salary: z.number().describe('Gross monthly pay in yen.'),
@@ -904,6 +904,69 @@ registerTool('get_age_milestones', {
 // ---------------------------------------------------------------------------
 // Reference data
 // ---------------------------------------------------------------------------
+
+registerTool('calculate_year_end_adjustment', {
+  title: '年末調整(令和8年分)',
+  description:
+    'Year-end adjustment (年末調整) for 2026 from the National Tax Agency\'s 令和8年分 booklet: the ' +
+    'printed 給与所得控除後の給与等の金額 table (1,103 rows), the income-adjustment deduction, ' +
+    'social/life/earthquake insurance deductions, spouse, specified-relative (19-22 with income), ' +
+    'dependant, disability, widow/single-parent/student and basic deductions, the year-end tax ' +
+    'bracket table, the housing-loan credit and the 2.1% reconstruction surtax. Returns every ' +
+    'box of the 源泉徴収簿 (⑦ to ㉗) and whether the difference is a refund or a collection.\n\n' +
+    'Pay figures are for the whole calendar year, bonuses included. Pass only what the employee ' +
+    'declared on their forms; the tool does not assume a spouse, dependants or insurance. ' +
+    'Anyone paid 20,000,000 yen or more is outside 年末調整 and the tool says so. Medical, ' +
+    'donation and casualty-loss deductions are not part of 年末調整 (they need a tax return) and ' +
+    'resident tax is never involved.',
+  inputSchema: {
+    total_pay: z.number().int().nonnegative().describe('Total pay for the year including bonuses (⑦).'),
+    withheld_tax: z.number().int().nonnegative().describe('Income tax withheld during the year (⑧).'),
+    social_insurance: z.number().int().nonnegative().describe(
+      'Social insurance premiums deducted from pay during the year (⑫).'),
+    social_insurance_declared: z.number().int().nonnegative().optional().describe(
+      'Social insurance the employee paid themselves and declared, e.g. 国民年金 (⑬).'),
+    mutual_aid: z.number().int().nonnegative().optional().describe('小規模企業共済等掛金 (⑭).'),
+    life_insurance: z.object({
+      new_general: z.number().int().nonnegative().optional(),
+      old_general: z.number().int().nonnegative().optional(),
+      care_medical: z.number().int().nonnegative().optional(),
+      new_pension: z.number().int().nonnegative().optional(),
+      old_pension: z.number().int().nonnegative().optional(),
+    }).optional().describe('Premiums PAID this year by category (new = contracts from 2012-01-01). The deduction is computed here.'),
+    earthquake_insurance: z.object({
+      earthquake: z.number().int().nonnegative().optional(),
+      old_long_term: z.number().int().nonnegative().optional(),
+    }).optional().describe('Earthquake insurance and 旧長期損害保険 premiums paid.'),
+    spouse: z.object({
+      income: z.number().int().nonnegative().describe('Spouse\'s 合計所得金額 (not gross pay).'),
+      age_70_or_over: z.boolean().optional(),
+    }).nullable().optional(),
+    dependants: z.object({
+      general: z.number().int().nonnegative().optional().describe('一般の控除対象扶養親族 (16+ excluding the categories below).'),
+      specified: z.number().int().nonnegative().optional().describe('特定扶養親族 (19-22, income ≤ 620,000).'),
+      elderly: z.number().int().nonnegative().optional().describe('老人扶養親族 (70+) not a cohabiting parent.'),
+      elderly_cohabiting_parent: z.number().int().nonnegative().optional().describe('同居老親等.'),
+      under_23: z.number().int().nonnegative().optional().describe(
+        'Dependants under 23. Drives the income-adjustment deduction and the life-insurance special rule.'),
+    }).optional(),
+    disabilities: z.object({
+      general: z.number().int().nonnegative().optional(),
+      special: z.number().int().nonnegative().optional(),
+      special_cohabiting: z.number().int().nonnegative().optional(),
+    }).optional().describe('Counts of 障害者 / 特別障害者 / 同居特別障害者 among the employee, spouse and dependants.'),
+    flags: z.object({
+      widow: z.boolean().optional(), single_parent: z.boolean().optional(),
+      working_student: z.boolean().optional(), self_special_disabled: z.boolean().optional(),
+    }).optional(),
+    specified_relatives: z.array(z.number().int().nonnegative()).optional().describe(
+      '特定親族 (19-22 with 合計所得金額 over 620,000): one income figure per person.'),
+    housing_loan_credit: z.number().int().nonnegative().optional().describe('住宅借入金等特別控除額 (㉔), from the certificate.'),
+    other_income: z.number().int().nonnegative().optional().describe('Income other than this pay, for the basic and spouse deduction bands.'),
+    income_adjustment: z.boolean().optional().describe(
+      'Force the 所得金額調整控除 on or off. Omit to derive it from pay > 8,500,000 and the under_23 / disability inputs.'),
+  },
+}, async (a) => call('/v1/year-end-adjustment', { method: 'POST', body: a }));
 
 registerTool('get_insurance_rates', {
   title: '社会保険料率・雇用保険料率',

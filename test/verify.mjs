@@ -316,6 +316,92 @@ for (const [t, emp, er] of [['general', 0.005, 0.0085],
   ok(near(body.rates.total, emp + er, 1e-9), `EI total ${t}`);
 }
 
+// ---- 8b. 年末調整(令和8年分) ----
+//
+// バーは国税庁「令和8年分 年末調整のしかた」。
+//  - 給与所得控除後の給与等の金額の表(47〜54ページ)の印刷値
+//  - 57〜59ページの設例: 年調年税額 41,400円、超過額 115,270円
+{
+  const post = async (body) => {
+    const r = await fetch(BASE + '/v1/year-end-adjustment', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+  const base = { withheld_tax: 0, social_insurance: 0 };
+
+  // 表の印刷値(冊子48ページ・54ページの行、表の外側の規則)。
+  for (const [pay, expect, why] of [
+    [740_999, 0, '741,000円未満は0'],
+    [741_000, 1_000, '741,000円は 741,000 − 740,000'],
+    [2_190_999, 1_450_999, '2,191,000円未満は給与等の金額 − 740,000'],
+    [2_191_000, 1_451_000, '表の最初の行'],
+    [2_584_000, 1_728_800, '48ページ 2,584,000〜2,588,000'],
+    [2_587_999, 1_728_800, '同じ行の上端'],
+    [3_000_000, 2_020_000, '48ページ 3,000,000〜3,004,000'],
+    [6_500_000, 4_760_000, '54ページ 6,500,000〜6,504,000'],
+    [6_599_999, 4_836_800, '表の最後の行'],
+    [6_600_000, 4_840_000, '660万円以上は ×90% − 1,100,000'],
+    [7_000_000, 5_200_000, '7,000,000 × 0.9 − 1,100,000'],
+    [8_500_000, 6_550_000, '850万円以上は − 1,950,000'],
+    [8_970_000, 7_020_000, '設例の給与等の金額'],
+  ]) {
+    const r = (await post({ ...base, total_pay: pay })).body;
+    ok(r.steps?.after_employment_deduction?.amount === expect,
+       `給与所得控除後 ${pay.toLocaleString()} → ${expect.toLocaleString()} (${why})`,
+       `${r.steps?.after_employment_deduction?.amount} ${r.steps?.after_employment_deduction?.how ?? r.reason ?? ''}`);
+  }
+
+  // 設例(57〜59ページ)。冊子の答えをそのまま当てる。
+  const rei = (await post({
+    total_pay: 8_970_000, withheld_tax: 156_670, social_insurance: 1_386_102,
+    life_insurance: { new_general: 80_000, old_general: 35_000, care_medical: 80_000, new_pension: 30_000, old_pension: 90_000 },
+    earthquake_insurance: { earthquake: 42_000, old_long_term: 14_800 },
+    spouse: { income: 500_000 },
+    dependants: { general: 1, specified: 1, elderly_cohabiting_parent: 1, under_23: 1 },
+    disabilities: { general: 1 },
+    specified_relatives: [1_000_000],
+    housing_loan_credit: 76_500,
+  })).body;
+  const s = rei.steps ?? {};
+  const want = [
+    ['after_employment_deduction', 7_020_000], ['income_adjustment', 47_000], ['after_adjustment', 6_973_000],
+    ['life_insurance', 120_000], ['earthquake_insurance', 50_000], ['spouse', 380_000],
+    ['specified_relatives', 410_000], ['dependants', 1_860_000], ['basic', 620_000],
+    ['total_deductions', 4_826_102], ['taxable_income', 2_146_000], ['computed_tax', 117_100],
+    ['tax_after_credit', 40_600], ['annual_tax', 41_400], ['difference', -115_270],
+  ];
+  for (const [k, v] of want)
+    ok(s[k]?.amount === v, `設例 ${s[k]?.box ?? k} ${s[k]?.label ?? ''} = ${v.toLocaleString()}`, `${s[k]?.amount}`);
+  ok(rei.result?.settlement === 'refund' && rei.result?.refund === 115_270,
+     '設例: 超過額 115,270円を還付', JSON.stringify(rei.result));
+
+  // 生命保険料控除の特例(4ページ): 23歳未満の扶養親族がいれば新生命保険料は計算式Ⅱ、一般の上限6万円。
+  const noKid = (await post({ ...base, total_pay: 5_000_000, life_insurance: { new_general: 100_000 } })).body;
+  const kid = (await post({ ...base, total_pay: 5_000_000, life_insurance: { new_general: 100_000 }, dependants: { under_23: 1 } })).body;
+  ok(noKid.steps?.life_insurance?.amount === 40_000 && kid.steps?.life_insurance?.amount === 55_000,
+     '新生命保険料10万円: 計算式Ⅰで4万円、23歳未満の扶養親族がいれば計算式Ⅱで 100,000/4+30,000 = 55,000円',
+     `${noKid.steps?.life_insurance?.amount} / ${kid.steps?.life_insurance?.amount}`);
+
+  // 基礎控除(56ページ)と速算表(55ページ)の段差。
+  const low = (await post({ ...base, total_pay: 3_000_000 })).body;   // 所得 2,020,000 → 基礎控除 1,040,000
+  ok(low.steps?.basic?.amount === 1_040_000, '合計所得489万円以下の基礎控除は104万円', `${low.steps?.basic?.amount}`);
+  ok(low.steps?.taxable_income?.amount === 980_000 && low.steps?.computed_tax?.amount === 49_000,
+     '課税 980,000円 × 5% = 49,000円', `${low.steps?.taxable_income?.amount} / ${low.steps?.computed_tax?.amount}`);
+
+  // 対象外と、渡していないものを推定しないこと。
+  const rich = (await post({ ...base, total_pay: 20_000_000 })).body;
+  ok(rich.eligible === false, '2,000万円以上は年末調整の対象外', rich.reason);
+  const bare = (await post({ ...base, total_pay: 5_000_000 })).body;
+  ok(bare.steps?.spouse?.amount === 0 && bare.steps?.dependants?.amount === 0 && bare.steps?.life_insurance?.amount === 0,
+     '渡していない配偶者・扶養・保険料は0(推定しない)');
+  const unknown = await post({ ...base, total_pay: 5_000_000, dependents: { general: 1 } });
+  ok(unknown.status === 400 && unknown.body.code === 'unknown_parameter',
+     'dependents(綴り違い)は黙って無視せず断る', `${unknown.status} ${unknown.body.code}`);
+  const missing = await post({ total_pay: 5_000_000 });
+  ok(missing.status === 400 && missing.body.code === 'missing_parameter', '徴収税額と社会保険料は必須', `${missing.status}`);
+}
+
 // ---- 9. minimum wage point-in-time lookups ----
 {
   const latest = await get('/v1/minimum-wage?prefecture=Tokyo');
@@ -4190,7 +4276,7 @@ for (const [p, want, label] of [
     return { status: r.status, body: await r.json() };
   };
   const posts = Object.entries(spec.paths).filter(([, o]) => o.post).map(([p]) => p);
-  ok(posts.length === 4, 'there are four POSTs to check', `${posts.length}`);
+  ok(posts.length === 5, 'there are five POSTs to check (batch ×3, annual-average, year-end-adjustment)', `${posts.length}`);
   for (const path of posts) {
     const r = await postJson(path, {}, '?zzz=1');
     ok(r.status === 400 && r.body.code === 'unknown_parameter',

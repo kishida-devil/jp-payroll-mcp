@@ -27,7 +27,7 @@ RECIPE = {
         "割増賃金、年次有給休暇、標準報酬月額の定時決定・随時改定、産休育休の保険料免除、"
         "24年分の最低賃金、祝日と営業日計算、消費税率、法人番号の検査。"
         "答えには根拠の条文が付き、収録範囲の外は古い数字を返さずに断ります。"
-        "Japan payroll, social insurance and labour law — 43 endpoints, statute-cited."
+        "Japan payroll, social insurance and labour law — 44 endpoints, statute-cited."
     ),
 
     "long_description": (
@@ -55,7 +55,7 @@ RECIPE = {
         "GET /v1/data-freshness が各データの収録範囲と次の改定時期を返すので、"
         "古くなったことが黙って進行しません。\n\n"
         "届出の要否を判定するものであって、届出ではありません。"
-        "住民税と年末調整は対象外です。国民健康保険は市町村の条例で決まるため、"
+        "住民税は対象外です。年末調整は令和8年分に対応しています(医療費控除・寄附金控除・雑損控除は確定申告)。国民健康保険は市町村の条例で決まるため、"
         "全国一律の額を返しません。政府機関の承認・関与・保証を受けたものでは"
         "ありません。\n\n"
         "Japanese payroll, social insurance and labour law as an HTTP API. "
@@ -752,6 +752,102 @@ RECIPE = {
                             },
                         },
                     },
+                },
+            },
+        },
+        {
+            "path": "/v1/year-end-adjustment",
+            "method": "post",
+            "summary": "年末調整 (令和8年分): the whole 源泉徴収簿 from ⑦ to ㉗",
+            "description": (
+                "Year-end adjustment for calendar 2026 from the National Tax Agency's 令和8年分 "
+                "booklet (published 2026-08-31): the printed 給与所得控除後の給与等の金額 table "
+                "(1,103 rows, minimum deduction 740,000), the income-adjustment deduction, social, "
+                "life and earthquake insurance deductions, spouse and spouse-special deductions, the "
+                "new 特定親族特別控除, dependant, disability, widow, single-parent and working-student "
+                "deductions, the basic deduction (up to 1,040,000), the year-end bracket table, the "
+                "housing-loan credit and the 2.1% reconstruction surtax.\n\n"
+                "Every box of the 源泉徴収簿 is returned with its rounding applied where the booklet "
+                "applies it. The tool deducts only what is passed — it does not assume a spouse, "
+                "dependants or insurance. Employees paid 20,000,000 yen or more are outside 年末調整 "
+                "and get eligible=false. Medical, donation and casualty-loss deductions are not part "
+                "of 年末調整 (they need a tax return); resident tax is never involved."
+            ),
+            "tags": ["Year-end adjustment"],
+            "body": {
+                "type": "object",
+                "required": ["total_pay", "withheld_tax", "social_insurance"],
+                "properties": {
+                    "total_pay": {"type": "integer", "example": 8970000,
+                                  "description": "Pay for the year including bonuses (⑦)."},
+                    "withheld_tax": {"type": "integer", "example": 156670,
+                                     "description": "Income tax withheld during the year (⑧)."},
+                    "social_insurance": {"type": "integer", "example": 1386102,
+                                         "description": "Social insurance deducted from pay (⑫)."},
+                    "social_insurance_declared": {"type": "integer",
+                                                  "description": "Declared premiums paid by the employee, e.g. 国民年金 (⑬)."},
+                    "mutual_aid": {"type": "integer", "description": "小規模企業共済等掛金 (⑭)."},
+                    "life_insurance": {
+                        "type": "object",
+                        "description": "Premiums PAID by category; the deduction is computed.",
+                        "properties": {
+                            "new_general": {"type": "integer", "example": 80000},
+                            "old_general": {"type": "integer", "example": 35000},
+                            "care_medical": {"type": "integer", "example": 80000},
+                            "new_pension": {"type": "integer", "example": 30000},
+                            "old_pension": {"type": "integer", "example": 90000},
+                        },
+                    },
+                    "earthquake_insurance": {
+                        "type": "object",
+                        "properties": {
+                            "earthquake": {"type": "integer", "example": 42000},
+                            "old_long_term": {"type": "integer", "example": 14800},
+                        },
+                    },
+                    "spouse": {
+                        "type": "object", "nullable": True,
+                        "properties": {
+                            "income": {"type": "integer", "example": 500000,
+                                       "description": "Spouse's 合計所得金額, not gross pay."},
+                            "age_70_or_over": {"type": "boolean"},
+                        },
+                    },
+                    "dependants": {
+                        "type": "object",
+                        "properties": {
+                            "general": {"type": "integer", "example": 1},
+                            "specified": {"type": "integer", "example": 1,
+                                          "description": "特定扶養親族: 19-22 with income ≤ 620,000."},
+                            "elderly": {"type": "integer"},
+                            "elderly_cohabiting_parent": {"type": "integer", "example": 1},
+                            "under_23": {"type": "integer", "example": 1,
+                                         "description": "Dependants under 23; drives the income-adjustment deduction and the life-insurance special rule."},
+                        },
+                    },
+                    "disabilities": {
+                        "type": "object",
+                        "properties": {
+                            "general": {"type": "integer", "example": 1},
+                            "special": {"type": "integer"},
+                            "special_cohabiting": {"type": "integer"},
+                        },
+                    },
+                    "flags": {
+                        "type": "object",
+                        "properties": {
+                            "widow": {"type": "boolean"}, "single_parent": {"type": "boolean"},
+                            "working_student": {"type": "boolean"}, "self_special_disabled": {"type": "boolean"},
+                        },
+                    },
+                    "specified_relatives": {
+                        "type": "array", "items": {"type": "integer"}, "example": [1000000],
+                        "description": "特定親族 (19-22 with income over 620,000): one 合計所得金額 per person.",
+                    },
+                    "housing_loan_credit": {"type": "integer", "example": 76500},
+                    "other_income": {"type": "integer"},
+                    "income_adjustment": {"type": "boolean",
+                                          "description": "Force the 所得金額調整控除 on or off; omit to derive it."},
                 },
             },
         },

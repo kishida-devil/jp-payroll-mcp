@@ -217,6 +217,7 @@ GPT_EXCLUDE: dict[str, str] = {
     '/v1/standard-remuneration/regular/batch': 'バルク。',
     '/v1/invoice-number/validate/batch': 'バルク。',
     '/v1/withholding-tax/computer': '同じ税額の別解法。会話では月額表で足りる。',
+    '/v1/holidays': 'その年の祝日一覧。会話の問いは「この日は営業日か」で、check と business-days で足りる。',
 }
 
 
