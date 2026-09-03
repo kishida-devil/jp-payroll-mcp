@@ -9,7 +9,7 @@ GitHub topics だけでは自動では拾われない。どれも申請かフォ
 |---|---|---|---|
 | mcp.so | https://github.com/chatmcp/mcpso/issues/new に issue | GitHub | **提出済み** https://github.com/chatmcp/mcpso/issues/3906 |
 | Glama | https://glama.ai/mcp/servers → Claim / Add server | GitHub ログイン | **自動掲載済み**(8/31 更新、品質「未採点」)。Claim は任意 |
-| Smithery | https://smithery.ai → Add server → `kishida-devil/jp-payroll-mcp` | GitHub ログイン | 未 |
+| Smithery | https://smithery.ai/servers/new | GitHub ログイン(済) | **掲載不可(現状)**。2026-09 時点の公開フォームは「MCP Server URL(HTTP)」必須で、stdio の npm パッケージは受け付けない。Worker に Streamable HTTP の `/mcp` を生やせば載る(次の反復候補) |
 | PulseMCP | https://www.pulsemcp.com/submit | フォーム(アカウント不要) | **受付停止中**。公式レジストリから自動で拾うとの掲示。申請不要 |
 
 ---
