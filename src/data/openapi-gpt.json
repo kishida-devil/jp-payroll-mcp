@@ -2,7 +2,7 @@
  "openapi": "3.0.3",
  "info": {
   "title": "Japan Payroll and Labor Constants (GPT Actions)",
-  "description": "日本の給与計算に必要な数字は公開されているのに、47都道府県ぶんの表、毎年4月に変わる省庁のPDF、10月に都道府県ごと別々の日付で改定される最低賃金のサイトに散らばっています。\n\nこのAPIはそれをまとめます。保険料は給与額ではなく標準報酬月額(50等級の階段)にかかり、同じ等級内の昇給では変わりません。雇用保険だけは実際の賃金にかかります。従業員負担分の端数は0.50円以下切り捨て・超過切り上げで、四捨五入ではありません。\n\n判定系のエンドポイントは結論だけでなく根拠を返します。随時改定の「2等級以上」は健康保険法ではなく昭和36年保発第4号にあり、上下限付近には1等級で足りる例外が4つあります。健康保険と厚生年金は別々に判定するので、昇給が片方だけ動かすことがよくあります。\n\n資格喪失は退職日の翌日です(健康保険法第36条)。3月31日退職なら喪失は4月1日で3月分の保険料がかかり、3月30日退職ならかかりません。東京・40歳・月給30万円で労使合計95,130円の差が1日で生まれます。\n\n年齢は誕生日の前日に上がります(年齢計算ニ関スル法律)。4月1日生まれの人の介護保険料は3月分から引きます。\n\nすべての数値は公式資料から機械的に抽出し、そこに印刷された値と突き合わせています。協会けんぽの保険料額表と250通りの都道府県×等級、国税庁の月額表の公表2,079セル全部。変更のたびに全件を実行します。\n\n答えには根拠の条文が付き、?include=statute_text でその本文まで取れます。収録範囲の外の日付は、古い数字を返さずに422で断ります。GET /v1/data-freshness が各データの収録範囲と次の改定時期を返すので、古くなったことが黙って進行しません。\n\n届出の要否を判定するものであって、届出ではありません。住民税は対象外です。年末調整は令和8年分に対応しています(医療費控除・寄附金控除・雑損控除は確定申告)。国民健康保険は市町村の条例で決まるため、全国一律の額を返しません。政府機関の承認・関与・保証を受けたものではありません。\n\nJapanese payroll, social insurance and labour law as an HTTP API. Every figure is computed from the published government tables and carries the statute or ministerial notice it rests on.\n\nCustom GPT Actions は最大 30 オペレーションまでしか読み込めないため、会話で呼ばれないものを落としてあります。全 45 件の完全版は /openapi.json にあります。\n\n落としたもの:\n- / — 入口の一覧。仕様書を読み込んだ時点で不要。\n- /v1/consumption-tax — LOOP.md の3条件すべてで落ちる。\n- /v1/consumption-tax/history — 同上。\n- /v1/corporate-number/check-digit — テスト用番号の生成。実務の問いは validate 側。\n- /v1/data-freshness — 有用だが、会話の中で行動に結びつかない。\n- /v1/enums — クライアントを書く人がビルド時に読む参照。会話では出てこない。\n- /v1/holidays — その年の祝日一覧。会話の問いは「この日は営業日か」で、check と business-days で足りる。\n- /v1/invoice-number/validate/batch — バルク。\n- /v1/minimum-wage/history — 「この時給で大丈夫か」には点の照会で足りる。\n- /v1/payroll/batch — バルク。会話は1人ずつ。\n- /v1/prefectures — 47件の名前一覧。各エンドポイントが名前を直接受け取る。\n- /v1/standard-remuneration/regular/batch — バルク。\n- /v1/standard-remuneration/table — 全等級表。点で引ければ会話の問いには足りる。\n- /v1/statute/index — 条文は ref で引ければよい。\n- /v1/withholding-tax/computer — 同じ税額の別解法。会話では月額表で足りる。",
+  "description": "日本の給与計算に必要な数字は公開されているのに、47都道府県ぶんの表、毎年4月に変わる省庁のPDF、10月に都道府県ごと別々の日付で改定される最低賃金のサイトに散らばっています。\n\nこのAPIはそれをまとめます。保険料は給与額ではなく標準報酬月額(50等級の階段)にかかり、同じ等級内の昇給では変わりません。雇用保険だけは実際の賃金にかかります。従業員負担分の端数は0.50円以下切り捨て・超過切り上げで、四捨五入ではありません。\n\n判定系のエンドポイントは結論だけでなく根拠を返します。随時改定の「2等級以上」は健康保険法ではなく昭和36年保発第4号にあり、上下限付近には1等級で足りる例外が4つあります。健康保険と厚生年金は別々に判定するので、昇給が片方だけ動かすことがよくあります。\n\n資格喪失は退職日の翌日です(健康保険法第36条)。3月31日退職なら喪失は4月1日で3月分の保険料がかかり、3月30日退職ならかかりません。東京・40歳・月給30万円で労使合計95,130円の差が1日で生まれます。\n\n年齢は誕生日の前日に上がります(年齢計算ニ関スル法律)。4月1日生まれの人の介護保険料は3月分から引きます。\n\nすべての数値は公式資料から機械的に抽出し、そこに印刷された値と突き合わせています。協会けんぽの保険料額表と250通りの都道府県×等級、国税庁の月額表の公表2,079セル全部。変更のたびに全件を実行します。\n\n答えには根拠の条文が付き、?include=statute_text でその本文まで取れます。収録範囲の外の日付は、古い数字を返さずに422で断ります。GET /v1/data-freshness が各データの収録範囲と次の改定時期を返すので、古くなったことが黙って進行しません。\n\n届出の要否を判定するものであって、届出ではありません。住民税は対象外です。年末調整は令和8年分に対応しています(医療費控除・寄附金控除・雑損控除は確定申告)。国民健康保険は市町村の条例で決まるため、全国一律の額を返しません。政府機関の承認・関与・保証を受けたものではありません。\n\nJapanese payroll, social insurance and labour law as an HTTP API. Every figure is computed from the published government tables and carries the statute or ministerial notice it rests on.\n\nCustom GPT Actions は最大 30 オペレーションまでしか読み込めないため、会話で呼ばれないものを落としてあります。全 46 件の完全版は /openapi.json にあります。\n\n落としたもの:\n- / — 入口の一覧。仕様書を読み込んだ時点で不要。\n- /v1/business-days/shift — 営業日をN日ずらす。会話では business-days の count で足りることが多い。\n- /v1/consumption-tax — LOOP.md の3条件すべてで落ちる。\n- /v1/consumption-tax/history — 同上。\n- /v1/corporate-number/check-digit — テスト用番号の生成。実務の問いは validate 側。\n- /v1/data-freshness — 有用だが、会話の中で行動に結びつかない。\n- /v1/enums — クライアントを書く人がビルド時に読む参照。会話では出てこない。\n- /v1/holidays — その年の祝日一覧。会話の問いは「この日は営業日か」で、check と business-days で足りる。\n- /v1/invoice-number/validate/batch — バルク。\n- /v1/minimum-wage/history — 「この時給で大丈夫か」には点の照会で足りる。\n- /v1/payroll/batch — バルク。会話は1人ずつ。\n- /v1/prefectures — 47件の名前一覧。各エンドポイントが名前を直接受け取る。\n- /v1/standard-remuneration/regular/batch — バルク。\n- /v1/standard-remuneration/table — 全等級表。点で引ければ会話の問いには足りる。\n- /v1/statute/index — 条文は ref で引ければよい。\n- /v1/withholding-tax/computer — 同じ税額の別解法。会話では月額表で足りる。",
   "version": "2.9.0",
   "license": {
    "name": "Mixed: Japan Public Data License v1.0 (公共データ利用規約 第1.0版), except 全国健康保険協会 data - see the attribution block in each response",
@@ -798,101 +798,6 @@
       "schema": {
        "type": "string",
        "example": "2026-03-31"
-      }
-     },
-     {
-      "name": "detail",
-      "in": "query",
-      "required": false,
-      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
-      "schema": {
-       "type": "string",
-       "enum": [
-        "full",
-        "compact"
-       ]
-      }
-     },
-     {
-      "name": "include",
-      "in": "query",
-      "required": false,
-      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
-      "schema": {
-       "type": "string",
-       "enum": [
-        "statute_text"
-       ]
-      }
-     }
-    ],
-    "tags": [
-     "Calendar"
-    ]
-   }
-  },
-  "/v1/business-days/shift": {
-   "get": {
-    "summary": "Move N business days forward or back",
-    "description": "Settlement-date arithmetic: skips weekends and public holidays. Negative values move backwards.",
-    "operationId": "getV1BusinessDaysShift",
-    "responses": {
-     "200": {
-      "description": "Successful response",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Invalid or missing query parameter"
-     },
-     "405": {
-      "description": "The path exists but not for this method. The Allow header lists what it takes."
-     },
-     "422": {
-      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
-     },
-     "429": {
-      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
-     }
-    },
-    "parameters": [
-     {
-      "name": "calendar",
-      "in": "query",
-      "required": false,
-      "description": "bank adds the 12/31-1/3 closure required by 銀行法施行令第5条.",
-      "schema": {
-       "type": "string",
-       "enum": [
-        "standard",
-        "bank"
-       ],
-       "example": "standard"
-      }
-     },
-     {
-      "name": "date",
-      "in": "query",
-      "required": true,
-      "description": "Starting ISO date.",
-      "schema": {
-       "type": "string",
-       "example": "2026-01-01"
-      }
-     },
-     {
-      "name": "days",
-      "in": "query",
-      "required": false,
-      "description": "Business days to move. 1 = next business day, -1 = previous.",
-      "schema": {
-       "type": "integer",
-       "example": 1
       }
      },
      {
@@ -2107,6 +2012,295 @@
          "income_adjustment": {
           "type": "boolean",
           "description": "Force the 所得金額調整控除 on or off; omit to derive it."
+         },
+         "tax_return": {
+          "type": "object",
+          "description": "Deductions only a tax return can take. Not part of 年末調整; returns a separate 'if filed' estimate.",
+          "properties": {
+           "medical_expenses": {
+            "type": "integer"
+           },
+           "medical_reimbursed": {
+            "type": "integer"
+           },
+           "self_medication": {
+            "type": "integer"
+           },
+           "donations": {
+            "type": "integer"
+           },
+           "casualty_loss": {
+            "type": "integer"
+           },
+           "disaster_related_expense": {
+            "type": "integer"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/resident-tax": {
+   "post": {
+    "summary": "個人住民税の見込み額 from last year's income and the municipality",
+    "description": "Estimate of the resident tax (道府県民税 + 市町村民税 + 森林環境税) that will be levied next fiscal year: employment income from the NTA table for the income year, resident-tax deductions (which differ from income tax: basic 430,000, spouse 330,000, life insurance capped at 70,000), the 10% income levy (4%/6%, or 2%/8% in the 20 designated cities), the adjustment credit, the non-taxable thresholds with the 級地 rate, ふるさと納税 basic and special credits, the housing-loan carry-over, and the per-capita amounts including every prefecture's surtax and the city rules of Yokohama, Kobe and Nagoya. Matches the published 令和8年度 worked examples of Yokohama (247,900 yen) and Nagoya (140,200 yen).\n\nIt is an estimate. The municipality decides the amount; the employer deducts what the 特別徴収税額通知書 says. The response says so.",
+    "operationId": "postV1ResidentTax",
+    "responses": {
+     "200": {
+      "description": "Successful response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid or missing query parameter"
+     },
+     "405": {
+      "description": "The path exists but not for this method. The Allow header lists what it takes."
+     },
+     "422": {
+      "description": "The date asked for is outside the bundled data. Refused rather than answered with a stale figure."
+     },
+     "429": {
+      "description": "Free-tier rate limit. The body carries code \"rate_limited\", the free-tier allowance and where to upgrade. Not returned to RapidAPI traffic, which is metered there instead."
+     }
+    },
+    "parameters": [
+     {
+      "name": "detail",
+      "in": "query",
+      "required": false,
+      "description": "compact drops the attribution, notes and statutory citations and keeps the figures — roughly a tenth the size on a batch run. What was dropped, and how to get it back, is listed in `omitted` rather than silently removed. Defaults to full.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "full",
+        "compact"
+       ]
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "description": "statute_text attaches the full text of every provision this answer cites, so a figure can be checked against the words it rests on without a second call. Off by default because the text is long.",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "statute_text"
+       ]
+      }
+     }
+    ],
+    "tags": [
+     "Resident tax"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "prefecture",
+         "income_year"
+        ],
+        "properties": {
+         "prefecture": {
+          "type": "string",
+          "example": "Kanagawa"
+         },
+         "city": {
+          "type": "string",
+          "example": "横浜市"
+         },
+         "designated_city": {
+          "type": "boolean"
+         },
+         "grade_level": {
+          "type": "integer",
+          "enum": [
+           1,
+           2,
+           3
+          ],
+          "description": "級地 for the per-capita exemption."
+         },
+         "income_year": {
+          "type": "integer",
+          "example": 2025,
+          "description": "Year the income was earned (2025 = fiscal 2026 tax)."
+         },
+         "salary": {
+          "type": "integer",
+          "example": 5500000
+         },
+         "total_income": {
+          "type": "integer"
+         },
+         "other_income": {
+          "type": "integer"
+         },
+         "social_insurance": {
+          "type": "integer",
+          "example": 394800
+         },
+         "mutual_aid": {
+          "type": "integer"
+         },
+         "life_insurance": {
+          "type": "object",
+          "properties": {
+           "new_general": {
+            "type": "integer",
+            "example": 90000
+           },
+           "old_general": {
+            "type": "integer"
+           },
+           "care_medical": {
+            "type": "integer"
+           },
+           "new_pension": {
+            "type": "integer"
+           },
+           "old_pension": {
+            "type": "integer"
+           }
+          }
+         },
+         "earthquake_insurance": {
+          "type": "object",
+          "properties": {
+           "earthquake": {
+            "type": "integer",
+            "example": 20000
+           },
+           "old_long_term": {
+            "type": "integer"
+           }
+          }
+         },
+         "medical_expenses": {
+          "type": "integer"
+         },
+         "medical_reimbursed": {
+          "type": "integer"
+         },
+         "casualty_loss": {
+          "type": "integer"
+         },
+         "disaster_related_expense": {
+          "type": "integer"
+         },
+         "spouse": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+           "income": {
+            "type": "integer",
+            "example": 0
+           },
+           "age_70_or_over": {
+            "type": "boolean"
+           }
+          }
+         },
+         "dependants": {
+          "type": "object",
+          "properties": {
+           "general": {
+            "type": "integer",
+            "example": 1
+           },
+           "specified": {
+            "type": "integer"
+           },
+           "elderly": {
+            "type": "integer"
+           },
+           "elderly_cohabiting_parent": {
+            "type": "integer"
+           },
+           "under_23": {
+            "type": "integer"
+           },
+           "under_16": {
+            "type": "integer",
+            "example": 1,
+            "description": "No deduction, but counted for the exemption thresholds."
+           }
+          }
+         },
+         "disabilities": {
+          "type": "object",
+          "properties": {
+           "general": {
+            "type": "integer"
+           },
+           "special": {
+            "type": "integer"
+           },
+           "special_cohabiting": {
+            "type": "integer"
+           }
+          }
+         },
+         "flags": {
+          "type": "object",
+          "properties": {
+           "widow": {
+            "type": "boolean"
+           },
+           "single_parent": {
+            "type": "boolean"
+           },
+           "single_parent_father": {
+            "type": "boolean"
+           },
+           "working_student": {
+            "type": "boolean"
+           },
+           "self_special_disabled": {
+            "type": "boolean"
+           },
+           "minor": {
+            "type": "boolean"
+           }
+          }
+         },
+         "specified_relatives": {
+          "type": "array",
+          "items": {
+           "type": "integer"
+          }
+         },
+         "income_adjustment": {
+          "type": "boolean"
+         },
+         "furusato_donations": {
+          "type": "integer"
+         },
+         "other_donations": {
+          "type": "integer"
+         },
+         "housing_loan_unused": {
+          "type": "integer"
+         },
+         "housing_loan_cap": {
+          "type": "string",
+          "enum": [
+           "five_percent",
+           "seven_percent"
+          ]
          }
         }
        }

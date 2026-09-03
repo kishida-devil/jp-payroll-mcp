@@ -178,6 +178,12 @@ for (const [name, args, check] of [
     dependants: { general: 1, specified: 1, elderly_cohabiting_parent: 1, under_23: 1 },
     disabilities: { general: 1 }, specified_relatives: [1000000], housing_loan_credit: 76500,
   }, (j) => j?.result?.annual_tax === 41400 && j?.result?.refund === 115270],
+  // 横浜市の令和8年度の公表計算例: 年税額 247,900円。
+  ['estimate_resident_tax', {
+    prefecture: 'Kanagawa', city: '横浜市', income_year: 2025, salary: 5500000, social_insurance: 394800,
+    life_insurance: { new_general: 90000 }, earthquake_insurance: { earthquake: 20000 },
+    spouse: { income: 0 }, dependants: { general: 1, under_16: 1 },
+  }, (j) => j?.annual_tax === 247900 && j?.estimate === true],
   ['get_minimum_wage', { prefecture: 'Tokyo' }, (j) => j?.minimum_wage > 0 || j?.hourly_wage > 0],
   ['business_days', { operation: 'count', from: '2026-01-01', to: '2026-03-31' }, (j) => j?.business > 0],
   ['business_days', { operation: 'shift', date: '2026-01-01', days: 1 }, (j) => !!j],

@@ -402,6 +402,82 @@ for (const [t, emp, er] of [['general', 0.005, 0.0085],
   ok(missing.status === 400 && missing.body.code === 'missing_parameter', '徴収税額と社会保険料は必須', `${missing.status}`);
 }
 
+// ---- 8c. 個人住民税の見込み額 ----
+//
+// バーは自治体が公表している令和8年度の計算例。
+//  - 横浜市(指定都市 2%/8%、神奈川の水源環境保全税 均等割300円・所得割0.025%、横浜みどり税 900円)
+//    給与550万円・社保394,800・新生命保険9万・地震2万・配偶者(無収入)・17歳と13歳の子 → 247,900円
+//  - 名古屋市(市民税減税: 所得割7.7%、均等割2,800円、あいち森と緑づくり税500円)
+//    給与5,505,000・社保825,600・旧生命保険8万・配偶者・19歳/16歳/12歳の子 → 140,200円
+{
+  const post = async (body) => {
+    const r = await fetch(BASE + '/v1/resident-tax', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    return { status: r.status, body: await r.json() };
+  };
+  const yoko = (await post({
+    prefecture: 'Kanagawa', city: '横浜市', income_year: 2025, salary: 5_500_000, social_insurance: 394_800,
+    life_insurance: { new_general: 90_000 }, earthquake_insurance: { earthquake: 20_000 },
+    spouse: { income: 0 }, dependants: { general: 1, under_16: 1 },
+  })).body;
+  ok(yoko.income?.employment_income === 3_960_000, '横浜の例: 給与所得 3,960,000(令和7年分の表)', `${yoko.income?.employment_income}`);
+  ok(yoko.deductions?.total === 1_522_800, '横浜の例: 所得控除の合計 1,522,800', `${yoko.deductions?.total}`);
+  ok(yoko.taxable_income === 2_437_000, '横浜の例: 課税標準額 2,437,000', `${yoko.taxable_income}`);
+  ok(yoko.income_levy?.municipal === 192_900 && yoko.income_levy?.prefectural === 48_800,
+     '横浜の例: 所得割 市 192,900 / 県 48,800(調整控除 2,500円の最低額を 4:1 で配分)',
+     `${yoko.income_levy?.municipal} / ${yoko.income_levy?.prefectural}`);
+  ok(yoko.per_capita_levy?.municipal === 3_900 && yoko.per_capita_levy?.prefectural === 1_300 && yoko.per_capita_levy?.forest_environment_tax === 1_000,
+     '横浜の例: 均等割 市 3,900(みどり税込) / 県 1,300(水源税込) / 森林環境税 1,000',
+     JSON.stringify(yoko.per_capita_levy));
+  ok(yoko.annual_tax === 247_900, '横浜市の公表計算例と年税額が一致する(247,900円)', `${yoko.annual_tax}`);
+
+  const nagoya = (await post({
+    prefecture: 'Aichi', city: '名古屋市', income_year: 2025, salary: 5_505_000, social_insurance: 825_600,
+    life_insurance: { old_general: 80_000 }, spouse: { income: 0 }, dependants: { specified: 1, general: 1, under_16: 1 },
+  })).body;
+  ok(nagoya.income?.employment_income === 3_963_200 && nagoya.deductions?.total === 2_400_600 && nagoya.taxable_income === 1_562_000,
+     '名古屋の例: 給与所得 3,963,200 / 控除 2,400,600 / 課税 1,562,000',
+     `${nagoya.income?.employment_income} / ${nagoya.deductions?.total} / ${nagoya.taxable_income}`);
+  ok(nagoya.income_levy?.adjustment_credit?.total === 16_500, '名古屋の例: 調整控除 16,500(人的控除差 33万円 × 5%)', `${nagoya.income_levy?.adjustment_credit?.total}`);
+  ok(nagoya.income_levy?.municipal + nagoya.per_capita_levy?.municipal === 109_800
+     && nagoya.income_levy?.prefectural + nagoya.per_capita_levy?.prefectural === 29_400,
+     '名古屋の例: 市民税 109,800 / 県民税 29,400(減税 7.7%・均等割 2,800)',
+     `${nagoya.income_levy?.municipal + nagoya.per_capita_levy?.municipal} / ${nagoya.income_levy?.prefectural + nagoya.per_capita_levy?.prefectural}`);
+  ok(nagoya.annual_tax === 140_200, '名古屋市の公表計算例と年税額が一致する(140,200円)', `${nagoya.annual_tax}`);
+
+  // 非課税と、見込みであること。
+  const low = (await post({ prefecture: 'Tokyo', income_year: 2025, salary: 1_000_000 })).body;
+  ok(low.exemption?.per_capita_exempt === true && low.annual_tax === 0, '給与100万円(所得35万円)は均等割も所得割も非課税', `${low.annual_tax}`);
+  ok(low.estimate === true && (low.notes ?? []).some((n) => /通知書の代わりではありません/.test(n)),
+     '見込み額であり通知書の代わりではない、と応答が言う');
+  // 指定都市は 2%/8%。合計は同じ10%。
+  const osaka = (await post({ prefecture: 'Osaka', city: '大阪市', income_year: 2025, salary: 5_000_000 })).body;
+  ok(osaka.designated_city === true && osaka.rates?.prefectural_income === 0.02 && osaka.rates?.municipal_income === 0.08,
+     '大阪市は指定都市として 2%/8%', JSON.stringify(osaka.rates));
+  // ふるさと納税の特例控除は所得割の20%まで。
+  const furu = (await post({ prefecture: 'Tokyo', income_year: 2025, salary: 5_000_000, social_insurance: 700_000, furusato_donations: 300_000 })).body;
+  ok(furu.income_levy?.donation_credit?.furusato_special === furu.income_levy?.donation_credit?.cap_special,
+     'ふるさと納税30万円は特例控除が所得割の20%で頭打ちになる', JSON.stringify(furu.income_levy?.donation_credit));
+  // 知らないキーは断る。income_year は必須。
+  const badKey = await post({ prefecture: 'Tokyo', income_year: 2025, salary: 5_000_000, salaly: 1 });
+  ok(badKey.status === 400 && badKey.body.code === 'unknown_parameter', 'salaly(綴り違い)は断る', `${badKey.status}`);
+  const noYear = await post({ prefecture: 'Tokyo', salary: 5_000_000 });
+  ok(noYear.status === 400 && noYear.body.code === 'missing_parameter', 'income_year は必須', `${noYear.status}`);
+
+  // 年末調整の「確定申告をしたら」の別枠。医療費30万円(補填なし)で所得税がいくら下がるか。
+  const ye = await fetch(BASE + '/v1/year-end-adjustment', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ total_pay: 5_000_000, withheld_tax: 100_000, social_insurance: 700_000, tax_return: { medical_expenses: 300_000 } }),
+  }).then((r) => r.json());
+  // 給与所得 3,560,000(R8表: 5,000,000 → q=1,250,000×3.2−440,000)、総所得×5% = 178,000 > 10万 → 医療費控除 200,000
+  ok(ye.tax_return_estimate?.extra_deductions?.medical_expenses === 200_000,
+     '医療費控除 = 300,000 − 100,000(総所得5%と10万円の小さい方)', JSON.stringify(ye.tax_return_estimate?.extra_deductions));
+  ok(ye.tax_return_estimate?.annual_tax < ye.result?.annual_tax && /確定申告/.test(ye.tax_return_estimate?.basis ?? ''),
+     '確定申告の見込みは年末調整の年税額より小さく、別枠で「確定申告」と言う',
+     `${ye.tax_return_estimate?.annual_tax} vs ${ye.result?.annual_tax}`);
+}
+
 // ---- 9. minimum wage point-in-time lookups ----
 {
   const latest = await get('/v1/minimum-wage?prefecture=Tokyo');
@@ -4276,7 +4352,7 @@ for (const [p, want, label] of [
     return { status: r.status, body: await r.json() };
   };
   const posts = Object.entries(spec.paths).filter(([, o]) => o.post).map(([p]) => p);
-  ok(posts.length === 5, 'there are five POSTs to check (batch ×3, annual-average, year-end-adjustment)', `${posts.length}`);
+  ok(posts.length === 6, 'there are six POSTs to check (batch ×3, annual-average, year-end-adjustment, resident-tax)', `${posts.length}`);
   for (const path of posts) {
     const r = await postJson(path, {}, '?zzz=1');
     ok(r.status === 400 && r.body.code === 'unknown_parameter',

@@ -229,6 +229,14 @@ export const ATTRIBUTION = {
     licence: PDL10,
     attribution_ja: '出典：厚生労働省ホームページを加工して作成',
   },
+  resident_tax: {
+    source: '地方税法(標準税率・所得控除・調整控除・非課税限度額・寄附金税額控除)、総務省「超過課税の状況」、各都道府県・横浜市・神戸市・名古屋市の公表額',
+    source_url: 'https://www.soumu.go.jp/main_sosiki/jichi_zeisei/czaisei/czaisei_seido/149767_25.html',
+    fiscal_year: 2026,
+    licence: PDL10,
+    attribution_ja: '出典：総務省ホームページ等を加工して作成',
+    note: '見込み額です。額を決めるのは市区町村で、事業主は特別徴収税額通知書の額を控除します。市町村独自の超過課税は横浜市・神戸市、減税は名古屋市を収録。',
+  },
   year_end_adjustment: {
     source: '国税庁 令和8年分 年末調整のしかた(給与所得控除後の給与等の金額の表、算出所得税額の速算表、各控除額の表)',
     source_url: 'https://www.nta.go.jp/publication/pamph/gensen/nencho2026/01.htm',

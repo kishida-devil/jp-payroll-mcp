@@ -26,7 +26,8 @@ import {
 import { COMPUTER_ATTRIBUTION, computerMethod } from './withholding-computer';
 import { MAX_BATCH, runBatch, type BatchDefaults, type BatchRow, type Detail } from './batch';
 import { computePayslip } from './payslip';
-import { computeYearEndAdjustment, type YearEndInput } from './year-end';
+import { computeYearEndAdjustment, taxReturnEstimate, type YearEndInput } from './year-end';
+import { computeResidentTax, type ResidentTaxInput } from './resident-tax';
 import { COMMUTING_SOURCE, ALLOWANCE_KIND_MEANING, VEHICLE_BANDS, TRANSIT_CEILING, PARKING_CAP, commutingExemption } from './allowances';
 import {
   WORKERS_COMP_ATTRIBUTION, WORKERS_COMP_META, WORKERS_COMP_TYPES, workersCompType,
@@ -682,6 +683,7 @@ app.get('/', (c) => {
       'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': '随時改定(月額変更)に当たるかを判定する。健康保険と厚生年金を別々に見る',
       'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': '4〜6月の給与から定時決定(算定基礎)を求める',
       'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': '産休・育休からの復帰時の改定(1等級差で足りる)',
+      'POST /v1/resident-tax': '個人住民税の見込み額 — 前年の所得と自治体から、所得割・均等割・調整控除・ふるさと納税・住宅ローン控除・非課税判定まで。横浜市・名古屋市の公表計算例と一致',
       'POST /v1/year-end-adjustment': '年末調整(令和8年分) — 給与所得控除後の給与等の金額の表から年調年税額と過不足額まで、源泉徴収簿の⑦〜㉗を全部返す',
       'POST /v1/standard-remuneration/regular/batch': '算定基礎届を全従業員まとめて1回で。6月は全員が一斉に決まる唯一の月です(健保法41条)',
       'POST /v1/standard-remuneration/annual-average': '季節的な業務 — どちらの決定でも年間平均による保険者算定を使う',
@@ -2322,6 +2324,122 @@ app.get('/v1/standard-remuneration/leave-end', (c) => {
 });
 
 /**
+ * 個人住民税の見込み額。決めるのは市区町村なので「見込み」と明示して返す。
+ * 実物: 横浜市・名古屋市が公表している令和8年度の計算例(それぞれ 247,900円・140,200円)。
+ */
+app.post('/v1/resident-tax', async (c) => {
+  const unknownQ = rejectBadQuery(c, ['include'] as const);
+  if (unknownQ) return unknownQ;
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return bad(c, '本文が正しいJSONではありません。', 'Send Content-Type: application/json.');
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body))
+    return bad(c, '本文はJSONオブジェクトで渡してください。');
+  const ALLOWED = ['prefecture', 'city', 'designated_city', 'grade_level', 'income_year', 'salary', 'total_income', 'other_income',
+    'social_insurance', 'mutual_aid', 'life_insurance', 'earthquake_insurance', 'medical_expenses', 'medical_reimbursed',
+    'casualty_loss', 'disaster_related_expense', 'spouse', 'dependants', 'disabilities', 'flags', 'specified_relatives',
+    'income_adjustment', 'furusato_donations', 'other_donations', 'housing_loan_unused', 'housing_loan_cap'];
+  const unknown = Object.keys(body).filter((k) => !ALLOWED.includes(k));
+  if (unknown.length)
+    return bad(c, `受け付けないキーです: ${unknown.map((k) => `「${k}」`).join('、')}`, `受け付けるのは ${ALLOWED.join('、')} です。`, 'unknown_parameter');
+
+  const pref = resolvePrefecture(body.prefecture ?? null);
+  if (!pref) return bad(c, '「prefecture」は必須です。', '英語名(「Tokyo」)、日本語(「東京」「東京都」)、JISコード1〜47のいずれかで渡してください。', 'missing_parameter');
+  const year = Number(body.income_year);
+  if (year !== 2025 && year !== 2026)
+    return bad(c, '「income_year」は所得のあった年で、2025(令和8年度分)か 2026(令和9年度分の見込み)を渡してください。', undefined, body.income_year === undefined ? 'missing_parameter' : 'invalid_request');
+  if ((body.salary === undefined || body.salary === null) && (body.total_income === undefined || body.total_income === null))
+    return bad(c, '「salary」(給与収入)か「total_income」(給与以外を含む合計所得金額)のどちらかは必須です。', undefined, 'missing_parameter');
+
+  const yen = (v: unknown, name: string): number | undefined | string => {
+    if (v === undefined || v === null) return undefined;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0) return `「${name}」は0以上の整数(円)で渡してください。`;
+    return n;
+  };
+  const nums: Record<string, number | undefined> = {};
+  for (const k of ['salary', 'total_income', 'other_income', 'social_insurance', 'mutual_aid', 'medical_expenses', 'medical_reimbursed',
+    'casualty_loss', 'disaster_related_expense', 'furusato_donations', 'other_donations', 'housing_loan_unused']) {
+    const r = yen(body[k], k);
+    if (typeof r === 'string') return bad(c, r);
+    nums[k] = r;
+  }
+  const group = (obj: unknown, name: string, keys: readonly string[]): Record<string, number> | string | undefined => {
+    if (obj === undefined || obj === null) return undefined;
+    if (typeof obj !== 'object' || Array.isArray(obj)) return `「${name}」はオブジェクトで渡してください。`;
+    const out: Record<string, number> = {};
+    for (const k of Object.keys(obj as object)) {
+      if (!keys.includes(k)) return `「${name}」に受け付けないキーがあります: 「${k}」。受け付けるのは ${keys.join('、')} です。`;
+      const r = yen((obj as any)[k], `${name}.${k}`);
+      if (typeof r === 'string') return r;
+      if (r !== undefined) out[k] = r;
+    }
+    return out;
+  };
+  const life = group(body.life_insurance, 'life_insurance', ['new_general', 'old_general', 'care_medical', 'new_pension', 'old_pension']);
+  if (typeof life === 'string') return bad(c, life);
+  const quake = group(body.earthquake_insurance, 'earthquake_insurance', ['earthquake', 'old_long_term']);
+  if (typeof quake === 'string') return bad(c, quake);
+  const deps = group(body.dependants, 'dependants', ['general', 'specified', 'elderly', 'elderly_cohabiting_parent', 'under_23', 'under_16']);
+  if (typeof deps === 'string') return bad(c, deps);
+  const dis = group(body.disabilities, 'disabilities', ['general', 'special', 'special_cohabiting']);
+  if (typeof dis === 'string') return bad(c, dis);
+  let spouse: ResidentTaxInput['spouse'] = null;
+  if (body.spouse !== undefined && body.spouse !== null) {
+    if (typeof body.spouse !== 'object' || Array.isArray(body.spouse)) return bad(c, '「spouse」はオブジェクト({"income": n}) か null で渡してください。');
+    const inc = yen(body.spouse.income, 'spouse.income');
+    if (typeof inc === 'string') return bad(c, inc);
+    if (inc === undefined) return bad(c, '「spouse.income」は必須です(配偶者の前年の合計所得金額)。');
+    spouse = { income: inc, age_70_or_over: body.spouse.age_70_or_over === true };
+  }
+  const fk = ['widow', 'single_parent', 'single_parent_father', 'working_student', 'self_special_disabled', 'minor'];
+  if (body.flags !== undefined) {
+    if (!body.flags || typeof body.flags !== 'object' || Array.isArray(body.flags)) return bad(c, '「flags」はオブジェクトで渡してください。');
+    for (const k of Object.keys(body.flags)) {
+      if (!fk.includes(k)) return bad(c, `「flags」に受け付けないキーがあります: 「${k}」。受け付けるのは ${fk.join('、')} です。`);
+      if (typeof body.flags[k] !== 'boolean') return bad(c, `「flags.${k}」は true か false で渡してください。`);
+    }
+  }
+  let relatives: number[] | undefined;
+  if (body.specified_relatives !== undefined) {
+    if (!Array.isArray(body.specified_relatives)) return bad(c, '「specified_relatives」は特定親族1人につき合計所得金額を1つ並べた配列で渡してください。');
+    relatives = [];
+    for (const [i, v] of body.specified_relatives.entries()) {
+      const r = yen(v, `specified_relatives[${i}]`);
+      if (typeof r === 'string') return bad(c, r);
+      relatives.push(r ?? 0);
+    }
+  }
+  if (body.grade_level !== undefined && ![1, 2, 3].includes(Number(body.grade_level)))
+    return bad(c, '「grade_level」は級地区分で、1・2・3 のいずれかです。', '生活保護基準の級地。市区町村の非課税限度額の案内に書いてあります。');
+  if (body.designated_city !== undefined && typeof body.designated_city !== 'boolean')
+    return bad(c, '「designated_city」は true か false で渡してください。');
+  if (body.housing_loan_cap !== undefined && !['five_percent', 'seven_percent'].includes(body.housing_loan_cap))
+    return bad(c, '「housing_loan_cap」は「five_percent」(上限97,500円)か「seven_percent」(上限136,500円)です。');
+  if (body.income_adjustment !== undefined && typeof body.income_adjustment !== 'boolean')
+    return bad(c, '「income_adjustment」は true か false で渡してください。');
+  const city = body.city === undefined || body.city === null ? null : String(body.city).trim();
+
+  const result = computeResidentTax({
+    prefecture: pref, prefecture_ja: PREFECTURE_FULL_JA[pref], city,
+    designated_city: body.designated_city, grade_level: body.grade_level ? Number(body.grade_level) as 1 | 2 | 3 : undefined,
+    income_year: year, salary: nums.salary ?? null, total_income: nums.total_income ?? null, other_income: nums.other_income,
+    social_insurance: nums.social_insurance, mutual_aid: nums.mutual_aid,
+    life_insurance: life, earthquake_insurance: quake,
+    medical_expenses: nums.medical_expenses, medical_reimbursed: nums.medical_reimbursed,
+    casualty_loss: nums.casualty_loss, disaster_related_expense: nums.disaster_related_expense,
+    spouse, dependants: deps, disabilities: dis, flags: body.flags, specified_relatives: relatives,
+    income_adjustment: body.income_adjustment,
+    furusato_donations: nums.furusato_donations, other_donations: nums.other_donations,
+    housing_loan_unused: nums.housing_loan_unused, housing_loan_cap: body.housing_loan_cap,
+  });
+  return c.json({ ...result, attribution: ATTRIBUTION.resident_tax });
+});
+
+/**
  * 年末調整(令和8年分)。国税庁「令和8年分 年末調整のしかた」(2026-08-31公表)が実物。
  * 給与計算APIを名乗って12月に答えられないのは臨界経路の穴だった(README の既知の穴、第1項)。
  */
@@ -2340,7 +2458,7 @@ app.post('/v1/year-end-adjustment', async (c) => {
   // 受け付けるキーを名指しする。知らないキーは黙って無視しない(第8反復と同じ)。
   const ALLOWED = ['total_pay', 'withheld_tax', 'social_insurance', 'social_insurance_declared', 'mutual_aid',
     'life_insurance', 'earthquake_insurance', 'spouse', 'dependants', 'disabilities', 'flags',
-    'specified_relatives', 'housing_loan_credit', 'other_income', 'income_adjustment'];
+    'specified_relatives', 'housing_loan_credit', 'other_income', 'income_adjustment', 'tax_return'];
   const unknown = Object.keys(body).filter((k) => !ALLOWED.includes(k));
   if (unknown.length)
     return bad(c, `受け付けないキーです: ${unknown.map((k) => `「${k}」`).join('、')}`,
@@ -2416,6 +2534,10 @@ app.post('/v1/year-end-adjustment', async (c) => {
   }
   if (body.income_adjustment !== undefined && typeof body.income_adjustment !== 'boolean')
     return bad(c, '「income_adjustment」は true か false で渡してください。');
+  // 確定申告でしか引けない控除。年末調整の欄には入れず、「申告したらこうなる」を別枠で返す。
+  const extras = group(body.tax_return, 'tax_return',
+    ['medical_expenses', 'medical_reimbursed', 'self_medication', 'donations', 'casualty_loss', 'disaster_related_expense']);
+  if (typeof extras === 'string') return bad(c, extras);
 
   const result = computeYearEndAdjustment({
     total_pay: top.total_pay!, withheld_tax: top.withheld_tax!, social_insurance: top.social_insurance!,
@@ -2426,8 +2548,14 @@ app.post('/v1/year-end-adjustment', async (c) => {
     life_insurance: life, earthquake_insurance: quake, dependants: deps, disabilities: dis,
     spouse, flags, specified_relatives: relatives, income_adjustment: body.income_adjustment,
   });
+  const r = result as any;
+  const taxReturn = extras && r.eligible
+    ? taxReturnEstimate(extras, r.steps.basic.total_income, r.steps.after_adjustment.amount,
+        r.steps.total_deductions.amount, r.steps.housing_loan_credit.amount, r.steps.withheld_tax.amount)
+    : undefined;
   return c.json({
     ...result,
+    ...(taxReturn ? { tax_return_estimate: taxReturn } : {}),
     notes: [
       ...((result as any).notes ?? []),
       '金額は暦年(1〜12月)の合計です。賞与を含みます。',

@@ -1,0 +1,356 @@
+{
+ "fiscal_year": 2026,
+ "era_year": "R8",
+ "income_year": 2025,
+ "standard": {
+  "per_capita": {
+   "prefectural": 1000,
+   "municipal": 3000,
+   "forest_environment_tax": 1000
+  },
+  "income_rate": {
+   "prefectural": 0.04,
+   "municipal": 0.06
+  },
+  "income_rate_designated_city": {
+   "prefectural": 0.02,
+   "municipal": 0.08
+  },
+  "note": "地方税法第38条・第310条(均等割の標準税率)、第35条・第314条の3(所得割の標準税率 一律10%)。指定都市は県費負担教職員の税源移譲で2%/8%。森林環境税(国税・1,000円)は令和6年度から均等割と併せて賦課徴収(森林環境税及び森林環境譲与税に関する法律)。"
+ },
+ "prefectural_surtax": {
+  "Hokkaido": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Aomori": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Iwate": {
+   "per_capita": 1000,
+   "name": "いわての森林づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Miyagi": {
+   "per_capita": 1200,
+   "name": "みやぎ環境税",
+   "income_rate": 0,
+   "verified_on_official_site": true
+  },
+  "Akita": {
+   "per_capita": 800,
+   "name": "秋田県水と緑の森づくり税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Yamagata": {
+   "per_capita": 1000,
+   "name": "やまがた緑環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Fukushima": {
+   "per_capita": 1000,
+   "name": "ふくしま森林づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Ibaraki": {
+   "per_capita": 1000,
+   "name": "森林湖沼環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Tochigi": {
+   "per_capita": 700,
+   "name": "とちぎの元気な森づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Gunma": {
+   "per_capita": 700,
+   "name": "ぐんま緑の県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Saitama": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Chiba": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Tokyo": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Kanagawa": {
+   "per_capita": 300,
+   "name": "水源環境保全税",
+   "income_rate": 0.00025,
+   "verified_on_official_site": true
+  },
+  "Niigata": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Toyama": {
+   "per_capita": 500,
+   "name": "水と緑の森づくり税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Ishikawa": {
+   "per_capita": 500,
+   "name": "いしかわ森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Fukui": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Yamanashi": {
+   "per_capita": 500,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Nagano": {
+   "per_capita": 500,
+   "name": "森林づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Gifu": {
+   "per_capita": 1000,
+   "name": "清流の国ぎふ森林・環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Shizuoka": {
+   "per_capita": 400,
+   "name": "森林(もり)づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Aichi": {
+   "per_capita": 500,
+   "name": "あいち森と緑づくり税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Mie": {
+   "per_capita": 1000,
+   "name": "みえ森と緑の県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Shiga": {
+   "per_capita": 800,
+   "name": "琵琶湖森林づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Kyoto": {
+   "per_capita": 600,
+   "name": "豊かな森を育てる府民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Osaka": {
+   "per_capita": 300,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Hyogo": {
+   "per_capita": 800,
+   "name": "県民緑税",
+   "income_rate": 0,
+   "verified_on_official_site": true
+  },
+  "Nara": {
+   "per_capita": 500,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Wakayama": {
+   "per_capita": 500,
+   "name": "紀の国森づくり税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Tottori": {
+   "per_capita": 500,
+   "name": "豊かな森づくり協働税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Shimane": {
+   "per_capita": 500,
+   "name": "水と緑の森づくり税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Okayama": {
+   "per_capita": 500,
+   "name": "おかやま森づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Hiroshima": {
+   "per_capita": 500,
+   "name": "ひろしまの森づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Yamaguchi": {
+   "per_capita": 500,
+   "name": "やまぐち森林づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Tokushima": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Kagawa": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Ehime": {
+   "per_capita": 700,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Kochi": {
+   "per_capita": 500,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Fukuoka": {
+   "per_capita": 500,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Saga": {
+   "per_capita": 500,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Nagasaki": {
+   "per_capita": 500,
+   "name": "ながさき森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Kumamoto": {
+   "per_capita": 500,
+   "name": "水とみどりの森づくり税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Oita": {
+   "per_capita": 500,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Miyazaki": {
+   "per_capita": 500,
+   "name": "森林環境税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Kagoshima": {
+   "per_capita": 500,
+   "name": "みんなの森づくり県民税",
+   "income_rate": 0,
+   "verified_on_official_site": false
+  },
+  "Okinawa": {
+   "per_capita": 0,
+   "name": null,
+   "income_rate": 0,
+   "verified_on_official_site": false
+  }
+ },
+ "city_overrides": {
+  "横浜市": {
+   "per_capita_municipal_extra": 900,
+   "name": "横浜みどり税",
+   "through_fiscal_year": 2028,
+   "source_url": "https://www.city.yokohama.lg.jp/kurashi/koseki-zei-hoken/zeikin/y-shizei/midorizei/midorizei.html"
+  },
+  "神戸市": {
+   "per_capita_municipal_extra": 400,
+   "name": "認知症神戸モデル(個人市民税均等割の超過課税)",
+   "through_fiscal_year": 2027,
+   "source_url": "https://www.city.kobe.lg.jp/a83576/kurashi/tax/shikenminze/keisan/index.html"
+  },
+  "名古屋市": {
+   "municipal_income_rate": 0.077,
+   "name": "名古屋市 市民税減税(5%)",
+   "source_url": "https://www.city.nagoya.jp/kurashi/zeikin/1037356/1011880/1011883/1011887/index.html",
+   "per_capita_municipal": 2800,
+   "note": "市民税減税(5%)。均等割 市民税2,800円、所得割 市民税7.7%(県民税2%)。令和8年度の市の計算例ページで確認(2026-09-03)。"
+  }
+ },
+ "designated_cities": [
+  "札幌市",
+  "仙台市",
+  "さいたま市",
+  "千葉市",
+  "横浜市",
+  "川崎市",
+  "相模原市",
+  "新潟市",
+  "静岡市",
+  "浜松市",
+  "名古屋市",
+  "京都市",
+  "大阪市",
+  "堺市",
+  "神戸市",
+  "岡山市",
+  "広島市",
+  "北九州市",
+  "福岡市",
+  "熊本市"
+ ],
+ "sources": {
+  "surtax_status": "総務省 超過課税の状況(令和7年4月1日現在): 個人均等割 37団体、所得割 1団体(神奈川県)、市町村 2団体",
+  "surtax_status_url": "https://www.soumu.go.jp/main_sosiki/jichi_zeisei/czaisei/czaisei_seido/149767_25.html",
+  "kanagawa_url": "https://www.pref.kanagawa.jp/zei/kenzei/a001/b001/002.html",
+  "miyagi_url": "https://www.pref.miyagi.jp/soshiki/zeimu/kankyouzei.html",
+  "hyogo_url": "https://web.pref.hyogo.lg.jp/kk22/pa04_000000001.html",
+  "amounts_note": "★の3団体は公式ページで直接確認。他の34団体の額は各県公表値の一覧(2026-09-01時点)から転記し、総務省の実施団体一覧と団体の集合が一致することで検算。"
+ }
+}

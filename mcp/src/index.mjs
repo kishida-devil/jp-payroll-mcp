@@ -965,8 +965,81 @@ registerTool('calculate_year_end_adjustment', {
     other_income: z.number().int().nonnegative().optional().describe('Income other than this pay, for the basic and spouse deduction bands.'),
     income_adjustment: z.boolean().optional().describe(
       'Force the 所得金額調整控除 on or off. Omit to derive it from pay > 8,500,000 and the under_23 / disability inputs.'),
+    tax_return: z.object({
+      medical_expenses: z.number().int().nonnegative().optional(),
+      medical_reimbursed: z.number().int().nonnegative().optional(),
+      self_medication: z.number().int().nonnegative().optional(),
+      donations: z.number().int().nonnegative().optional(),
+      casualty_loss: z.number().int().nonnegative().optional(),
+      disaster_related_expense: z.number().int().nonnegative().optional(),
+    }).optional().describe(
+      'Deductions that only a tax return can take (medical, self-medication, donations, casualty loss). ' +
+      'They are NOT part of 年末調整; pass them to get a separate "if the employee files a return" estimate.'),
   },
 }, async (a) => call('/v1/year-end-adjustment', { method: 'POST', body: a }));
+
+registerTool('estimate_resident_tax', {
+  title: '個人住民税の見込み額',
+  description:
+    'Estimate of next fiscal year\'s resident tax (住民税: 道府県民税 + 市町村民税 + 森林環境税) from the ' +
+    'previous year\'s income and the municipality: employment income from the NTA table for that year, ' +
+    'resident-tax deductions (basic 430,000, spouse 330,000, dependants 330,000/450,000/380,000, life ' +
+    'insurance capped at 70,000), the 10% income levy split 4%/6% (2%/8% in designated cities), the ' +
+    'adjustment credit, the non-taxable thresholds (35万円 × persons + 10万円 + 21万円, with the 級地 rate), ' +
+    'ふるさと納税 basic and special credits (special capped at 20% of the income levy), the housing-loan ' +
+    'carry-over, per-capita amounts including every prefecture\'s surtax (37 of 47 have one; Kanagawa also ' +
+    'adds 0.025% to the income levy) and the city rules of 横浜市 (+900), 神戸市 (+400) and 名古屋市 (5% cut). ' +
+    'Matches the published 令和8年度 worked examples of Yokohama and Nagoya to the yen.\n\n' +
+    'It is an ESTIMATE: the municipality decides the amount and the employer deducts what the ' +
+    '特別徴収税額通知書 says. Say so. income_year is the year the income was earned (2025 for the ' +
+    'fiscal-2026 tax). Pass grade_level (級地 1-3) when known; it changes the per-capita exemption.',
+  inputSchema: {
+    prefecture,
+    city: z.string().optional().describe('Municipality in Japanese, e.g. 横浜市. Used for designated-city rates and the three city rules held.'),
+    designated_city: z.boolean().optional().describe('Set when the city is one of the 20 指定都市 and you did not pass city.'),
+    grade_level: z.number().int().min(1).max(3).optional().describe('級地 (1, 2 or 3) for the per-capita exemption threshold.'),
+    income_year: z.number().int().describe('Year the income was earned: 2025 (fiscal 2026 tax) or 2026 (fiscal 2027 estimate).'),
+    salary: z.number().int().nonnegative().optional().describe('Gross employment income for the year, bonuses included.'),
+    total_income: z.number().int().nonnegative().optional().describe('Use instead of salary when the income is not (only) employment income: 合計所得金額 excluding salary.'),
+    other_income: z.number().int().nonnegative().optional(),
+    social_insurance: z.number().int().nonnegative().optional().describe('Social insurance paid in the year.'),
+    mutual_aid: z.number().int().nonnegative().optional(),
+    life_insurance: z.object({
+      new_general: z.number().int().nonnegative().optional(), old_general: z.number().int().nonnegative().optional(),
+      care_medical: z.number().int().nonnegative().optional(), new_pension: z.number().int().nonnegative().optional(),
+      old_pension: z.number().int().nonnegative().optional(),
+    }).optional().describe('Premiums PAID; the resident-tax deduction (cap 70,000) is computed here.'),
+    earthquake_insurance: z.object({
+      earthquake: z.number().int().nonnegative().optional(), old_long_term: z.number().int().nonnegative().optional(),
+    }).optional(),
+    medical_expenses: z.number().int().nonnegative().optional(),
+    medical_reimbursed: z.number().int().nonnegative().optional(),
+    casualty_loss: z.number().int().nonnegative().optional(),
+    disaster_related_expense: z.number().int().nonnegative().optional(),
+    spouse: z.object({ income: z.number().int().nonnegative(), age_70_or_over: z.boolean().optional() }).nullable().optional()
+      .describe('Spouse\'s 合計所得金額 for the year (0 if none).'),
+    dependants: z.object({
+      general: z.number().int().nonnegative().optional(), specified: z.number().int().nonnegative().optional(),
+      elderly: z.number().int().nonnegative().optional(), elderly_cohabiting_parent: z.number().int().nonnegative().optional(),
+      under_23: z.number().int().nonnegative().optional(),
+      under_16: z.number().int().nonnegative().optional().describe('Dependants under 16: no deduction, but they count for the exemption thresholds.'),
+    }).optional(),
+    disabilities: z.object({
+      general: z.number().int().nonnegative().optional(), special: z.number().int().nonnegative().optional(),
+      special_cohabiting: z.number().int().nonnegative().optional(),
+    }).optional(),
+    flags: z.object({
+      widow: z.boolean().optional(), single_parent: z.boolean().optional(), single_parent_father: z.boolean().optional(),
+      working_student: z.boolean().optional(), self_special_disabled: z.boolean().optional(), minor: z.boolean().optional(),
+    }).optional(),
+    specified_relatives: z.array(z.number().int().nonnegative()).optional(),
+    income_adjustment: z.boolean().optional(),
+    furusato_donations: z.number().int().nonnegative().optional().describe('ふるさと納税 paid in the year.'),
+    other_donations: z.number().int().nonnegative().optional().describe('Other qualifying donations (basic 10% credit only).'),
+    housing_loan_unused: z.number().int().nonnegative().optional().describe('Housing-loan credit the income tax could not absorb.'),
+    housing_loan_cap: z.enum(['five_percent', 'seven_percent']).optional().describe('Cap rule for the resident-tax part: 5% (max 97,500) or 7% (max 136,500).'),
+  },
+}, async (a) => call('/v1/resident-tax', { method: 'POST', body: a }));
 
 registerTool('get_insurance_rates', {
   title: '社会保険料率・雇用保険料率',

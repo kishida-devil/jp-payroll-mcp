@@ -2,7 +2,7 @@
 
 外から当てた結果(2026-09-03)、4面ともまだ載っていない。公式レジストリ登録と
 GitHub topics だけでは自動では拾われない。どれも申請かフォーム送信が要る。
-下の文をそのまま貼る。**数字(29ツール・44エンドポイント・4,661件)は
+下の文をそのまま貼る。**数字(30ツール・45エンドポイント・4,682件)は
 `scripts/sync-counts.py` が揃えるので、ここも同期対象。**
 
 | 面 | 入口 | 要るもの | 状態(2026-09-03) |
@@ -17,7 +17,7 @@ GitHub topics だけでは自動では拾われない。どれも申請かフォ
 ## mcp.so — issue のタイトル
 
 ```
-Submit: jp-payroll-mcp (io.github.kishida-devil/jp-payroll-mcp) — Japanese payroll & social insurance, 29 tools
+Submit: jp-payroll-mcp (io.github.kishida-devil/jp-payroll-mcp) — Japanese payroll & social insurance, 30 tools
 ```
 
 ## mcp.so — issue の本文
@@ -31,11 +31,11 @@ Submit: jp-payroll-mcp (io.github.kishida-devil/jp-payroll-mcp) — Japanese pay
 **npm:** https://www.npmjs.com/package/jp-payroll-mcp
 **Website:** https://japan-payroll-api.tsumugi.workers.dev
 
-**Description:** Japanese payroll, social insurance and labour law for AI assistants — 29 tools over a public JSON API. 日本の給与計算・社会保険・労務のMCPサーバー。
+**Description:** Japanese payroll, social insurance and labour law for AI assistants — 30 tools over a public JSON API. 日本の給与計算・社会保険・労務のMCPサーバー。
 
 Health/pension/employment insurance rates for all 47 prefectures, the 50-grade standard remuneration table, the National Tax Agency withholding tables (monthly, daily, bonus), overtime premiums (Labour Standards Act art. 37), annual paid leave, regular and ad-hoc remuneration revisions, maternity/childcare leave premium exemptions, 24 years of prefectural minimum wage, public holidays with business-day arithmetic, consumption tax history, and corporate/invoice number validation.
 
-Every figure is extracted from the published government tables and checked cell by cell — 4,661 assertions on every change. When a test cannot be judged from the inputs given, the tools say so rather than guessing.
+Every figure is extracted from the published government tables and checked cell by cell — 4,682 assertions on every change. When a test cannot be judged from the inputs given, the tools say so rather than guessing.
 
 **Install (Claude Desktop / Cursor / any stdio client):**
 
@@ -53,13 +53,13 @@ Every figure is extracted from the published government tables and checked cell 
 ## Glama / Smithery — 説明文(英語)
 
 ```
-Japanese payroll, social insurance and labour law for AI assistants. 29 tools: insurance rates for all 47 prefectures, the 50-grade standard remuneration table, NTA withholding tables (monthly/daily/bonus), overtime premiums, annual paid leave, remuneration revisions, leave premium exemptions, 24 years of minimum wage, holidays with business-day arithmetic, consumption tax, corporate/invoice number validation. Extracted from the published government tables and verified cell by cell (4,661 assertions). Says "cannot judge" instead of guessing.
+Japanese payroll, social insurance and labour law for AI assistants. 30 tools: insurance rates for all 47 prefectures, the 50-grade standard remuneration table, NTA withholding tables (monthly/daily/bonus), overtime premiums, annual paid leave, remuneration revisions, leave premium exemptions, 24 years of minimum wage, holidays with business-day arithmetic, consumption tax, corporate/invoice number validation. Extracted from the published government tables and verified cell by cell (4,682 assertions). Says "cannot judge" instead of guessing.
 ```
 
 ## Glama / Smithery — 説明文(日本語)
 
 ```
-日本の給与計算・社会保険・労務のMCPサーバー(29ツール)。47都道府県の保険料率、標準報酬月額50等級、国税庁の源泉徴収税額表(月額・日額・賞与)、割増賃金、年次有給休暇、定時決定・随時改定、産休育休の保険料免除、24年分の最低賃金、祝日と営業日計算、消費税、法人番号・インボイス番号の検証。公表資料から抽出し、1セルずつ照合(4,661件)。判定できないときは推測せず「判定できない」と言います。
+日本の給与計算・社会保険・労務のMCPサーバー(30ツール)。47都道府県の保険料率、標準報酬月額50等級、国税庁の源泉徴収税額表(月額・日額・賞与)、割増賃金、年次有給休暇、定時決定・随時改定、産休育休の保険料免除、24年分の最低賃金、祝日と営業日計算、消費税、法人番号・インボイス番号の検証。公表資料から抽出し、1セルずつ照合(4,682件)。判定できないときは推測せず「判定できない」と言います。
 ```
 
 ---
@@ -72,7 +72,7 @@ Japanese payroll, social insurance and labour law for AI assistants. 29 tools: i
 | GitHub URL | https://github.com/kishida-devil/jp-payroll-mcp |
 | npm package | jp-payroll-mcp |
 | Website | https://japan-payroll-api.tsumugi.workers.dev |
-| Short description | Japanese payroll & social insurance for AI assistants: 29 tools over the published government tables, verified cell by cell. |
+| Short description | Japanese payroll & social insurance for AI assistants: 30 tools over the published government tables, verified cell by cell. |
 | Long description | 上の Glama / Smithery の英語説明文 |
 | Category | Finance / Data / HR |
 | Contact | (提出者のメール) |

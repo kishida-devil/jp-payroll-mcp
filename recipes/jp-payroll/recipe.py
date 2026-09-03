@@ -27,7 +27,7 @@ RECIPE = {
         "割増賃金、年次有給休暇、標準報酬月額の定時決定・随時改定、産休育休の保険料免除、"
         "24年分の最低賃金、祝日と営業日計算、消費税率、法人番号の検査。"
         "答えには根拠の条文が付き、収録範囲の外は古い数字を返さずに断ります。"
-        "Japan payroll, social insurance and labour law — 44 endpoints, statute-cited."
+        "Japan payroll, social insurance and labour law — 45 endpoints, statute-cited."
     ),
 
     "long_description": (
@@ -848,6 +848,73 @@ RECIPE = {
                     "other_income": {"type": "integer"},
                     "income_adjustment": {"type": "boolean",
                                           "description": "Force the 所得金額調整控除 on or off; omit to derive it."},
+                    "tax_return": {
+                        "type": "object",
+                        "description": "Deductions only a tax return can take. Not part of 年末調整; returns a separate 'if filed' estimate.",
+                        "properties": {
+                            "medical_expenses": {"type": "integer"}, "medical_reimbursed": {"type": "integer"},
+                            "self_medication": {"type": "integer"}, "donations": {"type": "integer"},
+                            "casualty_loss": {"type": "integer"}, "disaster_related_expense": {"type": "integer"},
+                        },
+                    },
+                },
+            },
+        },
+        {
+            "path": "/v1/resident-tax",
+            "method": "post",
+            "summary": "個人住民税の見込み額 from last year's income and the municipality",
+            "description": (
+                "Estimate of the resident tax (道府県民税 + 市町村民税 + 森林環境税) that will be levied next "
+                "fiscal year: employment income from the NTA table for the income year, resident-tax "
+                "deductions (which differ from income tax: basic 430,000, spouse 330,000, life insurance "
+                "capped at 70,000), the 10% income levy (4%/6%, or 2%/8% in the 20 designated cities), the "
+                "adjustment credit, the non-taxable thresholds with the 級地 rate, ふるさと納税 basic and "
+                "special credits, the housing-loan carry-over, and the per-capita amounts including every "
+                "prefecture's surtax and the city rules of Yokohama, Kobe and Nagoya. Matches the published "
+                "令和8年度 worked examples of Yokohama (247,900 yen) and Nagoya (140,200 yen).\n\n"
+                "It is an estimate. The municipality decides the amount; the employer deducts what the "
+                "特別徴収税額通知書 says. The response says so."
+            ),
+            "tags": ["Resident tax"],
+            "body": {
+                "type": "object",
+                "required": ["prefecture", "income_year"],
+                "properties": {
+                    "prefecture": {"type": "string", "example": "Kanagawa"},
+                    "city": {"type": "string", "example": "横浜市"},
+                    "designated_city": {"type": "boolean"},
+                    "grade_level": {"type": "integer", "enum": [1, 2, 3], "description": "級地 for the per-capita exemption."},
+                    "income_year": {"type": "integer", "example": 2025, "description": "Year the income was earned (2025 = fiscal 2026 tax)."},
+                    "salary": {"type": "integer", "example": 5500000},
+                    "total_income": {"type": "integer"},
+                    "other_income": {"type": "integer"},
+                    "social_insurance": {"type": "integer", "example": 394800},
+                    "mutual_aid": {"type": "integer"},
+                    "life_insurance": {"type": "object", "properties": {
+                        "new_general": {"type": "integer", "example": 90000}, "old_general": {"type": "integer"},
+                        "care_medical": {"type": "integer"}, "new_pension": {"type": "integer"}, "old_pension": {"type": "integer"}}},
+                    "earthquake_insurance": {"type": "object", "properties": {
+                        "earthquake": {"type": "integer", "example": 20000}, "old_long_term": {"type": "integer"}}},
+                    "medical_expenses": {"type": "integer"}, "medical_reimbursed": {"type": "integer"},
+                    "casualty_loss": {"type": "integer"}, "disaster_related_expense": {"type": "integer"},
+                    "spouse": {"type": "object", "nullable": True, "properties": {
+                        "income": {"type": "integer", "example": 0}, "age_70_or_over": {"type": "boolean"}}},
+                    "dependants": {"type": "object", "properties": {
+                        "general": {"type": "integer", "example": 1}, "specified": {"type": "integer"}, "elderly": {"type": "integer"},
+                        "elderly_cohabiting_parent": {"type": "integer"}, "under_23": {"type": "integer"},
+                        "under_16": {"type": "integer", "example": 1, "description": "No deduction, but counted for the exemption thresholds."}}},
+                    "disabilities": {"type": "object", "properties": {
+                        "general": {"type": "integer"}, "special": {"type": "integer"}, "special_cohabiting": {"type": "integer"}}},
+                    "flags": {"type": "object", "properties": {
+                        "widow": {"type": "boolean"}, "single_parent": {"type": "boolean"}, "single_parent_father": {"type": "boolean"},
+                        "working_student": {"type": "boolean"}, "self_special_disabled": {"type": "boolean"}, "minor": {"type": "boolean"}}},
+                    "specified_relatives": {"type": "array", "items": {"type": "integer"}},
+                    "income_adjustment": {"type": "boolean"},
+                    "furusato_donations": {"type": "integer"},
+                    "other_donations": {"type": "integer"},
+                    "housing_loan_unused": {"type": "integer"},
+                    "housing_loan_cap": {"type": "string", "enum": ["five_percent", "seven_percent"]},
                 },
             },
         },

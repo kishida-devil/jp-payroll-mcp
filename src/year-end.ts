@@ -18,7 +18,11 @@
  *
  * 冊子57〜59ページの設例をテストの実物にしている(年調年税額 41,400円、超過額 115,270円)。
  */
-import table from './data/year-end-r8.json';
+import tableR8 from './data/year-end-r8.json';
+import tableR7 from './data/year-end-r7.json';
+
+/** 年分ごとの給与所得控除後の表。住民税は前年分の所得で計算するので令和7年分も持つ。 */
+const TABLES: Record<number, any> = { 2025: tableR7, 2026: tableR8 };
 
 export type LifeInsurance = {
   new_general?: number; old_general?: number; care_medical?: number;
@@ -127,8 +131,9 @@ const ceil1 = Math.ceil;
 
 // ---- 給与所得控除後の給与等の金額(⑨) ----
 
-export function employmentIncomeAfterDeduction(totalPay: number): { amount: number; how: string } {
-  const t = table as any;
+export function employmentIncomeAfterDeduction(totalPay: number, year = 2026): { amount: number; how: string } {
+  const t = TABLES[year];
+  if (!t) throw new Error(`${year}年分の給与所得控除後の表は収録していません。`);
   if (totalPay < t.below_table.zero_below)
     return { amount: 0, how: `${t.below_table.zero_below.toLocaleString()}円未満は0` };
   if (totalPay < t.below_table.subtract_until)
@@ -261,6 +266,63 @@ export function computedTax(taxable: number) {
   for (const b of TAX_BRACKETS)
     if (taxable <= b.upto) return { amount: Math.floor(taxable * b.rate - b.subtract), rate: b.rate, subtract: b.subtract };
   return { amount: NaN, rate: NaN, subtract: NaN };
+}
+
+// ---- 確定申告でしか引けない控除の試算 ----
+
+export type TaxReturnExtras = {
+  medical_expenses?: number; medical_reimbursed?: number;
+  self_medication?: number;
+  donations?: number;
+  casualty_loss?: number; disaster_related_expense?: number;
+};
+
+/** 確定申告の速算表(所得税法第89条)。年末調整の速算表は1,805万円で終わるが、確定申告は上がある。 */
+const RETURN_BRACKETS = [
+  { upto: 1_950_000, rate: 0.05, subtract: 0 },
+  { upto: 3_300_000, rate: 0.10, subtract: 97_500 },
+  { upto: 6_950_000, rate: 0.20, subtract: 427_500 },
+  { upto: 9_000_000, rate: 0.23, subtract: 636_000 },
+  { upto: 18_000_000, rate: 0.33, subtract: 1_536_000 },
+  { upto: 40_000_000, rate: 0.40, subtract: 2_796_000 },
+  { upto: Infinity, rate: 0.45, subtract: 4_796_000 },
+] as const;
+
+/**
+ * 年末調整では引けない控除(医療費・寄附金・雑損)を足したら年税額がいくらになるか。
+ * 年末調整の欄には入れない(法律上、確定申告で行うもの)。別枠で「申告したらこうなる」を返す。
+ *   医療費控除  所得税法第73条: (支払医療費 − 補填) − min(総所得×5%, 10万円)、最高200万円。
+ *               セルフメディケーション税制(措置法第41条の17): 特定一般用医薬品等 − 1.2万円、最高8.8万円。どちらか一方。
+ *   寄附金控除  所得税法第78条: min(寄附金, 総所得×40%) − 2,000円。
+ *   雑損控除    所得税法第72条: max(損失 − 総所得×10%, 災害関連支出 − 5万円)。
+ */
+export function taxReturnEstimate(
+  extras: TaxReturnExtras, totalIncome: number, afterAdjustment: number,
+  yearEndDeductions: number, housingCredit: number, withheld: number,
+) {
+  const medicalRaw = Math.max(0, n0(extras.medical_expenses) - n0(extras.medical_reimbursed));
+  const medical = medicalRaw > 0 ? Math.min(Math.max(medicalRaw - Math.min(totalIncome * 0.05, 100_000), 0), 2_000_000) : 0;
+  const selfMed = n0(extras.self_medication) > 12_000 ? Math.min(n0(extras.self_medication) - 12_000, 88_000) : 0;
+  const medicalChosen = Math.max(medical, selfMed);
+  const donation = n0(extras.donations) > 2_000 ? Math.max(0, Math.min(n0(extras.donations), totalIncome * 0.4) - 2_000) : 0;
+  const casualty = Math.max(n0(extras.casualty_loss) - totalIncome * 0.1, n0(extras.disaster_related_expense) - 50_000, 0);
+  const extra = medicalChosen + donation + casualty;
+  const taxable = Math.floor(Math.max(0, afterAdjustment - yearEndDeductions - extra) / 1000) * 1000;
+  const b = RETURN_BRACKETS.find((x) => taxable <= x.upto)!;
+  const computed = Math.floor(taxable * b.rate - b.subtract);
+  const afterCredit = Math.max(0, computed - housingCredit);
+  const annual = Math.floor(afterCredit * RECONSTRUCTION_RATE / 100) * 100;
+  return {
+    basis: '確定申告をした場合の見込みです。年末調整ではこれらの控除は引けません(所得税法第190条)。',
+    extra_deductions: {
+      medical_expenses: medical, self_medication: selfMed, medical_applied: medicalChosen,
+      medical_note: medical > 0 && selfMed > 0 ? '医療費控除とセルフメディケーション税制は選択適用です。大きい方を当てています。' : undefined,
+      donations: donation, casualty_loss: casualty, total: extra,
+    },
+    taxable_income: taxable, computed_tax: computed, tax_after_credit: afterCredit, annual_tax: annual,
+    difference_from_withheld: annual - withheld,
+    refund_from_withheld: Math.max(0, withheld - annual),
+  };
 }
 
 // ---- 本体 ----

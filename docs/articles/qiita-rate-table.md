@@ -119,7 +119,7 @@ e-Gov 法令APIにも入っていません(法令ではないので)。
 
 - 協会けんぽの保険料額表と **250通り**(5都道府県 × 50等級)
 - 国税庁の月額表の**公表2,079セル全部**
-- 変更のたびに **4,661件** の検証を実行
+- 変更のたびに **4,682件** の検証を実行
 
 式の説明から書き直したものではなく、印刷されている値との照合です。
 自分で作る場合も、この形の検証は用意しておくことを勧めます。
@@ -130,10 +130,10 @@ e-Gov 法令APIにも入っていません(法令ではないので)。
 無料枠は鍵もアカウントも要りません。
 
 ```bash
-# AIアシスタントから(MCPサーバー・29ツール)
+# AIアシスタントから(MCPサーバー・30ツール)
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 
-# HTTP API(44エンドポイント・OpenAPI 3.0)
+# HTTP API(45エンドポイント・OpenAPI 3.0)
 curl "https://japan-payroll-api.tsumugi.workers.dev/v1/payroll?prefecture=Tokyo&monthly_salary=300000&age=40"
 ```
 
