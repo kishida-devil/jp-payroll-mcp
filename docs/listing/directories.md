@@ -1,7 +1,6 @@
 # MCP ディレクトリ掲載文(貼るだけ)
 
-外から当てた結果(2026-09-03)、4面ともまだ載っていない。公式レジストリ登録と
-GitHub topics だけでは自動では拾われない。どれも申請かフォーム送信が要る。
+2026-09-03 時点: mcp.so 提出済み、Glama 自動掲載、Smithery 掲載済み(remote MCP)、PulseMCP は受付停止(レジストリから自動)。
 下の文をそのまま貼る。**数字(30ツール・45エンドポイント・4,689件)は
 `scripts/sync-counts.py` が揃えるので、ここも同期対象。**
 
@@ -9,7 +8,7 @@ GitHub topics だけでは自動では拾われない。どれも申請かフォ
 |---|---|---|---|
 | mcp.so | https://github.com/chatmcp/mcpso/issues/new に issue | GitHub | **提出済み** https://github.com/chatmcp/mcpso/issues/3906 |
 | Glama | https://glama.ai/mcp/servers → Claim / Add server | GitHub ログイン | **自動掲載済み**(8/31 更新、品質「未採点」)。Claim は任意 |
-| Smithery | https://smithery.ai/servers/new | GitHub ログイン(済) | **remote MCP を実装済み**(`/mcp`、2026-09-03)。本番デプロイ後に Server ID `jp-payroll-mcp`、MCP Server URL `https://japan-payroll-api.tsumugi.workers.dev/mcp` を入れて Continue |
+| Smithery | https://smithery.ai/servers/new | GitHub ログイン(済) | **掲載済み**(2026-09-03) https://smithery.ai/servers/kishida-devil/jp-payroll-mcp — remote `/mcp` に接続、30ツール認識、説明文・Homepage・GitHub を設定済み。品質スコア 46/100(verification checklist は未着手) |
 | PulseMCP | https://www.pulsemcp.com/submit | フォーム(アカウント不要) | **受付停止中**。公式レジストリから自動で拾うとの掲示。申請不要 |
 
 ---

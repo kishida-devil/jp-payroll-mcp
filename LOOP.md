@@ -3087,3 +3087,14 @@ URL を貼るだけなら Claude.ai のコネクタ、ChatGPT、Cursor から設
 - server.json に `remotes` を足した。公式レジストリにも remote として載る。
 
 Smithery への登録は本番デプロイ後(URL が要る)。
+
+#### 出稿の結果(2026-09-03 夕方)
+
+| 面 | 結果 |
+|---|---|
+| 本番 | 年末調整・住民税・remote MCP をデプロイ。公開検査 16/19(残りは npm 0.4.5 とレジストリの版) |
+| Smithery | **掲載** https://smithery.ai/servers/kishida-devil/jp-payroll-mcp — `/mcp` に接続して30ツールを認識。説明文を設定 |
+| Qiita | 全体像の記事を remote MCP と住民税で更新 |
+| remote MCP | 本物のクライアントで 7/7、MCP スモーク 251/251、失敗経路 29/29(いずれも本番) |
+
+Smithery の掲載は「HTTP の URL があるか」だけで決まった。**製品の形を変えたら、閉じていた面が開いた。**
