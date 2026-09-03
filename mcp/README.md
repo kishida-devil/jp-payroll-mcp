@@ -33,7 +33,21 @@ npx jp-payroll-mcp
 
 ## 導入
 
-### Claude Code
+### URL を貼るだけ(remote MCP、インストール不要)
+
+Claude.ai のカスタムコネクタ、ChatGPT、Cursor、Claude Code のどれでも、この URL を1つ登録するだけです。
+
+```
+https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
+
+```bash
+claude mcp add --transport http jp-payroll https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
+
+同じ30本のツールが同じ答えを返します。セッションを持たないので、認証も鍵も要りません。
+
+### Claude Code(npx で手元に入れる)
 
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
@@ -159,7 +173,7 @@ Node 18 以降が必要です。
 | 祝日 | 内閣府 |
 | 改定ルール | e-Gov法令検索、厚生労働省 法令等データベース、日本年金機構 |
 
-背後のAPIは変更のたびに **4,682件** の検証を実行します。中核は、協会けんぽの
+背後のAPIは変更のたびに **4,689件** の検証を実行します。中核は、協会けんぽの
 料額表に印刷されている金額と250通り(5都道府県×50等級)を突き合わせる検証と、
 国税庁の源泉徴収税額表の**全2,079セル**との突き合わせです。
 

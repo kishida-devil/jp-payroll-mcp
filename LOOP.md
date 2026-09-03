@@ -3065,3 +3065,25 @@ Qiita は登録初日のアカウントに投稿数の制限があり2本目が�
 「確定申告をした場合の見込み」を**別枠**で返す。速算表も確定申告用(4,000万円超45%)。
 
 MCP は30本目 `estimate_resident_tax`(上限30に到達)。GPT Actions は `/v1/business-days/shift` を外した。
+
+### remote MCP — 「npx で入れる」を消す(2026-09-03)
+
+Smithery の公開フォームに入ってみたら、HTTP の MCP URL が必須で stdio の npm は載せられなかった。
+それ自体より、**試用の壁が npx にある**可能性のほうが大きい(DL 809・API 呼び出し 0)。
+URL を貼るだけなら Claude.ai のコネクタ、ChatGPT、Cursor から設定1行で使える。
+
+#### 作り
+
+- ツールの定義は `mcp/src/index.mjs` の1か所のまま。組み立てを `createServer()` に切り出し、
+  stdio(直接実行)と Worker の `/mcp` の両方がそれを呼ぶ。定義が2か所になると必ずずれる。
+- Worker 側は SDK の Web 標準トランスポート(Request/Response)。セッションを持たない stateless。
+  リクエストごとに McpServer と transport を作って捨てる。
+- ツールが叩く `/v1/...` は HTTP に出ず、同じ Worker の Hono アプリを直接呼ぶ。元のリクエストの
+  IP と User-Agent を引き継ぐので、レート制限と channel=mcp の集計は stdio 版と同じ。
+- stdio のトランスポートは `node:process` を使う。Worker に束ねると警告が出るので、直接実行のときだけ
+  動的に読み込む(指定子を変数にしてバンドラに束ねさせない)。
+- 検証: 素の JSON-RPC(verify.mjs)と、本物の MCP クライアント(mcp/test/remote.mjs)の両方。
+  「curl で返る」と「クライアントが繋げる」は別。
+- server.json に `remotes` を足した。公式レジストリにも remote として載る。
+
+Smithery への登録は本番デプロイ後(URL が要る)。

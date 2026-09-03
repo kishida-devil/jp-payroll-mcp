@@ -4,15 +4,22 @@
 47都道府県の保険料率、源泉所得税、標準報酬月額の決定と改定、休業中の保険料免除、
 割増賃金、年次有給休暇、最低賃金、営業日計算、令和8年分の年末調整、住民税の見込み額まで。**答えには根拠の条文または通知が付きます。**
 
-公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,682件** の検証を実行します。
+公表されている料額表・税額表と1セルずつ突き合わせ、変更のたびに **4,689件** の検証を実行します。
 
 ## 使いかたは2通り
 
-**MCPサーバー** — AIアシスタントに日本語で聞く。30ツール、無料、APIキー不要:
+**MCPサーバー** — AIアシスタントに日本語で聞く。30ツール、無料、APIキー不要。
+URL を貼るだけ(remote MCP)か、npx で入れるか:
+
+```bash
+claude mcp add --transport http jp-payroll https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
 
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 ```
+
+Claude.ai のカスタムコネクタ、ChatGPT、Cursor には `https://japan-payroll-api.tsumugi.workers.dev/mcp` を貼ります。
 
 **HTTP API** — ソフトウェアに組み込む。45エンドポイント、OpenAPI 3.0、一括処理:
 
@@ -43,15 +50,22 @@ premiums for all 47 prefectures, withholding tax, standard remuneration decision
 revisions, leave exemptions, minimum wage — with the statute or ministerial notice each
 answer rests on.
 
-Verified against the published tables cell by cell: **4,682 assertions** on every change.
+Verified against the published tables cell by cell: **4,689 assertions** on every change.
 
 ## Two ways in
 
-**As an MCP server**, for asking questions through an AI assistant. 30 tools, free, no key:
+**As an MCP server**, for asking questions through an AI assistant. 30 tools, free, no key.
+Remote (paste a URL) or local (npx):
+
+```bash
+claude mcp add --transport http jp-payroll https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
 
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 ```
+
+For Claude.ai custom connectors, ChatGPT and Cursor, the URL is `https://japan-payroll-api.tsumugi.workers.dev/mcp`.
 
 **As an HTTP API**, for building it into software. 45 endpoints, OpenAPI 3.0, batch:
 
@@ -296,7 +310,7 @@ provision to back it fails the build rather than silently returning nothing.
 
 ## Verification
 
-`test/verify.mjs` runs 4,682 assertions against a live server. The core of it compares the
+`test/verify.mjs` runs 4,689 assertions against a live server. The core of it compares the
 API's computed premiums to the **amounts printed in the official 協会けんぽ workbook** for
 250 combinations (5 prefectures × 50 grades) — the published half-share figures, not a
 reimplementation of the formula. It also checks:

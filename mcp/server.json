@@ -17,5 +17,11 @@
         "type": "stdio"
       }
     }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://japan-payroll-api.tsumugi.workers.dev/mcp"
+    }
   ]
 }

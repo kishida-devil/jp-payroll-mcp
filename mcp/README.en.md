@@ -34,7 +34,21 @@ compute them from the published tables instead, and cite the statute or notice.
 
 ## Setup
 
-### Claude Code
+### Paste a URL (remote MCP, nothing to install)
+
+Claude.ai custom connectors, ChatGPT, Cursor and Claude Code all take this one URL:
+
+```
+https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
+
+```bash
+claude mcp add --transport http jp-payroll https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
+
+Same 30 tools, same answers. Stateless, so no key and no login.
+
+### Claude Code (local, via npx)
 
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
@@ -162,7 +176,7 @@ formula.
 | Public holidays | 内閣府 |
 | Revision rules | e-Gov 法令検索, 厚生労働省 法令等データベース, 日本年金機構 |
 
-The API behind these tools runs **4,682 assertions** on every change. The core of it
+The API behind these tools runs **4,689 assertions** on every change. The core of it
 compares computed premiums against the amounts printed in the 協会けんぽ workbook for
 250 combinations (5 prefectures × 50 grades), and against all 2,079 published cells of the
 National Tax Agency withholding table.

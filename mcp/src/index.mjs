@@ -25,7 +25,8 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+// stdio のトランスポートは node:process を使う。Worker に同梱するときは通らないので、
+// 直接実行のときだけ動的に読み込む(指定子を変数にして、バンドラに束ねさせない)。
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
 import { ja } from 'zod/locales';
@@ -42,15 +43,26 @@ z.config(ja());
 // pasted "https://host/" would otherwise produce "//v1/..." — which this origin
 // answers with a 404, so the failure looks like a missing endpoint rather than a
 // mistyped setting.
-const BASE = (process.env.JP_PAYROLL_API_URL ?? 'https://japan-payroll-api.tsumugi.workers.dev')
+const ENV = typeof process !== 'undefined' && process.env ? process.env : {};
+const BASE = (ENV.JP_PAYROLL_API_URL ?? 'https://japan-payroll-api.tsumugi.workers.dev')
   .replace(/\/+$/, '');
+/**
+ * 呼び先とその叩き方。stdio(npm)では既定の fetch で本番を叩く。Worker に同梱して
+ * remote MCP(/mcp)として動くときは、自分自身のルートをネットワークを介さず直接叩くように
+ * configure() で差し替える。
+ */
+const CFG = { base: BASE, fetch: (...args) => globalThis.fetch(...args) };
+export function configure({ baseUrl, fetch } = {}) {
+  if (baseUrl !== undefined) CFG.base = String(baseUrl).replace(/\/+$/, '');
+  if (fetch) CFG.fetch = fetch;
+}
 // package.json から引く。2箇所に書くと必ずずれる — 実際 package.json が 0.4.0 の間、
 // サーバは 0.3.0 と名乗っていた。利用者が版を確かめる唯一の手段がこれなのに。
 const VERSION = pkg.version;
 
 // A floor of 1000ms: a timeout shorter than a round trip fails every call, and
 // the resulting "the API did not respond" is a confusing way to learn that.
-const TIMEOUT_MS = Math.max(1000, Number(process.env.JP_PAYROLL_TIMEOUT_MS) || 15000);
+const TIMEOUT_MS = Math.max(1000, Number(ENV.JP_PAYROLL_TIMEOUT_MS) || 15000);
 
 /**
  * Identifies MCP traffic separately from REST traffic in the origin's analytics.
@@ -63,7 +75,7 @@ async function call(path, { method = 'GET', body } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(BASE + path, {
+    const res = await CFG.fetch(CFG.base + path, {
       method,
       signal: controller.signal,
       headers: {
@@ -183,6 +195,11 @@ https://japan-payroll-api.tsumugi.workers.dev
 https://rapidapi.com/kishidadevil/api/japan-payroll-and-labor-constants
 金額を伏せると、利用者はリンクを踏んで出品ページの Pricing タブを探すことになります。`;
 
+/**
+ * McpServer を組み立てて返す。stdio の入口(このファイルを直接実行)と、Worker の /mcp
+ * (リクエストごとに1つ作る)の両方がこれを呼ぶ。ツールの定義は1か所。
+ */
+export function createServer() {
 const server = new McpServer(
   { name: 'jp-payroll', version: VERSION },
   { instructions: INSTRUCTIONS },
@@ -1354,6 +1371,19 @@ registerTool('check_data_freshness', {
   });
 }
 
+return server;
+}
+
+/**
+ * このファイルが直接実行されたときだけ stdio で待ち受ける。Worker に同梱されたときは
+ * createServer() だけを使い、ここは通らない(process が無い)。
+ */
+const STDIO_MAIN = typeof process !== 'undefined' && Array.isArray(process.argv)
+  && String(process.argv[1] ?? '').endsWith('index.mjs');
+if (STDIO_MAIN) {
+const stdioModule = '@modelcontextprotocol/sdk/server/stdio.js';
+const { StdioServerTransport } = await import(stdioModule);
+const server = createServer();
 const transport = new StdioServerTransport();
 await server.connect(transport);
 
@@ -1364,3 +1394,4 @@ console.error(
 ` +
   '返す金額は公表された料率表・税額表からの計算結果です。実際の届出や重要な判断の前に、' +
   '社会保険労務士等の専門家と出典元の資料で確認してください。');
+}

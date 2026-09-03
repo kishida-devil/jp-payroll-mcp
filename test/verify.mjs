@@ -478,6 +478,49 @@ for (const [t, emp, er] of [['general', 0.005, 0.0085],
      `${ye.tax_return_estimate?.annual_tax} vs ${ye.result?.annual_tax}`);
 }
 
+// ---- 8d. remote MCP(Streamable HTTP /mcp) ----
+//
+// npx で入れずに URL 1つで使える口。stdio 版と同じ30本のツールが同じ答えを返すこと。
+{
+  const rpc = async (body, headers = {}) => {
+    const r = await fetch(BASE + '/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'accept': 'application/json, text/event-stream', ...headers },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* SSE などの場合 */ }
+    return { status: r.status, json, text };
+  };
+  const init = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize',
+    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'verify', version: '0' } } });
+  ok(init.status === 200 && init.json?.result?.serverInfo?.name === 'jp-payroll',
+     '/mcp が initialize に jp-payroll として答える', `${init.status} ${init.text.slice(0, 80)}`);
+  ok(typeof init.json?.result?.instructions === 'string' && /Japanese payroll/.test(init.json.result.instructions),
+     'stdio 版と同じ instructions が付く');
+  const list = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+  const tools = list.json?.result?.tools ?? [];
+  ok(tools.length === 30, `ツールが30本並ぶ(stdio 版と同じ)`, `${tools.length}`);
+  ok(tools.some((t) => t.name === 'calculate_year_end_adjustment') && tools.some((t) => t.name === 'estimate_resident_tax'),
+     '年末調整と住民税のツールも remote にある');
+  // 実際に叩く。ツールは Worker 内で /v1 を直接呼ぶので、答えは REST と同じ。
+  const call = await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call',
+    params: { name: 'get_minimum_wage', arguments: { prefecture: 'Tokyo' } } });
+  const text = call.json?.result?.content?.[0]?.text ?? '';
+  const rest = (await get('/v1/minimum-wage?prefecture=Tokyo')).body;
+  ok(call.status === 200 && !call.json?.result?.isError && JSON.parse(text).hourly_wage === rest.hourly_wage,
+     'remote のツール呼び出しが REST と同じ最低賃金を返す', `${call.status} ${text.slice(0, 60)}`);
+  // 断り方も同じ: 知らない引数は黙って捨てない。
+  const badArg = await rpc({ jsonrpc: '2.0', id: 4, method: 'tools/call',
+    params: { name: 'get_minimum_wage', arguments: { prefecture: 'Tokyo', zzz: 1 } } });
+  ok(badArg.json?.result?.isError === true && /unknown_parameter/.test(badArg.json?.result?.content?.[0]?.text ?? ''),
+     'remote でも受け付けない引数は unknown_parameter で断る', (badArg.json?.result?.content?.[0]?.text ?? '').slice(0, 80));
+  // GET(SSE の常時接続)は持たない。405 か 406 で、200 で黙って何かを返さない。
+  const getR = await tryFetch(BASE + '/mcp');
+  ok(getR.status === 405 || getR.status === 406, 'GET /mcp は 405/406(セッションを持たない stateless)', `${getR.status}`);
+}
+
 // ---- 9. minimum wage point-in-time lookups ----
 {
   const latest = await get('/v1/minimum-wage?prefecture=Tokyo');

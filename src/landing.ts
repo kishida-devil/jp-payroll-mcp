@@ -59,6 +59,10 @@ footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color
 <h2>使いかたは2通り</h2>
 
 <h3>AIアシスタントから聞く(MCPサーバー)</h3>
+<p>URL を貼るだけです。Claude.ai のカスタムコネクタ、ChatGPT、Cursor、Claude Code のどれからでも。インストールは要りません。</p>
+<pre><code>${BASE}/mcp</code></pre>
+<pre><code>claude mcp add --transport http jp-payroll ${BASE}/mcp</code></pre>
+<p>手元で動かすなら npx でも同じ30本のツールが使えます。</p>
 <pre><code>claude mcp add jp-payroll -- npx -y jp-payroll-mcp</code></pre>
 <p>「3月31日に辞めた人の3月分の社会保険料は?」と日本語で聞けば、計算して<strong>根拠の条文を添えて</strong>返します。</p>
 
@@ -95,7 +99,7 @@ footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color
 <tr><th>祝日</th><td>内閣府</td></tr>
 <tr><th>改定の規則</th><td>e-Gov 法令検索、日本年金機構</td></tr>
 </table>
-<p>すべて公式資料から機械的に抽出し、<strong>そこに印刷されている値と突き合わせて</strong>います。協会けんぽの保険料額表と250通り(5都道府県×50等級)、国税庁の月額表の公表2,079セル全部を照合し、変更のたびに <span class="n">4,682件</span> の検証を実行します。</p>
+<p>すべて公式資料から機械的に抽出し、<strong>そこに印刷されている値と突き合わせて</strong>います。協会けんぽの保険料額表と250通り(5都道府県×50等級)、国税庁の月額表の公表2,079セル全部を照合し、変更のたびに <span class="n">4,689件</span> の検証を実行します。</p>
 <p><a href="/v1/data-freshness">各データの収録範囲と次の改定時期</a>を返すので、古くなったことが黙って進行しません。収録範囲の外の日付は、古い数字を返さずに断ります。</p>
 
 <h2>料金</h2>

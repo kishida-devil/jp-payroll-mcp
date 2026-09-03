@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/verify.mjs && node mcp/test/smoke.mjs && node mcp/test/failure.mjs",
+    "test": "node test/verify.mjs && node mcp/test/smoke.mjs && node mcp/test/failure.mjs && node mcp/test/remote.mjs",
     "test:api": "node test/verify.mjs",
     "rapidapi:login": "python pipeline/rapidapi/login.py",
     "rapidapi:prepare": "python pipeline/rapidapi/prepare.py --all",
@@ -18,7 +18,9 @@
     "openapi": "python pipeline/openapi_build.py"
   },
   "dependencies": {
-    "hono": "^4.6.14"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "hono": "^4.6.14",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260825.1",

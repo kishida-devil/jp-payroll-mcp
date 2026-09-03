@@ -73,6 +73,7 @@ import {
   isOpenOn, isWeekend, parseISO, shiftBusinessDays, toISO, type Calendar,
 } from './holidays';
 import { landingPage, wantsHtml } from './landing';
+import { mountRemoteMcp } from './mcp-remote';
 
 /** Cloudflare's Rate Limiting binding, typed structurally so this file does not
  *  depend on which name the workers-types version happens to export. */
@@ -683,6 +684,7 @@ app.get('/', (c) => {
       'GET /v1/standard-remuneration/revision?current_remuneration=300000&months=350000:31,352000:30,349000:31&fixed_pay_change=increase': '随時改定(月額変更)に当たるかを判定する。健康保険と厚生年金を別々に見る',
       'GET /v1/standard-remuneration/regular?months=350000:30,352000:31,349000:30': '4〜6月の給与から定時決定(算定基礎)を求める',
       'GET /v1/standard-remuneration/leave-end?kind=childcare&current_remuneration=300000&months=260000:31,258000:30,262000:31': '産休・育休からの復帰時の改定(1等級差で足りる)',
+      'POST /mcp': 'remote MCP(Streamable HTTP)。npx で入れずに URL 1つで同じ30本のツールを使う。Claude.ai のコネクタ、Cursor、Claude Code(--transport http)から',
       'POST /v1/resident-tax': '個人住民税の見込み額 — 前年の所得と自治体から、所得割・均等割・調整控除・ふるさと納税・住宅ローン控除・非課税判定まで。横浜市・名古屋市の公表計算例と一致',
       'POST /v1/year-end-adjustment': '年末調整(令和8年分) — 給与所得控除後の給与等の金額の表から年調年税額と過不足額まで、源泉徴収簿の⑦〜㉗を全部返す',
       'POST /v1/standard-remuneration/regular/batch': '算定基礎届を全従業員まとめて1回で。6月は全員が一斉に決まる唯一の月です(健保法41条)',
@@ -3671,6 +3673,9 @@ for (const r of app.routes) {
   s.add(r.method.toUpperCase());
   METHODS_BY_PATH.set(r.path, s);
 }
+
+// remote MCP(Streamable HTTP)。全ルートの後、404 の前。
+mountRemoteMcp(app);
 
 app.notFound((c) => {
   const allowed = METHODS_BY_PATH.get(new URL(c.req.url).pathname);

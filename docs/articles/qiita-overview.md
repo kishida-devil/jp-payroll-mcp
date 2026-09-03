@@ -82,11 +82,23 @@ OpenAPI 3.0 の仕様書は `/openapi.json` です。
 
 ## 使いかた2: MCP サーバー(AIアシスタントから)
 
+URL を貼るだけです。Claude.ai のカスタムコネクタ、ChatGPT、Cursor、Claude Code のどれからでも。インストールは要りません。
+
+```
+https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
+
+```bash
+claude mcp add --transport http jp-payroll https://japan-payroll-api.tsumugi.workers.dev/mcp
+```
+
+手元で動かすなら npx でも同じです。
+
 ```bash
 claude mcp add jp-payroll -- npx -y jp-payroll-mcp
 ```
 
-Claude Desktop や Cursor なら設定ファイルに1行です。
+Claude Desktop なら設定ファイルに1行です。
 
 ```json
 { "mcpServers": { "jp-payroll": { "command": "npx", "args": ["-y", "jp-payroll-mcp"] } } }
@@ -118,7 +130,7 @@ Claude Desktop や Cursor なら設定ファイルに1行です。
 
 すべて公式資料から機械的に抽出し、**印刷されている値と突き合わせて**います。
 協会けんぽの料額表と250通り、国税庁の月額表2,079セル全部、年末調整は冊子の設例を
-全欄。変更のたびに **4,682件** の検証を実行します。計算式を解説文から書き直したものでは
+全欄。変更のたびに **4,689件** の検証を実行します。計算式を解説文から書き直したものでは
 ありません。
 
 ## できないこと(正直に)

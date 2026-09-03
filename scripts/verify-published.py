@@ -181,6 +181,22 @@ if status == 200:
 check(reg_latest is not None and reg_latest.startswith(PKG_VERSION),
       f"公式MCPレジストリの latest が {PKG_VERSION}", reg_latest or str(status))
 
+# remote MCP。URL を貼るだけで使える口が本番に出ているか。initialize に jp-payroll と名乗ること。
+try:
+    req = urllib.request.Request(
+        API + "/mcp",
+        data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                         "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                    "clientInfo": {"name": "verify-published", "version": "0"}}}).encode(),
+        headers={**UA, "Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=20) as r:
+        mcp_body = json.loads(r.read().decode("utf-8"))
+    mcp_name = ((mcp_body.get("result") or {}).get("serverInfo") or {}).get("name")
+    check(mcp_name == "jp-payroll", "remote MCP(/mcp)が本番で initialize に答える", str(mcp_name))
+except Exception as e:  # noqa: BLE001
+    check(False, "remote MCP(/mcp)が本番で initialize に答える", str(e)[:80])
+
 # --- 出力 -------------------------------------------------------------------
 ok_n = sum(1 for ok, _, _ in results if ok)
 print()
